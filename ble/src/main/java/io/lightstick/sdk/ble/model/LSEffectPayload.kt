@@ -6,9 +6,11 @@ package io.lightstick.sdk.ble.model
  * This payload is used by the LightStick GATT protocol to define complex LED behaviors,
  * including strobe, breath, and synchronized effects.
  *
- * The [toByteArray] function generates a 15-byte array that can be sent directly to
+ * The [toByteArray] function generates a 18-byte array that can be sent directly to
  * the BLE device via the LED_EFFECT_PAYLOAD characteristic.
  *
+ * @property timestampMs Time sync offset in milliseconds.
+ * @property effectIndex Index of the effect to be executed (0–65,535).
  * @property ledMask Bitmask for selecting which LEDs to affect (0x0000 = all LEDs).
  *                   Each bit from LSB to MSB corresponds to LED index 0–15.
  * @property color RGB color to be used in the effect.
@@ -18,12 +20,14 @@ package io.lightstick.sdk.ble.model
  * @property spf Speed factor or frame interval (in ms).
  * @property randomColor Flag to enable random color per frame (0 = off, 1 = on).
  * @property randomDelay Flag to randomize delay per LED or frame.
- * @property timestampMs Time sync offset in milliseconds.
+ * @property fade Fade duration (0–255ms).
  * @property syncIndex Global sync group index (used to synchronize multiple devices).
  *
  * @sample
  * ```kotlin
  * val payload = LSEffectPayload(
+ *     timestampMs = 0u,
+ *     effectIndex = 0u,
  *     ledMask = 0xFFFFu,
  *     color = LedColor.BLUE,
  *     effectType = EffectType.STROBE,
@@ -32,7 +36,6 @@ package io.lightstick.sdk.ble.model
  *     spf = 20u,
  *     randomColor = 0u,
  *     randomDelay = 0u,
- *     timestampMs = 0u,
  *     syncIndex = 1
  * )
  *
@@ -41,6 +44,8 @@ package io.lightstick.sdk.ble.model
  * ```
  */
 data class LSEffectPayload(
+    val timestampMs: UShort = 0u,
+    val effectIndex: UShort = 0u,
     val ledMask: UShort = 0x0000u,
     val color: LedColor = LedColor.WHITE,
     val effectType: EffectType = EffectType.ON,
@@ -50,31 +55,35 @@ data class LSEffectPayload(
     val randomColor: UByte = 0u,
     val randomDelay: UByte = 0u,
     val fade: UByte = 100u,
-    val timestampMs: UShort = 0u,
     val syncIndex: Byte = 0
 ) {
 
     /**
-     * Converts the [LSEffectPayload] into a 16-byte array in the order expected by the BLE device.
+     * Converts the [LSEffectPayload] into a 18-byte array in the order expected by the BLE device.
      *
      * Format:
      * ```
-     * [0-1]   ledMask (LSB, MSB)
-     * [2-4]   color (R, G, B)
-     * [5]     effectType (enum)
-     * [6-7]   durationMs (LSB, MSB)
-     * [8]     period
-     * [9]     spf
-     * [10]    randomColor
-     * [11]    randomDelay
-     * [12]    fade
-     * [13-14] timestampMs (LSB, MSB)
-     * [15]    syncIndex
+     * [0-1] timestampMs (LSB, MSB)
+     * [2-3] effectIndex (LSB, MSB)
+     * [4-5]   ledMask (LSB, MSB)
+     * [6-8]   color (R, G, B)
+     * [9]     effectType (enum)
+     * [10-11]   durationMs (LSB, MSB)
+     * [12]     period
+     * [13]     spf
+     * [14]    randomColor
+     * [15]    randomDelay
+     * [16]    fade
+     * [17]    syncIndex
      * ```
      *
-     * @return ByteArray containing the packed effect payload (16 bytes).
+     * @return ByteArray containing the packed effect payload (18 bytes).
      */
     fun toByteArray(): ByteArray = byteArrayOf(
+        (timestampMs.toInt() shr 8).toByte(),
+        (timestampMs.toInt() and 0xFF).toByte(),
+        (effectIndex.toInt() shr 8).toByte(),
+        (effectIndex.toInt() and 0xFF).toByte(),
         (ledMask.toInt() and 0xFF).toByte(),
         (ledMask.toInt() shr 8).toByte(),
         color.red.toByte(),
@@ -88,8 +97,6 @@ data class LSEffectPayload(
         randomColor.toByte(),
         randomDelay.toByte(),
         fade.toByte(),
-        (timestampMs.toInt() and 0xFF).toByte(),
-        (timestampMs.toInt() shr 8).toByte(),
         syncIndex
     )
 }

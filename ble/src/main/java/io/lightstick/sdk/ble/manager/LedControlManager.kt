@@ -153,13 +153,13 @@ class LedControlManager(
      * Sends raw byte array representing the LED effect payload.
      *
      * @param address MAC address of the BLE device
-     * @param data Byte array containing 15-byte structured effect format
+     * @param data Byte array containing 18-byte structured effect format
      * @return [GattOperationResult] result of the transmission
      *
      * @throws SecurityException if BLUETOOTH_CONNECT permission is not granted
      *
      * @sample
-     * val data = ByteArray(15) { 0x00 } // your effect bytes
+     * val data = ByteArray(18) { 0x00 } // your effect bytes
      * val result = ledControlManager.sendLedEffect("00:11:22:33:44:55", data)
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
