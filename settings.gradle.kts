@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 rootProject.name = "LightStickSDK"
 include(":ble")
 include(":app")
+include(":sdk:ble")

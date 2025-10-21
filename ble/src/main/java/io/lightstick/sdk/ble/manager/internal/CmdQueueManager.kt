@@ -1,140 +1,200 @@
 package io.lightstick.sdk.ble.manager.internal
 
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
+import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * BLE GATT command queue manager for sequential operation execution.
+ * Per-address **serialized** command queue for GATT operations.
  *
- * This class ensures that Bluetooth GATT operations (such as read, write, notify)
- * are executed in strict order for each connected device.
+ * Features:
+ * - Ensures **one in-flight command** per address (FIFO by default).
+ * - Supports a **minimum interval** between completed commands (rate limiting).
+ * - Supports **maximum pending size** (back-pressure).
+ * - Supports **coalescing**: with the same [coalesceKey] and `replaceIfSameKey=true`,
+ *   removes older **pending** commands that share the key, keeping the latest one.
  *
- * BLE stacks often fail when multiple GATT operations are issued concurrently,
- * so this queue manager enforces one-at-a-time execution per device address.
+ * Execution model:
+ * - [enqueue] only schedules execution and returns immediately.
+ * - The queue invokes your `runner()` to start an **async** BLE op.
+ * - When that op finishes (success/failure), you **must** call
+ *   [signalCommandComplete] with the same address so the queue can proceed.
  *
- * Each device has its own queue, allowing multiple devices to be managed in parallel.
+ * Threading:
+ * - Scheduling is done on the **main thread** via a [Handler].
+ * - Call [enqueue], [clear] and [signalCommandComplete] from main thread for simplicity.
+ *
+ * @constructor
+ * @param config Initial runtime configuration. You can later change it with [updateConfig].
  */
-class CmdQueueManager {
+class CmdQueueManager(
+    private var config: CmdQueueConfig = CmdQueueConfig()
+) {
+    private data class Cmd(
+        val operation: String,
+        val coalesceKey: String?,      // commands with the same key can be coalesced
+        val replaceIfSameKey: Boolean, // if true, remove pending cmds with same key
+        val runner: () -> Unit         // async BLE starter; completion -> signalCommandComplete()
+    )
 
-    /** Maps MAC addresses to their operation queues. */
-    private val commandQueues: MutableMap<String, ConcurrentLinkedQueue<() -> Boolean>> = ConcurrentHashMap()
+    private val handler = Handler(Looper.getMainLooper())
 
-    /** Tracks which device addresses are currently executing a command. */
-    private val executing: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    // Per-address pending queue
+    private val queues = ConcurrentHashMap<String, ArrayDeque<Cmd>>()
+    // Whether the address has a command currently running
+    private val running = ConcurrentHashMap<String, Boolean>()
+    // Last completion timestamp per address (for rate-limiting)
+    private val lastCompletedAt = ConcurrentHashMap<String, Long>()
+    // Scheduled next runnable per address
+    private val scheduledNext = ConcurrentHashMap<String, Runnable?>()
 
     /**
-     * Enqueues a GATT command for the specified BLE device.
+     * Clear pending state for [address]: removes all pending commands, cancels any scheduled
+     * drain runnable, and flips the running flag to `false`. Call on disconnect/cleanup.
      *
-     * If no command is currently executing for the device, the command will be executed immediately.
-     * Otherwise, it will be added to the queue and run when previous commands complete.
+     * @param address Device MAC address key.
+     */
+    fun clear(address: String) {
+        queues[address]?.clear()
+        scheduledNext.remove(address)?.let { handler.removeCallbacks(it) }
+        running[address] = false
+    }
+
+    /**
+     * Public convenience to configure queue without exposing internal types to app code.
+     * (Used by a public wrapper like `BleGattManager.configureCommandQueue(...)`.)
      *
-     * @param address MAC address of the BLE device
-     * @param operation A human-readable label (used for logging/debugging)
-     * @param execute A function representing the GATT command to execute
-     *                (e.g., `gatt.writeCharacteristic(...)`). Returns true if successfully invoked.
+     * @param minIntervalMs Minimum interval between dequeues per address (ms).
+     * @param maxQueueSize Maximum number of pending commands per address (>=1).
      *
-     * @sample
-     * ```kotlin
-     * queueManager.enqueue("00:11:22:33:44:55", "writeLed") {
-     *     gatt.writeCharacteristic(characteristic)
-     * }
-     * ```
+     * @throws IllegalArgumentException if `maxQueueSize < 1` or `minIntervalMs < 0`.
+     */
+    @Synchronized
+    fun configureCommandQueue(
+        minIntervalMs: Long,
+        maxQueueSize: Int
+    ) {
+        require(minIntervalMs >= 0) { "minIntervalMs must be >= 0" }
+        require(maxQueueSize >= 1) { "maxQueueSize must be >= 1" }
+        updateConfig(
+            config.copy(
+                minIntervalMs = minIntervalMs,
+                maxQueueSizePerAddress = maxQueueSize,
+                overflowPolicy = OverflowPolicy.DROP_OLDEST
+            )
+        )
+    }
+
+    /**
+     * Enqueue a new command for [address].
+     *
+     * Order guarantees:
+     * - Commands for the same [address] execute **one-by-one** in FIFO order,
+     *   **except** when you explicitly coalesce (older *pending* ones with the same key are removed)
+     *   or when overflow trimming drops oldest.
+     *
+     * Overflow:
+     * - After enqueue, if pending size exceeds [CmdQueueConfig.maxQueueSizePerAddress],
+     *   older **pending** commands are removed according to [CmdQueueConfig.overflowPolicy].
+     *
+     * Scheduling:
+     * - If nothing is running for [address], the next drain is scheduled immediately
+     *   (or after [CmdQueueConfig.minIntervalMs], measured from last completion).
+     *
+     * @param address Target device MAC address.
+     * @param operation Label used for logs/diagnostics.
+     * @param coalesceKey Logical key to group commands that can be coalesced (nullable).
+     * @param replaceIfSameKey If `true`, remove older **pending** commands with the same [coalesceKey],
+     * and keep only the newest command.
+     * @param runner Async BLE starter. **Must** eventually lead to a call to [signalCommandComplete]
+     * for the same [address] (e.g., in the GATT callback).
      */
     fun enqueue(
         address: String,
         operation: String,
-        execute: () -> Boolean
+        coalesceKey: String? = null,
+        replaceIfSameKey: Boolean = false,
+        runner: () -> Unit
     ) {
-        val queue = commandQueues.getOrPut(address) { ConcurrentLinkedQueue() }
-        queue.add(execute)
+        val q = queues.getOrPut(address) { ArrayDeque() }
 
-        if (executing.add(address)) {
-            Log.d("CmdQueue", "🚀 [$address] Start executing: $operation")
-            runNext(address)
-        } else {
-            Log.d("CmdQueue", "⏳ [$address] Queued: $operation")
+        // 1) Coalesce: drop older pending commands that share the same key.
+        if (replaceIfSameKey && coalesceKey != null && q.isNotEmpty()) {
+            val it = q.iterator()
+            while (it.hasNext()) {
+                val c = it.next()
+                if (c.coalesceKey == coalesceKey) it.remove()
+            }
+        }
+
+        // 2) Enqueue at tail.
+        q.addLast(Cmd(operation, coalesceKey, replaceIfSameKey, runner))
+
+        // 3) Overflow control: trim from head if pending exceeds max.
+        val max = config.maxQueueSizePerAddress.coerceAtLeast(1)
+        while (q.size > max) {
+            when (config.overflowPolicy) {
+                OverflowPolicy.DROP_OLDEST -> if (q.isNotEmpty()) q.removeFirst()
+            }
+        }
+
+        // 4) If nothing is running, schedule next according to minIntervalMs.
+        if (running[address] != true) {
+            scheduleNext(address, delayMs = computeWait(address))
         }
     }
 
     /**
-     * Executes the next command in the queue for the given device address.
+     * Notify the queue that the **current** command for [address] has completed
+     * (either success or failure). This unlocks the next command.
      *
-     * This is called either immediately upon enqueue (if no command is running),
-     * or after [signalCommandComplete] is invoked to mark the previous command as finished.
-     *
-     * @param address MAC address of the BLE device
-     */
-    private fun runNext(address: String) {
-        val queue = commandQueues[address] ?: return
-        val next = queue.peek() ?: return
-
-        val accepted = try {
-            next.invoke()
-        } catch (e: Exception) {
-            Log.e("CmdQueue", "❌ [$address] Command execution error: ${e.message}", e)
-            false
-        }
-
-        if (!accepted) {
-            Log.w("CmdQueue", "⚠️ [$address] Command rejected by Bluetooth stack or failed to start.")
-            queue.poll() // Remove failed command and try the next one
-            runNext(address)
-        }
-        // If successful, completion must be triggered via signalCommandComplete()
-    }
-
-    /**
-     * Signals that the current GATT operation for the given device has completed.
-     *
-     * This should be called from GATT callbacks such as:
-     * - [android.bluetooth.BluetoothGattCallback.onCharacteristicWrite]
-     * - [android.bluetooth.BluetoothGattCallback.onCharacteristicRead]
-     * - [android.bluetooth.BluetoothGattCallback.onDescriptorWrite]
-     *
-     * @param address MAC address of the BLE device whose operation completed
-     *
-     * @sample
-     * ```kotlin
-     * override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-     *     queueManager.signalCommandComplete(gatt.device.address)
-     * }
-     * ```
+     * @param address Device MAC address whose in-flight op finished.
      */
     fun signalCommandComplete(address: String) {
-        val queue = commandQueues[address] ?: return
-        queue.poll() // Remove the completed command
+        running[address] = false
+        lastCompletedAt[address] = System.currentTimeMillis()
+        scheduleNext(address, delayMs = computeWait(address))
+    }
 
-        if (queue.isEmpty()) {
-            executing.remove(address)
-            Log.d("CmdQueue", "✅ [$address] All queued commands completed.")
-        } else {
-            runNext(address)
+    // ---- Internal helpers ----------------------------------------------------
+
+    /**
+     * Atomically update the runtime configuration of this queue.
+     *
+     * @param newConfig New configuration to apply.
+     */
+    private fun updateConfig(newConfig: CmdQueueConfig) {
+        config = newConfig
+    }
+
+    /** Compute how long to wait before starting the next command for [address]. */
+    private fun computeWait(address: String): Long {
+        val min = config.minIntervalMs.coerceAtLeast(0L)
+        if (min == 0L) return 0L
+        val last = lastCompletedAt[address] ?: return 0L
+        val elapsed = System.currentTimeMillis() - last
+        val remain = min - elapsed
+        return if (remain > 0) remain else 0L
+    }
+
+    /** Cancel any prior schedule and schedule the next drain on the main thread. */
+    private fun scheduleNext(address: String, delayMs: Long) {
+        scheduledNext.remove(address)?.let { handler.removeCallbacks(it) }
+        val r = Runnable { drain(address) }
+        scheduledNext[address] = r
+        if (delayMs > 0) handler.postDelayed(r, delayMs) else handler.post(r)
+    }
+
+    /** Pull the next pending command (if any) and start it. */
+    private fun drain(address: String) {
+        if (running[address] == true) return
+        val q = queues[address] ?: return
+        val next = if (q.isNotEmpty()) q.removeFirst() else run {
+            scheduledNext.remove(address)?.let { handler.removeCallbacks(it) }
+            return
         }
-    }
-
-    /**
-     * Clears the command queue for a specific device address.
-     *
-     * Use this when a device is disconnected or its operations are canceled.
-     *
-     * @param address MAC address of the BLE device
-     */
-    fun clear(address: String) {
-        commandQueues[address]?.clear()
-        commandQueues.remove(address)
-        executing.remove(address)
-        Log.d("CmdQueue", "🧹 [$address] Queue cleared.")
-    }
-
-    /**
-     * Clears all command queues for all devices.
-     *
-     * This should be used during a global shutdown or BLE subsystem reset.
-     */
-    fun clearAll() {
-        commandQueues.clear()
-        executing.clear()
-        Log.d("CmdQueue", "🧨 All queues cleared.")
+        running[address] = true
+        next.runner.invoke() // async BLE call; completion -> signalCommandComplete(address)
     }
 }

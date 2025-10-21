@@ -9,7 +9,6 @@ package io.lightstick.sdk.ble.model
  * The [toByteArray] function generates a 18-byte array that can be sent directly to
  * the BLE device via the LED_EFFECT_PAYLOAD characteristic.
  *
- * @property timestampMs Time sync offset in milliseconds.
  * @property effectIndex Index of the effect to be executed (0–65,535).
  * @property ledMask Bitmask for selecting which LEDs to affect (0x0000 = all LEDs).
  *                   Each bit from LSB to MSB corresponds to LED index 0–15.
@@ -26,7 +25,6 @@ package io.lightstick.sdk.ble.model
  * @sample
  * ```kotlin
  * val payload = LSEffectPayload(
- *     timestampMs = 0u,
  *     effectIndex = 0u,
  *     ledMask = 0xFFFFu,
  *     color = LedColor.BLUE,
@@ -44,7 +42,6 @@ package io.lightstick.sdk.ble.model
  * ```
  */
 data class LSEffectPayload(
-    val timestampMs: UShort = 0u,
     val effectIndex: UShort = 0u,
     val ledMask: UShort = 0x0000u,
     val color: LedColor = LedColor.WHITE,
@@ -63,25 +60,22 @@ data class LSEffectPayload(
      *
      * Format:
      * ```
-     * [0-1] timestampMs (LSB, MSB)
-     * [2-3] effectIndex (LSB, MSB)
-     * [4-5]   ledMask (LSB, MSB)
-     * [6-8]   color (R, G, B)
-     * [9]     effectType (enum)
-     * [10-11]   durationMs (LSB, MSB)
-     * [12]     period
-     * [13]     spf
-     * [14]    randomColor
-     * [15]    randomDelay
-     * [16]    fade
-     * [17]    syncIndex
+     * [0-1] effectIndex (LSB, MSB)
+     * [2-3]   ledMask (LSB, MSB)
+     * [4-6]   color (R, G, B)
+     * [7]     effectType (enum)
+     * [8-9]   durationMs (LSB, MSB)
+     * [10]     period
+     * [11]     spf
+     * [12]    randomColor
+     * [13]    randomDelay
+     * [14]    fade
+     * [15]    syncIndex
      * ```
      *
-     * @return ByteArray containing the packed effect payload (18 bytes).
+     * @return ByteArray containing the packed effect payload (16 bytes).
      */
     fun toByteArray(): ByteArray = byteArrayOf(
-        (timestampMs.toInt() shr 8).toByte(),
-        (timestampMs.toInt() and 0xFF).toByte(),
         (effectIndex.toInt() shr 8).toByte(),
         (effectIndex.toInt() and 0xFF).toByte(),
         (ledMask.toInt() and 0xFF).toByte(),

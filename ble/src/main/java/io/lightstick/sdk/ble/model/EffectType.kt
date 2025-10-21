@@ -26,9 +26,15 @@ enum class EffectType(val value: UByte) {
     STROBE(2u),
 
     /**
+     * Slower on/off toggle than STROBE (human-perceivable blink).
+     * Use when you need a softer cadence than strobe.
+     */
+    BLINK(3u),
+
+    /**
      * Smooth fade-in and fade-out animation (breathing effect).
      */
-    BREATH(3u);
+    BREATH(4u);
 
     companion object {
         /**
