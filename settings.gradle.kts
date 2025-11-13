@@ -1,19 +1,13 @@
 pluginManagement {
     repositories {
+        google()
+        mavenCentral()
         gradlePluginPortal()
-        google()
-        mavenCentral()
     }
 }
-
 dependencyResolutionManagement {
-    repositories {
-        google()
-        mavenCentral()
-    }
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral() }
 }
-
-rootProject.name = "LightStickSDK"
-include(":ble")
-include(":app")
-include(":sdk:ble")
+rootProject.name = "lightstick-sdk"
+include(":lightstick", ":lightstick-internal-core", ":lightstick-sdk")

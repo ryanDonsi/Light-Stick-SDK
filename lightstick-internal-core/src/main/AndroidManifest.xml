@@ -1,0 +1,34 @@
+<manifest package="com.lightstick.internal"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Dangerous permissions: host app must request at runtime -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS"/>
+    <uses-permission android:name="android.permission.READ_SMS"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+
+    <!-- BLE permissions (if not already merged from public module) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <application>
+        <!-- SMS -->
+        <receiver
+            android:name="com.lightstick.internal.event.monitors.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Phone state -->
+        <receiver
+            android:name="com.lightstick.internal.event.monitors.CallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
