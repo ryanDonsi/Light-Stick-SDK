@@ -126,9 +126,11 @@ object Facade {
     fun startScan(onFound: (mac: String, name: String?, rssi: Int?) -> Unit) {
         requireInit()
         scan.start(appContext) { mac, name, rssi ->
-            lastSeenName[mac] = name
-            lastSeenRssi[mac] = rssi
-            onFound(mac, name, rssi)
+            if (mac.isNotBlank()) {
+                lastSeenName[mac] = name ?: "Unknown"
+                lastSeenRssi[mac] = rssi ?: -100
+                onFound(mac, name, rssi)
+            }
         }
     }
 
