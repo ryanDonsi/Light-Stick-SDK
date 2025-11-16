@@ -1,11 +1,14 @@
 import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.JavaVersion
+import org.gradle.api.plugins.JavaBasePlugin
 
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.dokka)
-    id("maven-publish")
+    alias(libs.plugins.maven.publish)
 }
 
 android {
@@ -18,9 +21,12 @@ android {
     }
 
     buildTypes {
-        debug { isMinifyEnabled = false }
         release {
             isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
@@ -28,9 +34,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlin {
         jvmToolchain(libs.versions.jvmTarget.get().toInt())
     }
+
     kotlinOptions {
         jvmTarget = libs.versions.jvmTarget.get()
     }
@@ -38,6 +46,7 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            withJavadocJar()
         }
     }
 }
@@ -46,7 +55,6 @@ dependencies {
     implementation(libs.androidx.annotation)
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
-
     implementation(project(":lightstick-internal-core"))
 
     testImplementation(libs.junit)
@@ -54,38 +62,46 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
 }
 
-val dokkaHtmlJar by tasks.registering(Jar::class) {
+// ──────────────────────────────────────────────────────────────
+// 1. Sources Jar – archiveFile 자동 생성
+// ──────────────────────────────────────────────────────────────
+val sourcesJar by tasks.registering(Jar::class) {
     group = JavaBasePlugin.DOCUMENTATION_GROUP
-    description = "Assembles a Javadoc jar from Dokka HTML output."
-    archiveClassifier.set("javadoc")
-    dependsOn(tasks.named("dokkaHtml"))
-    from(layout.buildDirectory.dir("dokka/html"))
+    archiveClassifier.set("sources")
+    archiveFileName.convention("lightstick-${project.version}-sources.jar")
+    destinationDirectory.convention(layout.buildDirectory.dir("jars"))
+
+    val main = android.sourceSets.getByName("main")
+    from(main.java.srcDirs)
+    from(kotlin.sourceSets.getByName("main").kotlin.srcDirs)
 }
 
+// ──────────────────────────────────────────────────────────────
+// 2. Javadoc Jar
+// ──────────────────────────────────────────────────────────────
+val dokkaJavadocJar by tasks.registering(Jar::class) {
+    group = JavaBasePlugin.DOCUMENTATION_GROUP
+    archiveClassifier.set("javadoc")
+    archiveFileName.convention("lightstick-${project.version}-javadoc.jar")
+    destinationDirectory.convention(layout.buildDirectory.dir("jars"))
+
+    dependsOn(tasks.named("dokkaJavadoc"))
+    from(layout.buildDirectory.dir("dokka/javadoc"))
+}
+
+// ──────────────────────────────────────────────────────────────
+// 3. Maven Publish
+// ──────────────────────────────────────────────────────────────
 publishing {
     publications {
         create<MavenPublication>("mavenRelease") {
-            afterEvaluate {
-                from(components["release"])
-            }
-
-            artifact(dokkaHtmlJar.get())
+            afterEvaluate { from(components["release"]) }
+            artifact(sourcesJar.get())
+            artifact(dokkaJavadocJar.get())
 
             groupId = "com.lightstick"
             artifactId = "lightstick"
             version = "1.0.0"
-
-            pom {
-                name.set("LightStick SDK (core)")
-                description.set("LightStick public API library. Use :lightstick-sdk (fused) to ship as a single AAR.")
-                url.set("https://example.com/lightstick-sdk")
-                licenses {
-                    license {
-                        name.set("Apache-2.0")
-                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
-                    }
-                }
-            }
         }
     }
     repositories {

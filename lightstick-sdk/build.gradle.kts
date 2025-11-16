@@ -2,10 +2,13 @@ import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.kotlin.dsl.register
 import org.gradle.api.publish.maven.MavenPublication
+import com.android.build.gradle.tasks.BundleAar
+import org.gradle.api.plugins.JavaBasePlugin
 
 plugins {
     alias(libs.plugins.android.fusedlibrary)
-    `maven-publish`
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.maven.publish)
 }
 
 androidFusedLibrary {
@@ -18,39 +21,83 @@ dependencies {
     include(project(":lightstick-internal-core"))
 }
 
+// ──────────────────────────────────────────────────────────────
+// 4. Sources Jar – 모든 모듈 소스 취합
+// ──────────────────────────────────────────────────────────────
 val aggregatedSources by tasks.registering(Jar::class) {
-    archiveBaseName.set("lightstick-sdk")
+    group = JavaBasePlugin.DOCUMENTATION_GROUP
     archiveClassifier.set("sources")
-    destinationDirectory.set(layout.buildDirectory.dir("outputs/sources"))
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    duplicatesStrategy = DuplicatesStrategy.WARN
+    archiveFileName.convention("lightstick-sdk-${project.version}-sources.jar")
+    destinationDirectory.convention(layout.buildDirectory.dir("jars"))
 
-    fun maybeFrom(path: String) {
-        val f = file(path)
-        if (f.exists()) from(f)
+    val modules = listOf(":lightstick", ":lightstick-internal-core")
+    modules.forEach { path ->
+        val proj = project(path)
+        if (proj.plugins.hasPlugin("com.android.library")) {
+            val androidExt = proj.extensions.getByName("android") as com.android.build.gradle.LibraryExtension
+            val main = androidExt.sourceSets.getByName("main")
+            from(main.java.srcDirs)
+
+            val kotlinExt = proj.extensions.findByType(org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension::class.java)
+            kotlinExt?.let {
+                from(it.sourceSets.getByName("main").kotlin.srcDirs)
+            }
+        }
     }
-    maybeFrom(project(":lightstick").file("src/main/java").path)
-    maybeFrom(project(":lightstick").file("src/main/kotlin").path)
-    maybeFrom(project(":lightstick-internal-core").file("src/main/java").path)
-    maybeFrom(project(":lightstick-internal-core").file("src/main/kotlin").path)
 }
 
+// ──────────────────────────────────────────────────────────────
+// 5. Javadoc Jar
+// ──────────────────────────────────────────────────────────────
+val aggregatedJavadoc by tasks.registering(Jar::class) {
+    group = JavaBasePlugin.DOCUMENTATION_GROUP
+    archiveClassifier.set("javadoc")
+    duplicatesStrategy = DuplicatesStrategy.WARN
+    archiveFileName.convention("lightstick-sdk-${project.version}-javadoc.jar")
+    destinationDirectory.convention(layout.buildDirectory.dir("jars"))
+
+    val modules = listOf(":lightstick", ":lightstick-internal-core")
+    modules.forEach { path ->
+        val proj = project(path)
+        val dokkaTask = proj.tasks.findByName("dokkaJavadoc") ?: proj.tasks.register("dokkaJavadoc").get()
+        dependsOn(dokkaTask)
+        from(proj.layout.buildDirectory.dir("dokka/javadoc"))
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// 6. AAR 이름
+// ──────────────────────────────────────────────────────────────
+tasks.withType<BundleAar>().configureEach {
+    archiveFileName.set("lightstick-sdk-${project.version}.aar")
+}
+
+// ──────────────────────────────────────────────────────────────
+// 7. Maven Publish
+// ──────────────────────────────────────────────────────────────
 publishing {
     publications {
         register<MavenPublication>("release") {
-            groupId = "io.lightstick"
+            groupId = "com.lightstick"
             artifactId = "lightstick-sdk"
             version = "1.3.0"
 
             from(components["fusedLibraryComponent"])
+            artifact(aggregatedSources.get())
+            artifact(aggregatedJavadoc.get())
 
-            artifacts.forEach {
-                if (it.extension == "aar") {
-                    it.classifier = null
-                    it.file.renameTo(File(it.file.parentFile, "${it.file.nameWithoutExtension}-${version}.aar"))
+            pom {
+                name.set("LightStick SDK (Fused)")
+                description.set("All-in-one AAR with public API and internal core.")
+                url.set("https://example.com/lightstick-sdk")
+                licenses {
+                    license {
+                        name.set("Apache-2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
                 }
             }
-
-            artifact(aggregatedSources)
         }
     }
     repositories {
