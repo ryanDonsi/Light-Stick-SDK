@@ -48,10 +48,10 @@ data class LSEffectPayload(
     val effectType: EffectType = EffectType.ON,
     val durationMs: Int = 0,
     val period: Int = 0,
-    val spf: Int = 0,
+    val spf: Int = 100,
     val randomColor: Int = 0,
     val randomDelay: Int = 0,
-    val fade: Int = 0,
+    val fade: Int = 100,
     val syncIndex: Int = 0
 ) {
 
@@ -129,11 +129,29 @@ data class LSEffectPayload(
                 randomDelay = randomDelay
             )
 
-        /** Fully OFF (black). */
+        /** Fully OFF (black).
+         *
+         * @param period Optional period byte (firmware-specific).
+         * @param randomDelay Optional randomDelay byte.
+         * @return A new [LSEffectPayload] configured for [EffectType.OFF].
+         */
         @JvmStatic
-        fun off() = LSEffectPayload(color = Colors.BLACK, effectType = EffectType.OFF)
+        fun off(period: Int = 0, randomDelay: Int = 0) =
+            LSEffectPayload(
+                color = Colors.BLACK,
+                period = period,
+                randomDelay = randomDelay,
+                effectType = EffectType.OFF
+            )
 
-        /** Strobe effect. */
+        /** Strobe effect.
+         *
+         * @param color LED color.
+         * @param period Optional period byte (firmware-specific).
+         * @param randomColor Optional randomColor byte.
+         * @param randomDelay Optional randomDelay byte.
+         * @return A new [LSEffectPayload] configured for [EffectType.STROBE].
+         */
         @JvmStatic
         fun strobe(color: Color, period: Int, randomColor: Int = 0, randomDelay: Int = 0) =
             LSEffectPayload(
@@ -144,7 +162,14 @@ data class LSEffectPayload(
                 randomDelay = randomDelay
             )
 
-        /** Blink effect. */
+        /** Blink effect.
+         *
+         * @param color LED color.
+         * @param period Optional period byte (firmware-specific).
+         * @param randomColor Optional randomColor byte.
+         * @param randomDelay Optional randomDelay byte.
+         * @return A new [LSEffectPayload] configured for [EffectType.BLINK].
+         */
         @JvmStatic
         fun blink(color: Color, period: Int, randomColor: Int = 0, randomDelay: Int = 0) =
             LSEffectPayload(
@@ -155,7 +180,14 @@ data class LSEffectPayload(
                 randomDelay = randomDelay
             )
 
-        /** Breathing effect. */
+        /** Breathing effect.
+         *
+         * @param color LED color.
+         * @param period Optional period byte (firmware-specific).
+         * @param randomColor Optional randomColor byte.
+         * @param randomDelay Optional randomDelay byte.
+         * @return A new [LSEffectPayload] configured for [EffectType.BREATH].
+         */
         @JvmStatic
         fun breath(color: Color, period: Int, randomColor: Int = 0, randomDelay: Int = 0) =
             LSEffectPayload(

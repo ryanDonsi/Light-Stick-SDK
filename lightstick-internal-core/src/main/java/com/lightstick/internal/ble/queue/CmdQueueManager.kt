@@ -31,6 +31,7 @@ internal class CmdQueueManager(
     private val handler = Handler(Looper.getMainLooper())
     private val queues = ConcurrentHashMap<String, ArrayDeque<Cmd>>()
     private val running = ConcurrentHashMap<String, Boolean>()
+    private val disconnected = ConcurrentHashMap<String, Boolean>()
     private val lastDone = ConcurrentHashMap<String, Long>()
     private val scheduled = ConcurrentHashMap<String, Runnable?>()
 
@@ -38,6 +39,7 @@ internal class CmdQueueManager(
      * Clears the pending queue and scheduled task for [address]. Call on disconnect/cleanup.
      */
     fun clear(address: String) {
+        disconnected[address] = true
         queues[address]?.clear()
         scheduled.remove(address)?.let { handler.removeCallbacks(it) }
         running[address] = false
@@ -60,6 +62,8 @@ internal class CmdQueueManager(
         replaceIfSameKey: Boolean = false,
         runner: () -> Unit
     ) {
+        if (disconnected[address] == true) return
+
         val q = queues.getOrPut(address) { ArrayDeque() }
 
         // coalescing: keep only the latest pending with the same key
@@ -87,6 +91,7 @@ internal class CmdQueueManager(
      * Signals that the current command for [address] has completed.
      */
     fun signalComplete(address: String) {
+        if (disconnected[address] == true) return
         running[address] = false
         lastDone[address] = System.currentTimeMillis()
         scheduleNext(address, waitFor(address))
@@ -109,9 +114,11 @@ internal class CmdQueueManager(
     }
 
     private fun drain(address: String) {
+        if (disconnected[address] == true) return
         if (running[address] == true) return
         val q = queues[address] ?: return
-        val next = if (q.isNotEmpty()) q.removeFirst() else run {
+
+        val next = q.pollFirst() ?: run {
             scheduled.remove(address)?.let { handler.removeCallbacks(it) }
             return
         }
