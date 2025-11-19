@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.queue.CmdQueueConfig
 import com.lightstick.internal.ble.queue.CmdQueueManager
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * 핵심 포인트
  * - 연결은 항상 하나만 유지. 새로 연결 시 기존 세션 정리.
- * - 쓰기는 내부 직렬 큐(CmdQueueManager)로 순차 처리하여 충돌 방지.
+ * - 쓰기/읽기는 내부 직렬 큐(CmdQueueManager)로 순차 처리하여 충돌 방지.
  * - **Coalesce 지원**: 같은 키(coalesceKey)를 가진 대기 작업을 최신 데이터로 치환해
  *   지연을 최소화할 수 있음(replaceIfSameKey=true).
  * - 퍼미션은 모든 퍼블릭 API에서 보강(ensureBtConnect).
@@ -54,7 +55,7 @@ internal class GattClient(private val context: Context) {
 
     private val connectTimeouts = ConcurrentHashMap<String, Runnable>()
 
-    // GATT 작업 직렬 큐 (Coalesce는 enqueue에서 제어)
+    // GATT 작업 직렬 큐 (Write와 Read 모두 처리)
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
             minIntervalMs = 20L,
@@ -81,48 +82,62 @@ internal class GattClient(private val context: Context) {
         onFailed: (Throwable) -> Unit
     ) {
         Perms.ensureBtConnect(context)
-        disconnectInternal()
+        mainHandler.post {
+            // 기존 세션 정리
+            disconnectInternal()
 
-        val device = try {
-            bluetoothAdapter.getRemoteDevice(address)
-        } catch (e: IllegalArgumentException) {
-            onFailed(IllegalArgumentException("Invalid MAC address: $address", e))
-            return
-        }
+            val device = bluetoothAdapter.getRemoteDevice(address)
+            val cb = ConnectCallbacks(onConnected, onFailed)
+            pendingConnect[address] = cb
 
-        currentAddress = address
-        pendingConnect[address] = ConnectCallbacks(onConnected, onFailed)
-
-        val timeout = Runnable {
-            if (pendingConnect.remove(address) != null) {
-                disconnectInternal()
-                onFailed(TimeoutException("GATT connect timeout"))
+            // 타임아웃 설정
+            val timeout = Runnable {
+                val removed = pendingConnect.remove(address)
+                if (removed != null) {
+                    removed.onFailed(IllegalStateException("Connect timeout"))
+                    disconnectInternal()
+                }
             }
-        }
-        connectTimeouts[address] = timeout
-        mainHandler.postDelayed(timeout, 10_000L)
+            connectTimeouts[address] = timeout
+            mainHandler.postDelayed(timeout, 10_000)
 
-        try {
-            gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-        } catch (se: SecurityException) {
-            pendingConnect.remove(address)
-            connectTimeouts.remove(address)?.let(mainHandler::removeCallbacks)
-            onFailed(se)
-        } catch (t: Throwable) {
-            pendingConnect.remove(address)
-            connectTimeouts.remove(address)?.let(mainHandler::removeCallbacks)
-            onFailed(t)
+            try {
+                gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                } else {
+                    device.connectGatt(context, false, gattCallback)
+                }
+                currentAddress = address
+            } catch (e: Throwable) {
+                connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                pendingConnect.remove(address)
+                onFailed(e)
+            }
         }
     }
 
     /**
-     * 현재 연결을 종료(안전 호출).
-     * - 큐/콜백/리소스까지 정리.
+     * 현재 GATT 연결 해제.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect() {
         Perms.ensureBtConnect(context)
-        disconnectInternal()
+        mainHandler.post { disconnectInternal() }
+    }
+
+    private fun disconnectInternal() {
+        val addr = currentAddress
+        if (addr != null) {
+            queueManager.clear(addr)
+            connectTimeouts.remove(addr)?.let { mainHandler.removeCallbacks(it) }
+        }
+        try {
+            gatt?.disconnect()
+            gatt?.close()
+        } catch (_: Throwable) {
+        }
+        gatt = null
+        currentAddress = null
     }
 
     /**
@@ -131,50 +146,141 @@ internal class GattClient(private val context: Context) {
      */
     @Suppress("unused")
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun isConnected(): Boolean =
-        gatt?.let { bluetoothManager.getConnectionState(it.device, BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED } == true
+    fun isConnected(): Boolean {
+        Perms.ensureBtConnect(context)
+        return gatt?.let {
+            bluetoothManager.getConnectionState(it.device, BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED
+        } == true
+    }
 
     /**
-     * MTU 요청.
-     * - 성공 시 negotiated MTU 콜백.
+     * MTU 변경 요청 (API 21+).
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun requestMtu(preferred: Int, onResult: (Result<Int>) -> Unit) {
+    fun requestMtu(mtu: Int, onResult: (Result<Int>) -> Unit) {
         Perms.ensureBtConnect(context)
         val g = gatt ?: run {
             onResult(Result.failure(IllegalStateException("Not connected")))
             return
         }
-        val address = g.device.address
-        pendingMtu[address] = onResult
+        if (g.device.address != currentAddress) {
+            onResult(Result.failure(IllegalStateException("Address mismatch")))
+            return
+        }
+        pendingMtu[g.device.address] = onResult
         try {
-            val ok = g.requestMtu(preferred)
-            if (!ok) {
-                pendingMtu.remove(address)?.invoke(Result.failure(IllegalStateException("requestMtu() returned false")))
-            }
-        } catch (se: SecurityException) {
-            pendingMtu.remove(address)?.invoke(Result.failure(se))
+            g.requestMtu(mtu)
+        } catch (e: Throwable) {
+            pendingMtu.remove(g.device.address)
+            onResult(Result.failure(e))
         }
     }
 
     // --------------------------------------------------------------------------------------------
-    // Write (NO_RESPONSE + Coalesce 지원)
+    // Read (이제 CmdQueueManager 사용)
     // --------------------------------------------------------------------------------------------
 
     /**
-     * NO_RESPONSE 쓰기를 큐에 enqueue한다.
+     * 특성 읽기 (이제 큐를 통해 직렬화됨).
      *
-     * @param service          서비스 UUID
-     * @param characteristic   캐릭터리스틱 UUID
-     * @param data             전송 데이터
-     * @param coalesceKey      (선택) 같은 키면 대기 중 작업을 최신으로 치환
-     * @param replaceIfSameKey true면 같은 키 대기 작업을 **즉시 대체**(최신만 유지)
+     * @param address 디바이스 주소 (현재 연결과 일치해야 함)
+     * @param serviceUuid 서비스 UUID
+     * @param charUuid 특성 UUID
+     * @param onResult 읽기 결과 콜백
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readCharacteristic(
+        address: String,
+        serviceUuid: UUID,
+        charUuid: UUID,
+        onResult: (Result<ByteArray>) -> Unit
+    ) {
+        Perms.ensureBtConnect(context)
+        val g = gatt ?: run {
+            onResult(Result.failure(IllegalStateException("Not connected")))
+            return
+        }
+        if (g.device.address != address) {
+            onResult(Result.failure(IllegalStateException("Address mismatch")))
+            return
+        }
+        val chr = findCharacteristic(g, serviceUuid, charUuid) ?: run {
+            onResult(Result.failure(IllegalStateException("Characteristic not found")))
+            return
+        }
+
+        // Read 작업을 큐에 추가
+        queueManager.enqueue(
+            address = address,
+            operation = "read"
+        ) {
+            pendingRead[address] = onResult
+            try {
+                val success = g.readCharacteristic(chr)
+                if (!success) {
+                    pendingRead.remove(address)
+                    onResult(Result.failure(IllegalStateException("readCharacteristic() returned false")))
+                    // 실패해도 다음 작업을 위해 complete 신호
+                    queueManager.signalComplete(address)
+                }
+            } catch (e: Throwable) {
+                pendingRead.remove(address)
+                onResult(Result.failure(e))
+                queueManager.signalComplete(address)
+            }
+        }
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Write
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * 특성 쓰기 (WITH_RESPONSE) - 큐를 통해 직렬화.
      *
-     * @return true면 큐 투입 성공(실제 완료는 onCharacteristicWrite에서 신호), false면 즉시 실패
+     * 현재 프로젝트에서는 writeNoResponse()를 주로 사용하지만,
+     * 향후 확실한 전송 보장이 필요한 경우를 위해 유지.
+     */
+    @Suppress("unused")
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun writeCharacteristic(
+        service: UUID,
+        characteristic: UUID,
+        data: ByteArray
+    ): Boolean {
+        Perms.ensureBtConnect(context)
+        val g = gatt ?: return false
+        val addr = g.device.address
+        val chr = findCharacteristic(g, service, characteristic) ?: return false
+
+        queueManager.enqueue(
+            address = addr,
+            operation = "write"
+        ) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    chr.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    g.writeCharacteristic(chr, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+                } else {
+                    @Suppress("DEPRECATION")
+                    run {
+                        chr.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                        chr.value = data
+                        g.writeCharacteristic(chr)
+                    }
+                }
+            } catch (_: Throwable) {
+                queueManager.signalComplete(addr)
+            }
+        }
+        return true
+    }
+
+    /**
+     * NO_RESPONSE 쓰기 - Coalesce 지원.
      *
-     * false가 되는 전형적 경우:
-     * - 연결 없음(gatt==null)
-     * - 서비스/캐릭터리스틱 미발견(서비스 디스커버리 전/UUID 불일치)
+     * @param coalesceKey 같은 키의 대기 작업을 치환하려면 키 제공
+     * @param replaceIfSameKey true면 같은 키의 기존 대기 항목 제거 후 최신 추가
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun writeNoResponse(
@@ -239,129 +345,60 @@ internal class GattClient(private val context: Context) {
             return
         }
         val chr = findCharacteristic(g, serviceUuid, charUuid) ?: run {
-            onResult(Result.failure(IllegalStateException("Characteristic not found: $charUuid")))
+            onResult(Result.failure(IllegalStateException("Characteristic not found")))
             return
         }
+
         val addr = g.device.address
         pendingEnableNotify[addr] = onResult
 
-        queueManager.enqueue(
-            address = addr,
-            operation = "enableNotify",
-            coalesceKey = "notify:$charUuid",   // enable 동작은 자체적으로 중복 치환 가능
-            replaceIfSameKey = true
-        ) {
-            try {
-                @Suppress("MissingPermission")
-                g.setCharacteristicNotification(chr, true)
-                // CCCD: Notifications enable(0x0100) — 상수로 명확화
-                writeDescriptor(
-                    g = g,
-                    chr = chr,
-                    descUuid = UuidConstants.CCCD,
-                    value = UuidConstants.CCCD_ENABLE_NOTIFICATION
-                )
-            } catch (se: SecurityException) {
-                pendingEnableNotify.remove(addr)?.invoke(Result.failure(se))
-                queueManager.signalComplete(addr)
-            } catch (t: Throwable) {
-                pendingEnableNotify.remove(addr)?.invoke(Result.failure(t))
-                queueManager.signalComplete(addr)
-            }
-        }
-    }
-
-    /**
-     * 내부 Descriptor 쓰기 유틸.
-     * - enableNotifications() 경로에서 호출되며, 성공/실패를 pendingDescWrite → pendingEnableNotify로 전달한다.
-     * - 퍼미션 보강 및 Lint 억제를 함수 내부에서 처리한다.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun writeDescriptor(
-        g: BluetoothGatt,
-        chr: BluetoothGattCharacteristic,
-        descUuid: UUID,
-        value: ByteArray
-    ) {
-        Perms.ensureBtConnect(context)
-
-        val desc = chr.getDescriptor(descUuid)
-        val addr = g.device.address
-        if (desc == null) {
-            pendingEnableNotify.remove(addr)?.invoke(
-                Result.failure(IllegalStateException("Descriptor not found: $descUuid"))
-            )
-            queueManager.signalComplete(addr)
-            return
-        }
-
-        // enableNotifications 경유인 경우, desc write 성공 시 최종 성공 처리
-        pendingDescWrite[addr] = { res ->
-            pendingEnableNotify.remove(addr)?.invoke(res)
-        }
-
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                @Suppress("MissingPermission")
-                g.writeDescriptor(desc, value)
-            } else {
-                @Suppress("DEPRECATION", "MissingPermission")
-                run {
-                    desc.value = value
-                    g.writeDescriptor(desc)
+            val enabled = g.setCharacteristicNotification(chr, true)
+            if (!enabled) {
+                pendingEnableNotify.remove(addr)
+                onResult(Result.failure(IllegalStateException("setCharacteristicNotification failed")))
+                return
+            }
+
+            val cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+            val descriptor = chr.getDescriptor(cccdUuid) ?: run {
+                pendingEnableNotify.remove(addr)
+                onResult(Result.failure(IllegalStateException("CCCD descriptor not found")))
+                return
+            }
+
+            pendingDescWrite[addr] = { descResult ->
+                val enableCb = pendingEnableNotify.remove(addr)
+                if (descResult.isSuccess) {
+                    enableCb?.invoke(Result.success(Unit))
+                } else {
+                    enableCb?.invoke(Result.failure(descResult.exceptionOrNull() ?: IllegalStateException("Descriptor write failed")))
                 }
             }
-        } catch (se: SecurityException) {
-            pendingDescWrite.remove(addr)?.invoke(Result.failure(se))
-            queueManager.signalComplete(addr)
-        } catch (t: Throwable) {
-            pendingDescWrite.remove(addr)?.invoke(Result.failure(t))
-            queueManager.signalComplete(addr)
-        }
-    }
 
-    // --------------------------------------------------------------------------------------------
-    // Generic Read
-    // --------------------------------------------------------------------------------------------
-
-    /**
-     * 지정 특성 읽기. 연결/주소/UUID 검증 후 읽기 결과를 콜백으로 반환.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readCharacteristic(
-        address: String,
-        serviceUuid: UUID,
-        charUuid: UUID,
-        onResult: (Result<ByteArray>) -> Unit
-    ) {
-        Perms.ensureBtConnect(context)
-
-        val g = gatt ?: run {
-            onResult(Result.failure(IllegalStateException("Not connected")))
-            return
-        }
-        if (g.device.address != address) {
-            onResult(Result.failure(IllegalStateException("Address mismatch")))
-            return
-        }
-        val chr = findCharacteristic(g, serviceUuid, charUuid) ?: run {
-            onResult(Result.failure(IllegalStateException("Characteristic not found: $charUuid")))
-            return
-        }
-
-        pendingRead[address] = onResult
-
-        try {
-            val ok: Boolean = g.readCharacteristic(chr)
-            if (!ok) {
-                pendingRead.remove(address)?.invoke(
-                    Result.failure(IllegalStateException("readCharacteristic returned false"))
-                )
+            // Descriptor write도 큐를 통해 직렬화
+            queueManager.enqueue(
+                address = addr,
+                operation = "enableNotify"
+            ) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        g.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        run {
+                            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                            g.writeDescriptor(descriptor)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    pendingDescWrite.remove(addr)?.invoke(Result.failure(e))
+                    queueManager.signalComplete(addr)
+                }
             }
-        } catch (se: SecurityException) {
-            pendingRead.remove(address)?.invoke(Result.failure(se))
-        } catch (t: Throwable) {
-            pendingRead.remove(address)?.invoke(Result.failure(t))
+        } catch (e: Throwable) {
+            pendingEnableNotify.remove(addr)
+            onResult(Result.failure(e))
         }
     }
 
@@ -370,44 +407,35 @@ internal class GattClient(private val context: Context) {
     // --------------------------------------------------------------------------------------------
 
     private val gattCallback = object : BluetoothGattCallback() {
-
-        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             val address = gatt.device.address
-            when (newState) {
-                BluetoothProfile.STATE_CONNECTED -> {
-                    connectTimeouts.remove(address)?.let(mainHandler::removeCallbacks)
-                    try {
-                        gatt.discoverServices()
-                    } catch (_: SecurityException) {
-                        val cb = pendingConnect.remove(address)
-                        disconnectInternal()
-                        cb?.onFailed?.invoke(SecurityException("discoverServices requires BLUETOOTH_CONNECT"))
-                    }
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                try {
+                    gatt.discoverServices()
+                } catch (e: Throwable) {
+                    connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                    pendingConnect.remove(address)?.onFailed(e)
                 }
-                BluetoothProfile.STATE_DISCONNECTED -> {
-                    cleanupAfterDisconnect(address, gatt)
-                    if (pendingConnect.remove(address) != null && status != BluetoothGatt.GATT_SUCCESS) {
-                        connectTimeouts.remove(address)?.let(mainHandler::removeCallbacks)
-                    }
-                }
+            } else {
+                connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                val cb = pendingConnect.remove(address)
+                cb?.onFailed(IllegalStateException("Connection failed or disconnected"))
             }
         }
 
-        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             val address = gatt.device.address
+            connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
             val cb = pendingConnect.remove(address)
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 cb?.onConnected?.invoke()
             } else {
-                cb?.onFailed?.invoke(IllegalStateException("onServicesDiscovered failed: $status"))
-                disconnectInternal()
+                cb?.onFailed?.invoke(IllegalStateException("Service discovery failed: $status"))
             }
         }
 
-        // API < 33
-        @Deprecated("Deprecated in API 33, kept for compatibility.")
+        // Android 12 이하 호환성 유지
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         override fun onCharacteristicRead(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
@@ -418,13 +446,18 @@ internal class GattClient(private val context: Context) {
                 pendingRead.remove(address)?.invoke(
                     Result.failure(IllegalStateException("Read failed: $status"))
                 )
+                // 실패해도 큐의 다음 작업 진행
+                queueManager.signalComplete(address)
                 return
             }
             val value: ByteArray = characteristic.value ?: ByteArray(0)
             pendingRead.remove(address)?.invoke(Result.success(value))
+            // 성공 시에도 큐의 다음 작업 진행
+            queueManager.signalComplete(address)
         }
 
-        // API 33+
+        // Android 13+ (API 33)
+        @RequiresApi(Build.VERSION_CODES.TIRAMISU)
         override fun onCharacteristicRead(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
@@ -436,9 +469,11 @@ internal class GattClient(private val context: Context) {
                 pendingRead.remove(address)?.invoke(
                     Result.failure(IllegalStateException("Read failed: $status"))
                 )
+                queueManager.signalComplete(address)
                 return
             }
             pendingRead.remove(address)?.invoke(Result.success(value))
+            queueManager.signalComplete(address)
         }
 
         override fun onCharacteristicWrite(
@@ -486,35 +521,4 @@ internal class GattClient(private val context: Context) {
         val svc = g.getService(serviceUuid) ?: return null
         return svc.getCharacteristic(charUuid)
     }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun disconnectInternal() {
-        currentAddress?.let { connectTimeouts.remove(it)?.let(mainHandler::removeCallbacks) }
-
-        gatt?.let { g ->
-            try { g.disconnect() } catch (_: SecurityException) {}
-            try { g.close() } catch (_: Throwable) {}
-        }
-
-        currentAddress?.let { queueManager.clear(it) }
-        currentAddress = null
-        gatt = null
-
-        pendingConnect.clear()
-        pendingMtu.clear()
-        pendingRead.clear()
-        pendingEnableNotify.clear()
-        pendingDescWrite.clear()
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun cleanupAfterDisconnect(address: String, gatt: BluetoothGatt) {
-        connectTimeouts.remove(address)?.let(mainHandler::removeCallbacks)
-        queueManager.clear(address)
-        try { gatt.close() } catch (_: Throwable) {}
-        if (currentAddress == address) currentAddress = null
-        if (this.gatt == gatt) this.gatt = null
-    }
-
-    private class TimeoutException(message: String) : RuntimeException(message)
 }
