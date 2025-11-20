@@ -87,34 +87,34 @@ sealed interface EventAction {
     }
 
     /**
-     * Sends a single 16-byte LED effect frame to the target device(s).
+     * Sends a single 20-byte LED effect frame to the target device(s).
      *
      * This corresponds to one LED effect payload as defined by the firmware protocol.
      *
-     * @param bytes16 The 16-byte array representing the effect frame.
-     * @throws IllegalArgumentException If [bytes16] is not exactly 16 bytes long.
+     * @param bytes20 The 20-byte array representing the effect frame.
+     * @throws IllegalArgumentException If [bytes20] is not exactly 20 bytes long.
      * @since 1.0.0
      * @sample com.lightstick.samples.EventSamples.sampleSendEffectAction
      */
-    data class SendEffectFrame(val bytes16: ByteArray) : EventAction {
+    data class SendEffectFrame(val bytes20: ByteArray) : EventAction {
         init {
-            require(bytes16.size == 16) { "bytes16 must be exactly 16 bytes" }
+            require(bytes20.size == 20) { "bytes20 must be exactly 20 bytes" }
         }
 
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is SendEffectFrame) return false
-            return bytes16.contentEquals(other.bytes16)
+            return bytes20.contentEquals(other.bytes20)
         }
 
-        override fun hashCode(): Int = bytes16.contentHashCode()
+        override fun hashCode(): Int = bytes20.contentHashCode()
     }
 
     /**
      * Plays a time-sequenced list of effect frames on the target device(s).
      *
      * Each element is a pair: `(timestampMs, frameBytes)`, where `frameBytes`
-     * is a 16-byte payload representing a single effect frame.
+     * is a 20-byte payload representing a single effect frame.
      *
      * @param entries The ordered list of (timestamp, frame) pairs.
      * @since 1.0.0

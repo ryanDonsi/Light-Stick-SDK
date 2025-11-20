@@ -65,12 +65,12 @@ internal object EventBridge {
         when (target) {
             is InternalTarget.All -> when (action) {
                 is InternalAction.SendColorPacket -> runSafely { Facade.sendColorPacket(action.bytes4) }
-                is InternalAction.SendEffectFrame -> runSafely { Facade.sendEffectPayload(action.bytes16) }
+                is InternalAction.SendEffectFrame -> runSafely { Facade.sendEffectPayload(action.bytes20) }
                 is InternalAction.PlayFrames     -> runSafely { Facade.playFrames(action.entries) }
             }
             is InternalTarget.Address -> when (action) {
                 is InternalAction.SendColorPacket -> runSafely { Facade.sendColorTo(target.mac, action.bytes4) }
-                is InternalAction.SendEffectFrame -> runSafely { Facade.sendEffectTo(target.mac, action.bytes16) }
+                is InternalAction.SendEffectFrame -> runSafely { Facade.sendEffectTo(target.mac, action.bytes20) }
                 is InternalAction.PlayFrames     -> runSafely { Facade.playEntries(target.mac, action.entries) }
             }
         }

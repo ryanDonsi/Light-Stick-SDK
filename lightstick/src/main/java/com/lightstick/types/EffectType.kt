@@ -1,9 +1,9 @@
 package com.lightstick.types
 
 /**
- * Defines the LED effect types supported by the LightStick firmware (EFX v1.3).
+ * Defines the LED effect types supported by the LightStick firmware (EFX v1.4).
  *
- * Each type corresponds to a numeric code stored in the 16-byte effect payload sent
+ * Each type corresponds to a numeric code stored in the 20-byte effect payload sent
  * over BLE. These codes must match the firmware protocol definition exactly.
  *
  * Mapping table:

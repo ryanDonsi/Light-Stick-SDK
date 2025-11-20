@@ -56,7 +56,7 @@ object EventSamples {
                     filter = EventFilter(smsContains = "meet")
                 ),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects
+                    bytes20 = LSEffectPayload.Effects
                         .blink(Colors.BLUE, period = 8)
                         .toByteArray()
                 ),
@@ -92,7 +92,7 @@ object EventSamples {
                     filter = EventFilter(calendarTitle = "Daily")
                 ),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects
+                    bytes20 = LSEffectPayload.Effects
                         .on(Colors.WHITE)
                         .toByteArray()
                 ),
@@ -135,7 +135,7 @@ object EventSamples {
                 filter = EventFilter(smsContains = "ok")
             ),
             action = EventAction.SendEffectFrame(
-                bytes16 = LSEffectPayload.Effects
+                bytes20 = LSEffectPayload.Effects
                     .strobe(Colors.GREEN, period = 6)
                     .toByteArray()
             ),
@@ -154,7 +154,7 @@ object EventSamples {
             id = "device-custom-breath",
             trigger = EventTrigger(type = EventType.CUSTOM),
             action = EventAction.SendEffectFrame(
-                bytes16 = LSEffectPayload.Effects
+                bytes20 = LSEffectPayload.Effects
                     .breath(Colors.PURPLE, period = 12)
                     .toByteArray()
             ),
@@ -193,7 +193,7 @@ object EventSamples {
                 id = "sms-red-on",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects.on(Colors.RED).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.on(Colors.RED).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -202,7 +202,7 @@ object EventSamples {
                 id = "call-cyan-strobe",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects.strobe(Colors.CYAN, period = 5).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.strobe(Colors.CYAN, period = 5).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -211,7 +211,7 @@ object EventSamples {
                 id = "cal-white-on",
                 trigger = EventTrigger(type, EventFilter(calendarTitle = "Standup")),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects.on(Colors.WHITE).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.on(Colors.WHITE).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -220,7 +220,7 @@ object EventSamples {
                 id = "cal-end-pink-blink",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects.blink(Colors.PINK, period = 10).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.blink(Colors.PINK, period = 10).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -229,7 +229,7 @@ object EventSamples {
                 id = "custom-orange-breath",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes16 = LSEffectPayload.Effects.breath(Colors.ORANGE, period = 14).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.breath(Colors.ORANGE, period = 14).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -291,7 +291,7 @@ object EventSamples {
     /** sampleSendEffectAction: build EventAction.SendEffectFrame with blink BLUE. */
     fun sampleSendEffectAction(): EventAction.SendEffectFrame =
         EventAction.SendEffectFrame(
-            bytes16 = LSEffectPayload.Effects.blink(Colors.BLUE, period = 10).toByteArray()
+            bytes20 = LSEffectPayload.Effects.blink(Colors.BLUE, period = 10).toByteArray()
         )
 
     /** samplePlayFramesAction: build EventAction.PlayFrames example (two frames). */

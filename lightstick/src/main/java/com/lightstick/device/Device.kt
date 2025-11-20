@@ -86,7 +86,7 @@ data class Device(
 
                     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
                     override fun sendEffect(payload: LSEffectPayload) {
-                        Facade.sendEffectTo(mac = mac, bytes16 = payload.toByteArray())
+                        Facade.sendEffectTo(mac = mac, bytes20 = payload.toByteArray())
                     }
 
                     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -287,9 +287,9 @@ data class Device(
     }
 
     /**
-     * Sends a 16-byte effect payload to THIS device.
+     * Sends a 20-byte effect payload to THIS device.
      *
-     * @param payload 16-byte structured effect payload.
+     * @param payload 20-byte structured effect payload.
      * @return `true` if the frame was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      * @sample com.lightstick.samples.DeviceSamples.sampleSendEffect
@@ -298,7 +298,7 @@ data class Device(
     fun sendEffect(payload: LSEffectPayload): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.sendEffectTo(mac = mac, bytes16 = payload.toByteArray())
+            Facade.sendEffectTo(mac = mac, bytes20 = payload.toByteArray())
             true
         } catch (_: Throwable) {
             false
@@ -308,7 +308,7 @@ data class Device(
     /**
      * Streams timestamped frames to THIS device.
      *
-     * Each frame is (timestampMs, 16B payload).
+     * Each frame is (timestampMs, 20B payload).
      *
      * @param frames Ordered list of frames to play.
      * @return `true` if the stream was submitted; `false` otherwise.

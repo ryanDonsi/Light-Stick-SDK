@@ -168,14 +168,14 @@ object LSBluetooth {
     }
 
     /**
-     * Sends the same 16-byte effect frame to **all currently connected** devices.
+     * Sends the same 20-byte effect frame to **all currently connected** devices.
      *
      * Useful when broadcasting a synchronized single-frame effect.
      * For time-sequenced playback, prefer sending a full timeline from your app logic,
      * or use per-device controllers for precise control.
      *
-     * @param payload The effect payload; must encode to 16 bytes.
-     * @throws IllegalArgumentException If the encoded payload is not exactly 16 bytes.
+     * @param payload The effect payload; must encode to 20 bytes.
+     * @throws IllegalArgumentException If the encoded payload is not exactly 20 bytes.
      * @throws SecurityException If Bluetooth connect permission is not granted.
      * @sample com.lightstick.samples.BleSamples.sampleBroadcastEffect
      */
@@ -184,7 +184,7 @@ object LSBluetooth {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun broadcastEffect(payload: LSEffectPayload) {
         val frame = payload.toByteArray()
-        require(frame.size == 16) { "Effect payload must be 16 bytes" }
+        require(frame.size == 20) { "Effect payload must be 20 bytes" }
         // Single internal broadcast instead of per-device loop.
         Facade.sendEffectPayload(frame)
     }

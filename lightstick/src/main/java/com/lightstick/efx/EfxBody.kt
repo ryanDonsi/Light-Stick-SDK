@@ -2,7 +2,7 @@ package com.lightstick.efx
 
 /**
  * EFX body = ordered list of entries. Provides helpers to convert to raw frames
- * (timestamp in milliseconds, 16-byte effect payload).
+ * (timestamp in milliseconds, 20-byte effect payload).
  *
  * Construction:
  * - Use the primary constructor with a [List] of [EfxEntry], or
@@ -32,7 +32,7 @@ data class EfxBody(
      * Converts the entries to raw frames expected by the internal façade.
      * The result is sorted by [EfxEntry.timestampMs] ascending.
      *
-     * @return A list of pairs: `(timestampMs, 16-byte payload)`.
+     * @return A list of pairs: `(timestampMs, 20-byte payload)`.
      * @sample com.lightstick.samples.EfxSamples.sampleBodyToFrames
      */
     fun toFrames(): List<Pair<Long, ByteArray>> =

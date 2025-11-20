@@ -29,7 +29,7 @@ internal object UuidConstants {
 
     /** 4B color packet characteristic: [R, G, B, transition]. */
     val LCS_COLOR: UUID = UUID.fromString("0001ff01-0000-1000-8000-00805f9800c4")
-    /** 16B effect payload characteristic (LSEffectPayload v1.3). */
+    /** 20B effect payload characteristic (LSEffectPayload v1.4). */
     val LCS_PAYLOAD: UUID = UUID.fromString("0001ff02-0000-1000-8000-00805f9800c4")
 
     // ===== Battery Service (Standard) ========================================

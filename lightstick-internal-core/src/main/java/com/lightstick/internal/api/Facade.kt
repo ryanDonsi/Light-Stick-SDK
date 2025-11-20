@@ -265,11 +265,11 @@ object Facade {
      * @throws IllegalStateException 연결되지 않은 경우
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendEffectTo(mac: String, bytes16: ByteArray) {
+    fun sendEffectTo(mac: String, bytes20: ByteArray) {
         requireInit()
-        require(bytes16.size == 16) { "Effect payload must be 16 bytes" }
+        require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
         if (!isConnected(mac)) error("Not connected: $mac")
-        requireSession(mac).led.sendEffectPayload(bytes16)
+        requireSession(mac).led.sendEffectPayload(bytes20)
     }
 
     /**
@@ -300,12 +300,12 @@ object Facade {
         sessions.keys.forEach { m -> runCatching { sendColorTo(m, packet4) } }
     }
 
-    /** 모든 연결 디바이스에 16바이트 이펙트 페이로드 전송. */
+    /** 모든 연결 디바이스에 20바이트 이펙트 페이로드 전송. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendEffectPayload(bytes16: ByteArray) {
+    fun sendEffectPayload(bytes20: ByteArray) {
         requireInit()
-        require(bytes16.size == 16) { "Effect payload must be 16 bytes" }
-        sessions.keys.forEach { m -> runCatching { sendEffectTo(m, bytes16) } }
+        require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
+        sessions.keys.forEach { m -> runCatching { sendEffectTo(m, bytes20) } }
     }
 
     /** 모든 연결 디바이스에서 동일 타임라인 재생. */

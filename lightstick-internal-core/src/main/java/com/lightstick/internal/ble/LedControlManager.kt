@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.withLock
  * LED 제어를 위한 얇은 래퍼(Thin Layer).
  *
  * 설계 요점
- * - 바이트 단위 전송만 담당: 4B 색상, 16B 이펙트, 타임라인 재생.
+ * - 바이트 단위 전송만 담당: 4B 색상, 20B 이펙트, 타임라인 재생.
  * - 실제 GATT 쓰기는 [GattClient.writeNoResponse]로 위임하며,
  *   **Coalesce**를 사용해 대기열에서 동일 종류 작업은 항상 "최신 1건"만 유지한다.
  *   - 컬러 전송  → coalesceKey = "LCS:COLOR"
@@ -99,7 +99,7 @@ internal class LedControlManager(
     }
 
     // --------------------------------------------------------------------------------------------
-    // 퍼블릭 API: 16B 이펙트 페이로드 전송
+    // 퍼블릭 API: 20B 이펙트 페이로드 전송
     // --------------------------------------------------------------------------------------------
 
     /**
@@ -108,17 +108,17 @@ internal class LedControlManager(
      * Coalesce 정책
      * - 대기열에는 항상 최신 1건만 유지("LCS:PAYLOAD").
      *
-     * @throws IllegalArgumentException bytes16의 크기가 16이 아닐 때
+     * @throws IllegalArgumentException bytes20의 크기가 20이 아닐 때
      * @return true면 큐 투입 성공, false면 즉시 실패
      */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendEffectPayload(bytes16: ByteArray): Boolean {
-        require(bytes16.size == 16) { "Effect payload must be 16 bytes" }
+    fun sendEffectPayload(bytes20: ByteArray): Boolean {
+        require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = bytes16,
+            data = bytes20,
             coalesceKey = "LCS:PAYLOAD"
         )
     }
@@ -128,7 +128,7 @@ internal class LedControlManager(
     // --------------------------------------------------------------------------------------------
 
     /**
-     * (timestampMs, 16B frame) 리스트를 시간에 맞춰 순차 전송한다.
+     * (timestampMs, 20B frame) 리스트를 시간에 맞춰 순차 전송한다.
      *
      * 동작
      * - 입력을 timestamp 오름차순으로 정렬.
@@ -138,13 +138,13 @@ internal class LedControlManager(
      * 실패 처리
      * - 전송 false(=미연결/UUID 미발견 등) 발생 시 **즉시 cancel**하여 지연 누적을 차단.
      *
-     * @throws IllegalArgumentException entries가 비어있거나, 16바이트가 아닌 프레임이 포함된 경우
+     * @throws IllegalArgumentException entries가 비어있거나, 20바이트가 아닌 프레임이 포함된 경우
      */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun play(entries: List<Pair<Long, ByteArray>>) {
         require(entries.isNotEmpty()) { "entries is empty" }
-        entries.forEach { (_, frame) -> require(frame.size == 16) { "Frame must be 16 bytes" } }
+        entries.forEach { (_, frame) -> require(frame.size == 20) { "Frame must be 20 bytes" } }
 
         // 기존 재생 중지 후 교체
         playJob?.cancel()

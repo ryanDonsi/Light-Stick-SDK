@@ -44,7 +44,7 @@ private fun defensiveCopy(list: List<InternalRule>): List<InternalRule> =
     list.map { r ->
         val safeAction = when (val a = r.action) {
             is InternalAction.SendColorPacket -> InternalAction.SendColorPacket(a.bytes4.copyOf())
-            is InternalAction.SendEffectFrame -> InternalAction.SendEffectFrame(a.bytes16.copyOf())
+            is InternalAction.SendEffectFrame -> InternalAction.SendEffectFrame(a.bytes20.copyOf())
             is InternalAction.PlayFrames -> InternalAction.PlayFrames(
                 a.entries.map { (ts, data) -> ts to data.copyOf() }
             )

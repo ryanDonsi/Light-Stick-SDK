@@ -48,10 +48,10 @@ internal object EfxBinary {
         require(magic.length == 4) { "magic must be 4 chars" }
         require(version in 0..0xFFFF) { "version must fit u16" }
         require(reserved3.size == 3) { "reserved3 must be 3 bytes" }
-        frames.forEach { (_, f) -> require(f.size == 16) { "frame must be 16 bytes" } }
+        frames.forEach { (_, f) -> require(f.size == 20) { "frame must be 20 bytes" } }
 
         val sorted = frames.sortedBy { it.first }
-        val bodySize = sorted.size * (4 + 16)
+        val bodySize = sorted.size * (4 + 20)
         val headerSize = 4 + 2 + 3 + 4 + 4
         val totalNoCrc = headerSize + bodySize
         val total = totalNoCrc + 4
@@ -108,7 +108,7 @@ internal object EfxBinary {
         val entryCount = buf.int
         require(entryCount >= 0) { "invalid entryCount" }
 
-        val needBody = entryCount * (4 + 16)
+        val needBody = entryCount * (4 + 20)
         val withoutCrc = 4 + 2 + 3 + 4 + 4 + needBody
         require(bytes.size == withoutCrc + 4) {
             "EFX: size mismatch (has=${bytes.size}, want=${withoutCrc + 4})"
@@ -117,7 +117,7 @@ internal object EfxBinary {
         val frames = ArrayList<Pair<Long, ByteArray>>(entryCount)
         repeat(entryCount) {
             val ts = (buf.int.toLong() and 0xFFFF_FFFFL)
-            val frame = ByteArray(16).also { buf.get(it) }
+            val frame = ByteArray(20).also { buf.get(it) }
             frames += ts to frame
         }
 

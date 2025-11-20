@@ -48,9 +48,9 @@ interface Controller {
     fun sendColor(color: Color, transition: Int)
 
     /**
-     * Sends a 16-byte effect payload to the device.
+     * Sends a 20-byte effect payload to the device.
      *
-     * @param payload Structured effect payload (16 bytes on the wire).
+     * @param payload Structured effect payload (20 bytes on the wire).
      * @throws SecurityException Implementations should guard with permission checks.
      *
      * @sample com.lightstick.samples.DeviceSamples.sampleSendEffect
@@ -59,9 +59,9 @@ interface Controller {
     fun sendEffect(payload: LSEffectPayload)
 
     /**
-     * Streams timestamped frames (each 16B payload with a presentation timestamp).
+     * Streams timestamped frames (each 20B payload with a presentation timestamp).
      *
-     * @param frames List of pairs where first is timestamp (e.g., ms) and second is the 16B payload.
+     * @param frames List of pairs where first is timestamp (e.g., ms) and second is the 20B payload.
      * @throws SecurityException Implementations should guard with permission checks.
      *
      * @sample com.lightstick.samples.DeviceSamples.samplePlayFrames

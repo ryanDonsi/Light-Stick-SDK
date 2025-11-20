@@ -155,7 +155,7 @@ object DeviceSamples {
         Log.d("Sample", "sendColor submitted=$ok")
     }
 
-    /** Sample: Send a 16B effect via Device helper. */
+    /** Sample: Send a 20B effect via Device helper. */
     @JvmStatic
     fun sampleSendEffect(context: Context) {
         LSBluetooth.initialize(context)

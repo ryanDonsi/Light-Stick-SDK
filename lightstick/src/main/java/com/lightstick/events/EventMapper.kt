@@ -167,13 +167,13 @@ object EventMapper {
 
     private fun EventAction.toInternal(): InternalAction = when (this) {
         is SendColorPacket -> InternalAction.SendColorPacket(packet4)
-        is SendEffectFrame -> InternalAction.SendEffectFrame(bytes16)
+        is SendEffectFrame -> InternalAction.SendEffectFrame(bytes20)
         is PlayFrames      -> InternalAction.PlayFrames(entries)
     }
 
     private fun InternalAction.toPublic(): EventAction = when (this) {
         is InternalAction.SendColorPacket -> SendColorPacket(bytes4)
-        is InternalAction.SendEffectFrame -> SendEffectFrame(bytes16)
+        is InternalAction.SendEffectFrame -> SendEffectFrame(bytes20)
         is InternalAction.PlayFrames      -> PlayFrames(entries)
     }
 }

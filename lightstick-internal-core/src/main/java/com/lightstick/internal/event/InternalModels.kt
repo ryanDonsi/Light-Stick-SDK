@@ -58,11 +58,11 @@ sealed interface InternalAction {
         override fun hashCode(): Int = bytes4.contentHashCode()
     }
 
-    data class SendEffectFrame(val bytes16: ByteArray) : InternalAction {
+    data class SendEffectFrame(val bytes20: ByteArray) : InternalAction {
         override fun equals(other: Any?): Boolean {
-            return other is SendEffectFrame && bytes16.contentEquals(other.bytes16)
+            return other is SendEffectFrame && bytes20.contentEquals(other.bytes20)
         }
-        override fun hashCode(): Int = bytes16.contentHashCode()
+        override fun hashCode(): Int = bytes20.contentHashCode()
     }
 
     data class PlayFrames(val entries: List<Pair<Long, ByteArray>>) : InternalAction
