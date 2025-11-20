@@ -19,6 +19,7 @@ import java.io.File
 
 /**
  * EFX encode/decode usage samples referenced by KDoc @sample tags.
+ * Updated for EFX v1.4 (20-byte payloads).
  */
 object EfxSamples {
     /**
@@ -27,9 +28,9 @@ object EfxSamples {
     @JvmStatic
     fun sampleCreateBody(): EfxBody {
         val entries = listOf(
-            EfxEntry(0,   LSEffectPayload.Effects.on(Colors.WHITE)),
-            EfxEntry(150, LSEffectPayload.Effects.blink(Colors.BLUE, period = 10)),
-            EfxEntry(300, LSEffectPayload.Effects.breath(Colors.PINK, period = 8))
+            EfxEntry(0,   LSEffectPayload.Effects.on(color = Colors.WHITE)),
+            EfxEntry(150, LSEffectPayload.Effects.blink(color = Colors.BLUE, period = 10)),
+            EfxEntry(300, LSEffectPayload.Effects.breath(color = Colors.PINK, period = 8))
         )
         val body = EfxBody(entries)
         println("Body size = ${body.size}")
@@ -42,16 +43,16 @@ object EfxSamples {
     @JvmStatic
     fun sampleCreateBodyVararg(): EfxBody {
         val body = EfxBody(
-            EfxEntry(0,   LSEffectPayload.Effects.on(Colors.WHITE)),
-            EfxEntry(200, LSEffectPayload.Effects.strobe(Colors.CYAN, period = 6)),
-            EfxEntry(400, LSEffectPayload.Effects.breath(Colors.PURPLE, period = 8))
+            EfxEntry(0,   LSEffectPayload.Effects.on(color = Colors.WHITE)),
+            EfxEntry(200, LSEffectPayload.Effects.strobe(color = Colors.CYAN, period = 6)),
+            EfxEntry(400, LSEffectPayload.Effects.breath(color = Colors.PURPLE, period = 8))
         )
         println("Body size = ${body.size}")
         return body
     }
 
     /**
-     * Convert a body to raw frames (timestamp to 16-byte payload).
+     * Convert a body to raw frames (timestamp to 20-byte payload).
      */
     @JvmStatic
     fun sampleBodyToFrames(): List<Pair<Long, ByteArray>> {
@@ -72,9 +73,9 @@ object EfxSamples {
     @JvmStatic
     fun sampleCreateAndWrite(file: File) {
         val entries = listOf(
-            EfxEntry(0,   LSEffectPayload.Effects.on(Colors.WHITE)),
-            EfxEntry(250, LSEffectPayload.Effects.blink(Colors.BLUE, period = 10)),
-            EfxEntry(500, LSEffectPayload.Effects.breath(Colors.PINK, period = 8)),
+            EfxEntry(0,   LSEffectPayload.Effects.on(color = Colors.WHITE)),
+            EfxEntry(250, LSEffectPayload.Effects.blink(color = Colors.BLUE, period = 10)),
+            EfxEntry(500, LSEffectPayload.Effects.breath(color = Colors.PINK, period = 8)),
         )
         val body = EfxBody(entries)
         val header = EfxHeader.makeDefaults(musicId = 0x0000_0000, entryCount = body.size)
@@ -101,8 +102,8 @@ object EfxSamples {
     @JvmStatic
     fun sampleEncodeToBytes(): ByteArray {
         val entries = listOf(
-            EfxEntry(0,   LSEffectPayload.Effects.on(Colors.WHITE)),
-            EfxEntry(200, LSEffectPayload.Effects.blink(Colors.BLUE, period = 10)),
+            EfxEntry(0,   LSEffectPayload.Effects.on(color = Colors.WHITE)),
+            EfxEntry(200, LSEffectPayload.Effects.blink(color = Colors.BLUE, period = 10)),
         )
         val body = EfxBody(entries)
         val header = EfxHeader.makeDefaults(musicId = 0x0000_0001, entryCount = body.size)
@@ -122,15 +123,15 @@ object EfxSamples {
     }
 
     /**
-     * Converts a list of [EfxEntry] to raw frames (timestamp to 16-byte payload).
+     * Converts a list of [EfxEntry] to raw frames (timestamp to 20-byte payload).
      * Used by: @sample sampleEntriesToFrames
      */
     @JvmStatic
     fun sampleEntriesToFrames(): List<Pair<Long, ByteArray>> {
         val entries = listOf(
-            EfxEntry(0,   LSEffectPayload.Effects.on(Colors.WHITE)),
-            EfxEntry(150, LSEffectPayload.Effects.strobe(Colors.CYAN, period = 6)),
-            EfxEntry(300, LSEffectPayload.Effects.breath(Colors.PURPLE, period = 8)),
+            EfxEntry(0,   LSEffectPayload.Effects.on(color = Colors.WHITE)),
+            EfxEntry(150, LSEffectPayload.Effects.strobe(color = Colors.CYAN, period = 6)),
+            EfxEntry(300, LSEffectPayload.Effects.breath(color = Colors.PURPLE, period = 8)),
         )
         // Either via EfxBody:
         val framesViaBody = EfxBody(entries).toFrames()
@@ -160,7 +161,7 @@ object EfxSamples {
     }
 
     /**
-     * Convert an EfxEntry to a raw (timestamp, 16-byte) frame pair.
+     * Convert an EfxEntry to a raw (timestamp, 20-byte) frame pair.
      */
     @JvmStatic
     fun sampleEntryToFrame(): Pair<Long, ByteArray> {
@@ -172,67 +173,187 @@ object EfxSamples {
 
     /**
      * Create an EfxHeader with explicit fields.
-     * Used by: @sample com.lightstick.efx.EfxHeader (sampleCreateHeader)
      */
     @JvmStatic
     fun sampleCreateHeader(): EfxHeader {
-        return EfxHeader(
+        val header = EfxHeader(
             magic = "EFX1",
-            version = 0x0103,
-            reserved = byteArrayOf(0, 0, 0),
-            musicId = 0x0000_0001,
-            entryCount = 3
+            version = 0x0104,
+            reserved = byteArrayOf(0x00, 0x00, 0x00),
+            musicId = 0x0000_0042,
+            entryCount = 10
         )
+        println("Header: magic=${header.magic}, version=0x${header.version.toString(16)}, musicId=${header.musicId}")
+        return header
     }
 
     /**
-     * Create an EfxHeader using SDK defaults (recommended for writing).
-     * Used by: @sample com.lightstick.efx.EfxHeader (sampleMakeDefaults)
+     * Create an EfxHeader using defaults helper.
+     * Used by: @sample sampleMakeDefaults
      */
     @JvmStatic
     fun sampleMakeDefaults(): EfxHeader {
-        return EfxHeader.makeDefaults(
-            musicId = 0x0000_0000, // master (works independent of music file)
-            entryCount = 2
+        val header = EfxHeader.makeDefaults(
+            musicId = 0x0000_0001,
+            entryCount = 5
         )
+        println("Header: magic=${header.magic}, version=0x${header.version.toString(16)}")
+        return header
     }
-
-    // ------------------------------------------------------------------------
-    // 🔹 MUSIC ID SAMPLES (moved here for EFX consistency)
-    // ------------------------------------------------------------------------
 
     /**
-     * Compute MusicId from a raw stream (e.g., memory or network).
+     * Create an EfxHeader using defaults helper (alias for compatibility).
      */
     @JvmStatic
-    fun sampleMusicIdFromStream(): Int {
-        val demoBytes = "demo-music-data".toByteArray()
-        val stream = ByteArrayInputStream(demoBytes)
-        val id = MusicId.fromStream(stream, filenameHint = "demo.bin")
-        println("MusicId(stream='demo.bin') = 0x${id.toUInt().toString(16)}")
-        return id
+    fun sampleCreateHeaderDefaults(): EfxHeader {
+        return sampleMakeDefaults()
     }
+
+    /**
+     * Build a custom LSEffectPayload.
+     */
+    @JvmStatic
+    fun sampleBuildPayload(): LSEffectPayload {
+        val payload = LSEffectPayload(
+            effectIndex = 0,
+            ledMask = 0x00FF,           // First 8 LEDs
+            color = Colors.RED,
+            backgroundColor = Colors.BLUE,
+            effectType = com.lightstick.types.EffectType.STROBE,
+            durationMs = 5000,
+            period = 20,                // 200ms period
+            spf = 100,
+            randomColor = 1,            // Enable random color
+            randomDelay = 10,           // Max 100ms random delay
+            fade = 80,
+            broadcasting = 1,           // Broadcast to nearby devices
+            syncIndex = 0
+        )
+        println("Payload built: effectType=${payload.effectType}, period=${payload.period}")
+        return payload
+    }
+
+    /**
+     * Encode a payload to 20 bytes.
+     */
+    @JvmStatic
+    fun sampleEncodePayload(): ByteArray {
+        val payload = LSEffectPayload.Effects.on(color = Colors.GREEN, transit = 30)
+        val bytes = payload.toByteArray()
+        println("Encoded ${bytes.size} bytes")
+        return bytes
+    }
+
+    /**
+     * Decode a payload from 20 bytes.
+     */
+    @JvmStatic
+    fun sampleDecodePayload(bytes: ByteArray): LSEffectPayload {
+        val payload = LSEffectPayload.fromByteArray(bytes)
+        println("Decoded: color=(${payload.color.r}, ${payload.color.g}, ${payload.color.b}), type=${payload.effectType}")
+        return payload
+    }
+
+    /**
+     * Demonstrate using primary parameters only (simple usage).
+     */
+    @JvmStatic
+    fun sampleSimpleEffects() {
+        // ON effect with just color
+        val on = LSEffectPayload.Effects.on(color = Colors.RED)
+
+        // ON with transition time
+        val onSlow = LSEffectPayload.Effects.on(
+            color = Colors.GREEN,
+            transit = 50  // 500ms fade in
+        )
+
+        // BLINK with period
+        val blink = LSEffectPayload.Effects.blink(
+            color = Colors.BLUE,
+            period = 100  // 1 second blink
+        )
+
+        // STROBE with background color
+        val strobe = LSEffectPayload.Effects.strobe(
+            color = Colors.WHITE,
+            backgroundColor = Colors.RED,
+            period = 5  // 50ms strobe
+        )
+
+        println("Simple effects created")
+    }
+
+    /**
+     * Demonstrate using advanced parameters.
+     */
+    @JvmStatic
+    fun sampleAdvancedEffects() {
+        // ON with all parameters
+        val advancedOn = LSEffectPayload.Effects.on(
+            color = Colors.PURPLE,
+            transit = 30,
+            randomColor = 0,
+            randomDelay = 0,
+            effectIndex = 1,
+            ledMask = 0x00FF,      // First 8 LEDs only
+            spf = 100,
+            fade = 80,
+            broadcasting = 1,       // Broadcast to nearby
+            syncIndex = 0
+        )
+
+        // BREATH with random features
+        val randomBreath = LSEffectPayload.Effects.breath(
+            color = Colors.CYAN,
+            period = 100,
+            randomColor = 1,        // Enable random color
+            randomDelay = 20,       // Max 200ms random delay
+            broadcasting = 1
+        )
+
+        println("Advanced effects created")
+    }
+
+    // ------------------------------------------------------------------------
+    // 🔹 MUSIC ID SAMPLES
+    // ------------------------------------------------------------------------
 
     /**
      * Compute MusicId from a local file.
+     * Used by: @sample com.lightstick.efx.MusicId.fromFile
      */
     @JvmStatic
     fun sampleMusicIdFromFile(): Int {
-        val file = File("/tmp/demo_song.mp3")
-        val id = MusicId.fromFile(file)
+        val musicDir = File(android.os.Environment.getExternalStorageDirectory(), "Music")
+        val file = File(musicDir, "demo_song.mp3")
+        val id = com.lightstick.efx.MusicId.fromFile(file)
         println("MusicId(file='${file.name}') = 0x${id.toUInt().toString(16)}")
         return id
     }
 
     /**
      * Compute MusicId from a content Uri (e.g., Android MediaStore).
+     * Used by: @sample com.lightstick.efx.MusicId.fromUri
      */
     @JvmStatic
     fun sampleMusicIdFromUri(context: Context, uri: Uri): Int {
-        val id = MusicId.fromUri(context, uri)
+        val id = com.lightstick.efx.MusicId.fromUri(context, uri)
         println("MusicId(uri=$uri) = 0x${id.toUInt().toString(16)}")
         return id
     }
 
-
+    /**
+     * Compute MusicId from a raw stream (e.g., memory or network).
+     * Used by: @sample com.lightstick.efx.MusicId.fromStream
+     */
+    @JvmStatic
+    fun sampleMusicIdFromStream(): Int {
+        val demoBytes = "demo-music-data".toByteArray()
+        val stream = ByteArrayInputStream(demoBytes)
+        val id = com.lightstick.efx.MusicId.fromStream(stream, filenameHint = "demo.bin")
+        println("MusicId(stream='demo.bin') = 0x${id.toUInt().toString(16)}")
+        stream.close()
+        return id
+    }
 }

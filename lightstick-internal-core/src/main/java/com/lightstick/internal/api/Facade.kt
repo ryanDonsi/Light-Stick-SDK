@@ -503,7 +503,7 @@ object Facade {
      * frames: (timestampMs, payload16)
      */
     @JvmStatic
-    fun efxSerializeFromEntries(
+    fun efxEncode(
         musicId: Int,
         frames: List<Pair<Long, ByteArray>>
     ): ByteArray {

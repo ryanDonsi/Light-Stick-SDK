@@ -114,7 +114,7 @@ internal class OtaManager(
                     val ok = gatt.writeNoResponse(serviceUuid, dataCharUuid, startOpcodes)
                     if (!ok) error("START Opcode 전송 실패")
                     Log.d("START Opcode(${startOpcodes.size}B) 전송 완료")
-                    delay(10) // 장치 전이 안정화 대기
+                    delay(500) // 장치 전이 안정화 대기
                 }
 
                 _state.value = OtaState.TRANSFER
@@ -146,7 +146,7 @@ internal class OtaManager(
                     }
 
                     // BLE 스택 안정화용 미세 지연
-                    delay(1)
+                    delay(10)
                 }
 
                 // 완료 처리

@@ -81,7 +81,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.lightstick"
             artifactId = "lightstick-sdk"
-            version = "1.3.0"
+            version = "1.4.0"
 
             from(components["fusedLibraryComponent"])
             artifact(aggregatedSources.get())

@@ -95,7 +95,7 @@ publishing {
 
             groupId = "com.lightstick"
             artifactId = "lightstick-internal-core"
-            version = "1.0.0"
+            version = "1.4.0"
         }
     }
     repositories {

@@ -3,14 +3,14 @@ package com.lightstick.efx
 import com.lightstick.types.LSEffectPayload
 
 /**
- * One timeline entry in an EFX body: (timestamp in ms, 16B LED effect payload).
+ * One timeline entry in an EFX body: (timestamp in ms, 20B LED effect payload).
  *
  * Constraints:
  * - [timestampMs] must be >= 0
- * - [payload] encodes to exactly 16 bytes via [LSEffectPayload.toByteArray]
+ * - [payload] encodes to exactly 20 bytes via [LSEffectPayload.toByteArray]
  *
  * @property timestampMs Playback timestamp in milliseconds (must be >= 0).
- * @property payload Structured 16-byte LED effect payload.
+ * @property payload Structured 20-byte LED effect payload.
  *
  * @throws IllegalArgumentException If [timestampMs] is negative.
  *
@@ -28,9 +28,9 @@ data class EfxEntry(
     }
 
     /**
-     * Converts this entry into a raw (timestamp, frame16) pair.
+     * Converts this entry into a raw (timestamp, frame20) pair.
      *
-     * @return Pair of [timestampMs] and 16-byte payload.
+     * @return Pair of [timestampMs] and 20-byte payload.
      *
      * @sample com.lightstick.samples.EfxSamples.sampleEntryToFrame
      */

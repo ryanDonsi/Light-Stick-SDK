@@ -2,63 +2,54 @@ package com.lightstick.efx
 
 import com.lightstick.types.LSEffectPayload
 import java.io.File
-import java.io.IOException
 
 /**
- * High-level EFX container composed of a header ([EfxHeader]) and a body ([EfxBody]).
+ * EFX binary format: concatenated header + body sections.
  *
- * This class provides convenient helpers to:
- *  - Serialize the current [header] and [body] into a compact EFX binary ([toByteArray]).
- *  - Persist the EFX binary to disk ([write]).
- *  - Decode EFX bytes or files back into an [Efx] instance ([read]).
+ * **Structure:**
+ * - [header]: 20B metadata block (magic, version, musicId, entryCount, etc.)
+ * - [body]: list of (timestamp_ms, 20B LED payload) pairs
  *
- * The wire format is assumed to be compatible with the SDK's EFX codec bridge.
- * The body payload frames are expected to be exactly 16 bytes each when encoded on the wire.
+ * The EFX binary can be read from or written to files, then played on devices via
+ * [com.lightstick.device.Controller.play].
  *
- * @property header The parsed or user-constructed EFX header (metadata).
- * @property body   The parsed or user-constructed EFX body (ordered effect entries).
- *
- * @since 1.0.0
+ * @property header Metadata describing the EFX file.
+ * @property body   Timeline of effect entries.
  *
  * @sample com.lightstick.samples.EfxSamples.sampleCreateAndWrite
  * @sample com.lightstick.samples.EfxSamples.sampleReadFromFile
+ *
+ * @since 1.0.0
  */
-class Efx(
+data class Efx(
     val header: EfxHeader,
     val body: EfxBody
 ) {
 
     /**
-     * Serializes this EFX instance into a binary byte array.
+     * Serializes this EFX into a binary [ByteArray].
      *
-     * The method obtains timestamped frames from [body] (via [EfxBody.toFrames]) and
-     * encodes them along with [header] fields into the EFX binary format.
+     * Layout:
+     * - First 20 bytes = [header]
+     * - Remaining bytes = [body] frames (timestamp + 20B payload per entry)
      *
-     * @return The encoded EFX as a new [ByteArray].
-     * @throws IllegalArgumentException If any frame payload is not exactly 16 bytes.
+     * @return Encoded EFX binary ready to be written to a file or transferred.
      *
      * @sample com.lightstick.samples.EfxSamples.sampleEncodeToBytes
      */
     fun toByteArray(): ByteArray {
-        // EfxBody.toFrames() must yield 16-byte payloads; the underlying codec expects 16B frames.
         val frames = body.toFrames()
-        return com.lightstick.internal.api.Facade.efxSerializeFromEntries(
-            header.musicId,
-            frames
+        return com.lightstick.internal.api.Facade.efxEncode(
+            musicId = header.musicId,
+            frames = frames
         )
     }
 
     /**
-     * Writes the encoded EFX to the given [file].
+     * Writes this EFX to the specified [file].
      *
-     * On success, the file will contain the exact bytes returned by [toByteArray].
-     * Any I/O failure will propagate as an exception; the method returns `true` only when
-     * the operation completes successfully.
-     *
-     * @param file Target file to write the EFX binary into.
-     * @return `true` when the file has been written successfully.
-     * @throws IOException If an I/O error occurs while writing to [file].
-     * @throws IllegalArgumentException If [toByteArray] fails due to invalid frames.
+     * @param file Target file to write the encoded binary to.
+     * @return true always (kept for consistency).
      *
      * @sample com.lightstick.samples.EfxSamples.sampleCreateAndWrite
      */
@@ -75,11 +66,11 @@ class Efx(
          * The returned object preserves the exact header fields encountered in the binary:
          * [EfxHeader.magic], [EfxHeader.version], [EfxHeader.reserved], [EfxHeader.musicId],
          * and [EfxHeader.entryCount]. The body frames are converted into [EfxEntry] elements
-         * with strictly validated 16-byte payloads.
+         * with strictly validated 20-byte payloads.
          *
          * @param bytes EFX binary content to decode.
          * @return A fully materialized [Efx] object (header + body entries).
-         * @throws IllegalArgumentException If any decoded frame is not 16 bytes in length.
+         * @throws IllegalArgumentException If any decoded frame is not 20 bytes in length.
          *
          * @sample com.lightstick.samples.EfxSamples.sampleDecodeFromBytes
          */
@@ -87,9 +78,9 @@ class Efx(
             val dec = com.lightstick.internal.api.Facade.efxDecode(bytes)
             val entries = dec.frames
                 .sortedBy { it.first }
-                .map { (ts, frame16) ->
-                    require(frame16.size == 16) { "EFX frame must be 16 bytes (got ${frame16.size})" }
-                    EfxEntry(timestampMs = ts, payload = LSEffectPayload.fromByteArray(frame16))
+                .map { (ts, frame20) ->
+                    require(frame20.size == 20) { "EFX frame must be 20 bytes (got ${frame20.size})" }
+                    EfxEntry(timestampMs = ts, payload = LSEffectPayload.fromByteArray(frame20))
                 }
             val body = EfxBody(entries)
             val header = EfxHeader(
@@ -121,13 +112,19 @@ class Efx(
          * Converts a list of [EfxEntry] elements into timestamped wire frames suitable for
          * the codec layer. The entries are sorted by [EfxEntry.timestampMs] in ascending order.
          *
-         * @param entries The effect entries to transform into (timestamp, 16B payload) pairs.
-         * @return A new list of sorted pairs where `first = timestampMs` and `second = 16-byte payload`.
-         * @throws IllegalArgumentException If any entry produces a payload that is not 16 bytes.
+         * @param entries The effect entries to transform into (timestamp, 20B payload) pairs.
+         * @return A new list of sorted pairs where `first = timestampMs` and `second = 20-byte payload`.
+         * @throws IllegalArgumentException If any entry produces a payload that is not 20 bytes.
          *
          * @sample com.lightstick.samples.EfxSamples.sampleEntriesToFrames
          */
-        fun toFrames(entries: List<EfxEntry>): List<Pair<Long, ByteArray>> =
-            entries.sortedBy { it.timestampMs }.map { it.timestampMs to it.payload.toByteArray() }
+        @JvmStatic
+        fun toFrames(entries: List<EfxEntry>): List<Pair<Long, ByteArray>> {
+            return entries.sortedBy { it.timestampMs }.map { entry ->
+                val frame = entry.payload.toByteArray()
+                require(frame.size == 20) { "Payload must be 20 bytes (got ${frame.size})" }
+                entry.timestampMs to frame
+            }
+        }
     }
 }
