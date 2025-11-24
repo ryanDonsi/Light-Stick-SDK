@@ -115,6 +115,7 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
+        stop()
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
