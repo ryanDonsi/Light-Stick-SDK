@@ -10,7 +10,7 @@ import com.lightstick.types.LSEffectPayload
 import com.lightstick.events.EventRule
 import com.lightstick.events.EventManager
 import com.lightstick.ota.OtaManager
-import com.lightstick.device.dto.DeviceInfo
+import com.lightstick.device.DeviceInfo
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.parcelize.Parcelize
 
@@ -448,13 +448,15 @@ data class Device(
                         deviceName = name,
                         modelNumber = model,
                         firmwareRevision = fw,
-                        manufacturer = mfr
+                        manufacturer = mfr,
+                        macAddress = mac,  // ✅ 추가
+                        isConnected = true,
+                        lastUpdated = System.currentTimeMillis()
                     )
                 )
             }
         }
 
-        // 기존 Result 콜백 기반 read API를 그대로 사용
         readDeviceName { r ->
             r.onSuccess { name = it }.onFailure { /* ignore, stays null */ }
             completeOne()

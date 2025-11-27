@@ -1,12 +1,18 @@
 package com.lightstick.internal.api
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.*
 import com.lightstick.internal.ble.ota.OtaManager
 import com.lightstick.internal.ble.ota.OtaState
+import com.lightstick.internal.ble.state.InternalConnectionState
+import com.lightstick.internal.ble.state.InternalDeviceInfo
+import com.lightstick.internal.ble.state.InternalDeviceState
+import com.lightstick.internal.ble.state.InternalDisconnectReason
 import com.lightstick.internal.efx.EfxBinary
 import com.lightstick.internal.efx.MusicIdProvider
 import com.lightstick.internal.event.DeviceEventRegistry
@@ -18,48 +24,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 내부 Facade.
  *
- * 이 객체는 내부 모듈들(BLE 스택, EFX 코덱, 이벤트 라우팅)을 **단일 진입점**으로 묶어
- * 공개 모듈(예: com.lightstick.ota.OtaManager 등)에서 간단히 호출할 수 있도록 도와준다.
- *
- * 설계 원칙:
- * - 외부(공개) DTO에 직접 의존하지 않는다. (내부 타입/모듈만 사용)
- * - 다중 디바이스를 고려하여 세션(Session)을 주소별로 관리한다.
- * - 자원 수명은 connect()/disconnect()를 기준으로 명확히 관리한다.
- * - OTA 상태는 내부 enum(OtaState)을 외부로 직접 노출하지 않고 **정수(ordinal)** 로 변환해 제공한다.
+ * Note: This object is public (no 'internal' modifier) because it must be
+ * accessible from the public module (lightstick) which depends on this
+ * internal-core module.
  */
+@SuppressLint("StaticFieldLeak")
 object Facade {
 
     // ============================================================================================
     // 초기화 / 컨텍스트
     // ============================================================================================
 
-    /** 애플리케이션 컨텍스트 (initialize() 호출로 설정) */
     private lateinit var appContext: Context
-
-    /** 내부 작업용 CoroutineScope (IO 디스패처 + SupervisorJob) */
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    /** 이벤트 라우터 초기화 여부 */
     @Volatile private var eventInitialized = false
 
-    /** initialize() 선행 보장용 체크 */
+    private lateinit var deviceStateManager: DeviceStateManager
+
     private fun requireInit() {
         check(::appContext.isInitialized) { "Facade.initialize(context) must be called first." }
     }
 
-    /**
-     * Facade 초기화.
-     * - ScanManager / BondManager 인스턴스를 준비한다.
-     * - 내부 이벤트 라우터(EventRouter)를 초기화한다.
-     */
     @MainThread
     fun initialize(context: Context) {
         if (::appContext.isInitialized) return
@@ -67,7 +63,8 @@ object Facade {
         scan = ScanManager()
         bond = BondManager()
 
-        // 내부 이벤트 엔진 부트스트랩 (공개 DTO 의존 없음)
+        deviceStateManager = DeviceStateManager(appContext)
+
         EventRouter.initialize(appContext)
         eventInitialized = true
     }
@@ -76,45 +73,52 @@ object Facade {
     // 매니저 (stateless)
     // ============================================================================================
 
-    /** BLE 스캔 관리자 */
     private lateinit var scan: ScanManager
-
-    /** 시스템 Bond(페어링) 관리자 */
     private lateinit var bond: BondManager
 
     // ============================================================================================
     // 세션 (멀티 디바이스 관리)
     // ============================================================================================
 
-    /**
-     * 주소별 연결 세션.
-     * - gatt: 연결 및 GATT 입출력
-     * - led: LED 제어 매니저
-     * - deviceInfo: 디바이스 정보 읽기 매니저
-     * - ota: OTA 전송 매니저 (필요 시 생성)
-     */
     private data class Session(
         val gatt: GattClient,
         val led: LedControlManager,
         val deviceInfo: DeviceInfoManager,
         val ota: OtaManager?
-    )
+    ) {
+        /**
+         * ✅ 세션의 모든 리소스를 정리합니다.
+         */
+        fun cleanup() {
+            runCatching { ota?.abort() }
+            runCatching { led.close() }
+            runCatching { gatt.close() }
+        }
+    }
 
-    /** 연결된 세션(주소 → 세션) */
     private val sessions: MutableMap<String, Session> = ConcurrentHashMap()
 
-    /** 최근 스캔에서 관측한 이름/신호강도 캐시 */
-    private val lastSeenName = ConcurrentHashMap<String, String?>()
-    private val lastSeenRssi = ConcurrentHashMap<String, Int?>()
+    private val lastSeenName = ConcurrentHashMap<String, String>()
+    private val lastSeenRssi = ConcurrentHashMap<String, Int>()
+
+    private fun requireSession(mac: String): Session =
+        sessions[mac] ?: error("No active session for $mac")
+
+    /**
+     * ✅ 세션을 안전하게 제거하고 정리합니다.
+     */
+    private fun removeSession(mac: String) {
+        sessions.remove(mac)?.let { session ->
+            session.cleanup()
+        }
+        // ✅ DeviceStateManager에서도 제거
+        deviceStateManager.removeDevice(mac)
+    }
 
     // ============================================================================================
     // 스캔
     // ============================================================================================
 
-    /**
-     * BLE 스캔 시작.
-     * @param onFound 스캔 콜백 (mac, name, rssi)
-     */
     @MainThread
     @RequiresPermission(
         anyOf = [
@@ -127,14 +131,26 @@ object Facade {
         requireInit()
         scan.start(appContext) { mac, name, rssi ->
             if (mac.isNotBlank()) {
-                lastSeenName[mac] = name ?: "Unknown"
-                lastSeenRssi[mac] = rssi ?: -100
+                if (name != null) {
+                    lastSeenName[mac] = name
+                } else {
+                    lastSeenName[mac] = "Unknown"
+                }
+
+                if (rssi != null) {
+                    lastSeenRssi[mac] = rssi
+                } else {
+                    lastSeenRssi[mac] = -100
+                }
+
+                deviceStateManager.updateDeviceName(mac, name)
+                deviceStateManager.updateDeviceRssi(mac, rssi)
+
                 onFound(mac, name, rssi)
             }
         }
     }
 
-    /** BLE 스캔 중지. */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun stopScan() {
@@ -146,53 +162,111 @@ object Facade {
     // 연결 / 해제
     // ============================================================================================
 
-    /**
-     * 디바이스에 연결.
-     * - 연결 성공 시 세션을 생성하고 콜백을 호출한다.
-     * - 실패 시 gatt를 정리하고 실패 콜백을 호출한다.
-     */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connect(mac: String, onConnected: () -> Unit, onFailed: (Throwable) -> Unit) {
         requireInit()
-        // 이미 세션이 있으면 즉시 성공 콜백
-        sessions[mac]?.let { onConnected(); return }
+
+        sessions[mac]?.let {
+            onConnected()
+            return
+        }
+
+        deviceStateManager.updateConnectionState(mac, InternalConnectionState.Connecting())
 
         val gatt = GattClient(appContext)
+
+        gatt.setConnectionStateListener { address, newState, gattStatus ->
+            when (newState) {
+                BluetoothProfile.STATE_CONNECTED -> {
+                    deviceStateManager.updateConnectionState(
+                        address,
+                        InternalConnectionState.Connected()
+                    )
+                }
+                BluetoothProfile.STATE_DISCONNECTED -> {
+                    val reason = parseDisconnectReason(gattStatus)
+                    deviceStateManager.updateConnectionState(
+                        address,
+                        InternalConnectionState.Disconnected(reason)
+                    )
+                    removeSession(address)  // ✅ 세션 정리 및 상태 제거
+                }
+                BluetoothProfile.STATE_CONNECTING -> {
+                    deviceStateManager.updateConnectionState(
+                        address,
+                        InternalConnectionState.Connecting()
+                    )
+                }
+                BluetoothProfile.STATE_DISCONNECTING -> {
+                    deviceStateManager.updateConnectionState(
+                        address,
+                        InternalConnectionState.Disconnecting()
+                    )
+                }
+            }
+        }
+
         gatt.connect(
             address = mac,
             onConnected = {
-                // 연결 성공: 서브 매니저 구성
-                val led = LedControlManager(gattClient = gatt)
+                val led = LedControlManager(gatt)
                 val deviceInfo = DeviceInfoManager(gatt)
-                val ota = OtaManager(gatt) // 필요 시 바로 준비 (상태 관찰을 위해)
-                sessions[mac] = Session(gatt, led, deviceInfo, ota)
+                sessions[mac] = Session(gatt, led, deviceInfo, null)
+
+                deviceStateManager.updateConnectionState(
+                    mac,
+                    InternalConnectionState.Connected()
+                )
+
+                scope.launch {
+                    try {
+                        val info = deviceInfo.readAllInfo()
+                        deviceStateManager.updateDeviceInfo(mac, info)
+                    } catch (e: Exception) {
+                        // 실패해도 연결은 유지
+                    }
+                }
+
                 onConnected()
             },
             onFailed = { t ->
-                // 연결 실패: GATT 정리
                 runCatching { gatt.disconnect() }
+
+                deviceStateManager.updateConnectionState(
+                    mac,
+                    InternalConnectionState.Disconnected(InternalDisconnectReason.GATT_ERROR)
+                )
+
                 onFailed(t)
             }
         )
     }
 
-    /**
-     * 디바이스 연결 해제.
-     * - OTA/LED/GATT 순서로 자원을 안전하게 정리한다.
-     */
+    private fun parseDisconnectReason(gattStatus: Int): InternalDisconnectReason {
+        return when (gattStatus) {
+            0 -> InternalDisconnectReason.USER_REQUESTED
+            8 -> InternalDisconnectReason.DEVICE_POWERED_OFF
+            19 -> InternalDisconnectReason.DEVICE_POWERED_OFF
+            22 -> InternalDisconnectReason.TIMEOUT
+            62 -> InternalDisconnectReason.OUT_OF_RANGE
+            133 -> InternalDisconnectReason.GATT_ERROR
+            else -> InternalDisconnectReason.UNKNOWN
+        }
+    }
+
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect(mac: String) {
         requireInit()
-        sessions.remove(mac)?.let { s ->
-            runCatching { s.ota?.close() }
-            runCatching { s.led.close() }
-            runCatching { s.gatt.disconnect() }
-        }
+        removeSession(mac)  // ✅ 세션 정리 및 상태 제거
+
+        deviceStateManager.updateConnectionState(
+            mac,
+            InternalConnectionState.Disconnected(InternalDisconnectReason.USER_REQUESTED)
+        )
     }
 
-    /** 모든 디바이스 연결 해제. */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnectAll() {
@@ -200,53 +274,127 @@ object Facade {
         sessions.keys.toList().forEach { disconnect(it) }
     }
 
-    /**
-     * Facade 종료.
-     * - 모든 연결을 해제하고 내부 스코프를 취소한다.
-     * - 스캔 캐시를 정리한다.
-     */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun shutdown() {
         requireInit()
         disconnectAll()
+        deviceStateManager.clearAll()  // ✅ 모든 상태 정리
         scope.cancel()
-        lastSeenName.clear()
-        lastSeenRssi.clear()
     }
-
-    /** 연결된 세션을 요구 (없으면 예외) */
-    private fun requireSession(mac: String): Session =
-        sessions[mac] ?: error("Not connected: $mac")
-
-    @MainThread
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun ensureBond(mac: String, onDone: () -> Unit, onFailed: (Throwable) -> Unit) {
-        requireInit()
-        bond.ensureBond(appContext, mac, onDone, onFailed)
-    }
-
-    @MainThread
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun removeBond(mac: String, onResult: (Result<Unit>) -> Unit) {
-        requireInit()
-        bond.removeBond(appContext, mac, onResult)
-    }
-
 
     // ============================================================================================
-    // LED / 이펙트 전송 (단일 대상)
+    // Internal State 접근 (공개 모듈용)
     // ============================================================================================
 
     /**
-     * 단일 디바이스에 4바이트 색상 패킷 전송 [R, G, B, transition].
-     *
-     * 연결 가드:
-     * - 세션 존재 + GATT 실제 연결 확인 후 전송.
-     *
-     * @throws IllegalArgumentException 크기 검증 실패 시
-     * @throws IllegalStateException 연결되지 않은 경우
+     * Internal device states 접근 (공개 모듈에서 변환용).
      */
+    fun getInternalDeviceStates(): StateFlow<Map<String, InternalDeviceState>> {
+        requireInit()
+        return deviceStateManager.deviceStates
+    }
+
+    /**
+     * Internal connection states 접근 (공개 모듈에서 변환용).
+     */
+    fun getInternalConnectionStates(): StateFlow<Map<String, InternalConnectionState>> {
+        requireInit()
+        return deviceStateManager.connectionStates
+    }
+
+    /**
+     * Cached internal device info 접근.
+     */
+    fun getInternalDeviceInfo(mac: String): InternalDeviceInfo? {
+        requireInit()
+        return deviceStateManager.getDeviceInfo(mac)
+    }
+
+    // ============================================================================================
+    // 디바이스 정보 읽기
+    // ============================================================================================
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readDeviceName(mac: String, onResult: (Result<String>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readDeviceName()
+            onResult(result)
+        }
+        return true
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readModelNumber(mac: String, onResult: (Result<String>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readModelNumber()
+            onResult(result)
+        }
+        return true
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readFirmwareRevision(mac: String, onResult: (Result<String>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readFirmwareRevision()
+            onResult(result)
+        }
+        return true
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readManufacturer(mac: String, onResult: (Result<String>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readManufacturerName()
+            onResult(result)
+        }
+        return true
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readMacAddress(mac: String, onResult: (Result<String>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readMacAddress()
+            onResult(result)
+        }
+        return true
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readBattery(mac: String, onResult: (Result<Int>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readBatteryLevel()
+            onResult(result)
+        }
+        return true
+    }
+
+    // ============================================================================================
+    // MTU
+    // ============================================================================================
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun requestMtu(mac: String, mtu: Int, onResult: (Result<Int>) -> Unit): Boolean {
+        requireInit()
+        return requireSession(mac).gatt.requestMtu(mtu, onResult)
+    }
+
+    // ============================================================================================
+    // LED / 이펙트 전송
+    // ============================================================================================
+
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendColorTo(mac: String, packet4: ByteArray) {
         requireInit()
@@ -255,15 +403,6 @@ object Facade {
         requireSession(mac).led.sendColorPacket(packet4)
     }
 
-    /**
-     * 단일 디바이스에 16바이트 이펙트 페이로드 전송.
-     *
-     * 연결 가드:
-     * - 세션 존재 + GATT 실제 연결 확인 후 전송.
-     *
-     * @throws IllegalArgumentException 크기 검증 실패 시
-     * @throws IllegalStateException 연결되지 않은 경우
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectTo(mac: String, bytes20: ByteArray) {
         requireInit()
@@ -272,15 +411,6 @@ object Facade {
         requireSession(mac).led.sendEffectPayload(bytes20)
     }
 
-    /**
-     * 단일 디바이스에 타임라인 프레임들을 재생.
-     * frames: (timestampMs, payload16)
-     *
-     * 연결 가드:
-     * - 세션 존재 + GATT 실제 연결 확인 후 재생.
-     *
-     * @throws IllegalStateException 연결되지 않은 경우
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun playEntries(mac: String, frames: List<Pair<Long, ByteArray>>) {
         requireInit()
@@ -288,11 +418,6 @@ object Facade {
         requireSession(mac).led.play(frames)
     }
 
-    // ============================================================================================
-    // LED / 이펙트 전송 (브로드캐스트)
-    // ============================================================================================
-
-    /** 모든 연결 디바이스에 4바이트 색상 패킷 전송. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendColorPacket(packet4: ByteArray) {
         requireInit()
@@ -300,7 +425,6 @@ object Facade {
         sessions.keys.forEach { m -> runCatching { sendColorTo(m, packet4) } }
     }
 
-    /** 모든 연결 디바이스에 20바이트 이펙트 페이로드 전송. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectPayload(bytes20: ByteArray) {
         requireInit()
@@ -308,83 +432,16 @@ object Facade {
         sessions.keys.forEach { m -> runCatching { sendEffectTo(m, bytes20) } }
     }
 
-    /** 모든 연결 디바이스에서 동일 타임라인 재생. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun playFrames(entries: List<Pair<Long, ByteArray>>) {
+    fun playAllEntries(frames: List<Pair<Long, ByteArray>>) {
         requireInit()
-        sessions.keys.forEach { m -> runCatching { playEntries(m, entries) } }
-    }
-
-    // ============================================================================================
-    // MTU / Reads
-    // ============================================================================================
-
-    /** MTU 요청 (비동기 콜백) */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun requestMtu(mac: String, preferred: Int, onResult: (Result<Int>) -> Unit) {
-        requireInit()
-        requireSession(mac).gatt.requestMtu(preferred, onResult)
-    }
-
-    /** 디바이스 이름 읽기 */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readDeviceName(mac: String, onResult: (Result<String>) -> Unit) {
-        requireInit()
-        val s = requireSession(mac)
-        scope.launch { onResult(s.deviceInfo.readDeviceName(mac)) }
-    }
-
-    /** 모델명 읽기 */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readModelNumber(mac: String, onResult: (Result<String>) -> Unit) {
-        requireInit()
-        val s = requireSession(mac)
-        scope.launch { onResult(s.deviceInfo.readModelNumber(mac)) }
-    }
-
-    /** 펌웨어 버전 읽기 */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readFirmwareRevision(mac: String, onResult: (Result<String>) -> Unit) {
-        requireInit()
-        val s = requireSession(mac)
-        scope.launch { onResult(s.deviceInfo.readFirmwareRevision(mac)) }
-    }
-
-    /** 제조사명 읽기 */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readManufacturer(mac: String, onResult: (Result<String>) -> Unit) {
-        requireInit()
-        val s = requireSession(mac)
-        scope.launch { onResult(s.deviceInfo.readManufacturerName(mac)) }
-    }
-
-    /** 맥어드레스 읽기 (디바이스 정보 서비스 기반) */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readMacAddress(mac: String, onResult: (Result<String>) -> Unit) {
-        requireInit()
-        val s = requireSession(mac)
-        scope.launch { onResult(s.deviceInfo.readMacAddress(mac)) }
-    }
-
-    /** 배터리 레벨 읽기 */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun readBattery(mac: String, onResult: (Result<Int>) -> Unit) {
-        requireInit()
-        val s = requireSession(mac)
-        scope.launch { onResult(s.deviceInfo.readBatteryLevel(mac)) }
+        sessions.keys.forEach { m -> runCatching { playEntries(m, frames) } }
     }
 
     // ============================================================================================
     // OTA
     // ============================================================================================
 
-    /**
-     * OTA 시작 (Telink 계열 시퀀스 준수).
-     * - 내부 OtaManager를 세션에 보관하여, 상태 관찰/중단이 가능하도록 한다.
-     *
-     * 연결 가드:
-     * - 세션 존재 + GATT 실제 연결 확인 후 시작.
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun startOta(
         mac: String,
@@ -409,24 +466,12 @@ object Facade {
         )
     }
 
-    /** 진행 중 OTA 중단. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun abortOta(mac: String) {
         requireInit()
         sessions[mac]?.ota?.abort()
     }
 
-    /**
-     * OTA 상태 관찰(Flow) - **정수(ordinal)로 노출**.
-     *
-     * 주의:
-     * - 내부 enum(OtaState)을 public API에 직접 노출하지 않기 위해 **Int** 로 변환한다.
-     * - 공개 모듈에서는 해당 정수를 자체 공개 enum(OtaStatus)의 values()[ordinal] 형태로 매핑해 사용한다.
-     *
-     * 예)
-     *  public 모듈:
-     *    Facade.otaState(mac).map { ordinal -> OtaStatus.values().getOrElse(ordinal) { OtaStatus.ERROR } }
-     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun otaState(mac: String): Flow<Int> {
         requireInit()
@@ -440,21 +485,24 @@ object Facade {
     // 연결 상태 조회 유틸
     // ============================================================================================
 
-    /** 연결 디바이스 목록 (mac, name, rssi) */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connectedList(): List<Triple<String, String?, Int?>> {
         requireInit()
-        return sessions.keys.map { mac -> Triple(mac, lastSeenName[mac], lastSeenRssi[mac]) }
+        return sessions.keys.map { mac ->
+            Triple(
+                mac,
+                lastSeenName[mac],
+                lastSeenRssi[mac]
+            )
+        }
     }
 
-    /** 연결 디바이스 수 */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connectedCount(): Int {
         requireInit()
         return sessions.size
     }
 
-    /** 시스템 Bonded(페어링 완료) 목록 (mac, name) */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bondedList(): List<Pair<String, String?>> {
         requireInit()
@@ -463,14 +511,12 @@ object Facade {
         return result
     }
 
-    /** Bonded 디바이스 수 */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bondedCount(): Int {
         requireInit()
         return bondedList().size
     }
 
-    /** 특정 mac 연결 여부 (실제 GATT 연결 상태 포함) */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun isConnected(mac: String): Boolean {
         requireInit()
@@ -478,7 +524,6 @@ object Facade {
         return runCatching { session.gatt.isConnected() }.getOrDefault(false)
     }
 
-    /** 특정 mac Bond 여부 */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun isBonded(mac: String): Boolean {
         requireInit()
@@ -486,27 +531,15 @@ object Facade {
     }
 
     // ============================================================================================
-    // EFX (codec bridge -> EfxBinary)
+    // EFX
     // ============================================================================================
 
-    /** EFX 헤더: 매직 문자열 */
     @JvmStatic fun efxMagic(): String = EfxBinary.MAGIC
-
-    /** EFX 헤더: 버전 */
     @JvmStatic fun efxVersion(): Int = EfxBinary.VERSION
-
-    /** EFX 헤더: 예약 3바이트(프로토콜 규약에 맞춰 유지) */
     @JvmStatic fun efxReserved(): ByteArray = EfxBinary.RESERVED3
 
-    /**
-     * (musicId, frames)로부터 EFX 바이너리를 생성.
-     * frames: (timestampMs, payload16)
-     */
     @JvmStatic
-    fun efxEncode(
-        musicId: Int,
-        frames: List<Pair<Long, ByteArray>>
-    ): ByteArray {
+    fun efxEncode(musicId: Int, frames: List<Pair<Long, ByteArray>>): ByteArray {
         return EfxBinary.encode(
             magic = EfxBinary.MAGIC,
             version = EfxBinary.VERSION,
@@ -516,10 +549,6 @@ object Facade {
         )
     }
 
-    /**
-     * EFX 바이너리 요약 정보 조회 (헤더 기반).
-     * @return map: musicId, entryCount
-     */
     @JvmStatic
     fun efxInspect(bytes: ByteArray): Map<String, Long> {
         val p = EfxBinary.decode(bytes)
@@ -529,10 +558,6 @@ object Facade {
         )
     }
 
-    /**
-     * EFX 바이너리 완전 디코드.
-     * @return 헤더 + 프레임 전체
-     */
     @JvmStatic
     fun efxDecode(bytes: ByteArray): DecodedEfx {
         val p = EfxBinary.decode(bytes)
@@ -546,7 +571,6 @@ object Facade {
         )
     }
 
-    /** efxDecode() 결과 DTO */
     data class DecodedEfx(
         val magic: String,
         val version: Int,
@@ -583,30 +607,25 @@ object Facade {
     }
 
     // ============================================================================================
-    // MusicId (bridge → MusicIdProvider)
+    // MusicId
     // ============================================================================================
 
-    /** 파일로부터 musicId 생성 */
     @JvmStatic
     fun musicIdFromFile(file: java.io.File): Int =
         MusicIdProvider.fromFile(file)
 
-    /** 스트림으로부터 musicId 생성 (파일명 힌트 선택) */
     @JvmStatic
     fun musicIdFromStream(stream: java.io.InputStream, filenameHint: String? = null): Int =
         MusicIdProvider.fromStream(stream, filenameHint)
 
-    /** Uri로부터 musicId 생성 (안드로이드 컨텍스트 필요) */
     @JvmStatic
     fun musicIdFromUri(context: Context, uri: android.net.Uri): Int =
         MusicIdProvider.fromUri(context, uri)
 
     // ============================================================================================
-    // Events (공개 → 내부). 중요: 여기서는 **공개 DTO에 의존하지 않는다**.
-    //  - 공개 모듈에서 자체 DTO → InternalRule 로 매핑하여 넘길 것.
+    // Events
     // ============================================================================================
 
-    /** 내부 이벤트 모니터 활성화(리시버 등록). */
     fun eventEnable() {
         requireInit()
         if (!eventInitialized) {
@@ -616,77 +635,81 @@ object Facade {
         EventRouter.enable()
     }
 
-    /** 내부 이벤트 모니터 비활성화(리시버 해제). */
     fun eventDisable() {
         requireInit()
         EventRouter.disable()
     }
 
-    /** NotificationListenerService 연결 알림 전달. */
     fun eventOnNotificationListenerConnected() {
         requireInit()
         EventRouter.onNotificationListenerConnected()
     }
 
-    /** NotificationListenerService 연결 끊김 알림 전달. */
     fun eventOnNotificationListenerDisconnected() {
         requireInit()
         EventRouter.onNotificationListenerDisconnected()
     }
 
-    /** 게시된 알림 전달. */
     fun eventOnNotificationPosted(sbn: android.service.notification.StatusBarNotification) {
         requireInit()
         EventRouter.onNotificationPosted(sbn)
     }
 
-    /** 제거된 알림 전달. */
     fun eventOnNotificationRemoved(sbn: android.service.notification.StatusBarNotification) {
         requireInit()
         EventRouter.onNotificationRemoved(sbn)
     }
 
-    // ---- Rule registry APIs (내부 타입만) ------------------------------------------------------
-
-    /** 전역 규칙 설정 */
     fun eventSetGlobalRulesInternal(rules: List<InternalRule>) {
         requireInit()
         GlobalEventRegistry.set(rules)
     }
 
-    /** 전역 규칙 비우기 */
     fun eventClearGlobalRulesInternal() {
         requireInit()
         GlobalEventRegistry.clear()
     }
 
-    /** 특정 디바이스 규칙 설정 */
     fun eventSetDeviceRulesInternal(mac: String, rules: List<InternalRule>) {
         requireInit()
         DeviceEventRegistry.set(mac, rules)
     }
 
-    /** 특정 디바이스 규칙 비우기 */
     fun eventClearDeviceRulesInternal(mac: String) {
         requireInit()
         DeviceEventRegistry.clear(mac)
     }
 
-    /** 전역 규칙 조회 */
     fun eventGetGlobalRulesInternal(): List<InternalRule> {
         requireInit()
         return GlobalEventRegistry.get()
     }
 
-    /** 특정 디바이스 규칙 조회 */
     fun eventGetDeviceRulesInternal(mac: String): List<InternalRule> {
         requireInit()
         return DeviceEventRegistry.get(mac)
     }
 
-    /** 모든 디바이스 규칙 맵 조회 */
     fun eventGetAllDeviceRulesInternal(): Map<String, List<InternalRule>> {
         requireInit()
         return DeviceEventRegistry.getAll()
+    }
+
+    // ============================================================================================
+    // Bond
+    // ============================================================================================
+
+    @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun ensureBond(mac: String, onDone: () -> Unit, onFailed: (Throwable) -> Unit) {
+        requireInit()
+        bond.ensureBond(appContext, mac, onDone, onFailed)
+    }
+
+    @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun removeBond(mac: String, onResult: (Result<Unit>) -> Unit) {
+        requireInit()
+        bond.removeBond(appContext, mac, onResult)
     }
 }

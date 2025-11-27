@@ -1,48 +1,55 @@
-@file:Suppress("MissingPermission", "unused")
-
 package com.lightstick
 
 import android.Manifest
 import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.device.ConnectionState
 import com.lightstick.device.Device
-import com.lightstick.device.Controller
+import com.lightstick.device.DeviceInfo
+import com.lightstick.device.DeviceState
+import com.lightstick.device.TypeMappers
 import com.lightstick.internal.api.Facade
 import com.lightstick.types.Color
 import com.lightstick.types.LSEffectPayload
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 /**
- * Public BLE façade for scanning, connecting, global queries, and simple broadcasts.
+ * Main entry point for the LightStick BLE SDK.
  *
- * Design:
- * - **Per-device control**: Use [Device.connect] and the provided [Controller] to call
- *   `sendColor`, `sendEffect`, `requestMtu`, `readBattery`, etc.
- * - **Global control/queries**: Use this singleton for scanning, shutdown, listing connected/bonded
- *   devices, and broadcasting the same color/effect to all connected devices.
+ * This singleton provides:
+ * - Initialization
+ * - Scanning (discover devices)
+ * - Global queries (connected/bonded counts & lists)
+ * - Broadcast helpers (send color/effect to all connected)
+ * - State observation (connection states, device states)
+ * - Shutdown
  *
- * Permissions:
- * - Scan: [Manifest.permission.BLUETOOTH_SCAN] on API 31+, or location permissions on API ≤ 30.
- * - Connect/Read/Write: [Manifest.permission.BLUETOOTH_CONNECT] on API 31+.
+ * Individual device operations (connect, sendColor, sendEffect, etc.) should be performed
+ * through the [Device] class after obtaining an instance via scan or manual construction.
  *
  * @since 1.0.0
- *
- * @sample com.lightstick.samples.BleSamples.sampleScanAndConnect
  */
 object LSBluetooth {
 
-    // --------------------------------------------------------------------------------------------
-    // Init / Scan
-    // --------------------------------------------------------------------------------------------
+    private val scope = CoroutineScope(Dispatchers.Default)
+
+    // ============================================================================================
+    // Initialization
+    // ============================================================================================
 
     /**
-     * Initializes the internal BLE façade. Idempotent.
+     * Initializes the SDK with the application context.
      *
-     * Call this once at app startup (e.g., in `Application.onCreate`).
+     * Call this once during app startup (e.g., Application.onCreate).
+     * Safe to call multiple times; only the first call has effect.
      *
-     * @param context Application or activity context; the application context will be retained.
-     * @throws IllegalStateException If initialization fails unexpectedly.
-     * @sample com.lightstick.samples.BleSamples.sampleInitialize
+     * @param context Application context.
      */
     @JvmStatic
     @MainThread
@@ -50,14 +57,15 @@ object LSBluetooth {
         Facade.initialize(context)
     }
 
+    // ============================================================================================
+    // Scan
+    // ============================================================================================
+
     /**
-     * Starts BLE scanning and reports discovered devices via [onDeviceFound].
+     * Starts BLE scanning.
      *
-     * The provided callback may be invoked multiple times as scan results update.
-     *
-     * @param onDeviceFound Callback receiving a [Device] for each scan result.
-     * @throws SecurityException If required scan permissions are not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleStartScan
+     * @param onFound Callback invoked for each discovered device.
+     * @throws SecurityException If scan permissions are missing.
      */
     @JvmStatic
     @MainThread
@@ -68,17 +76,16 @@ object LSBluetooth {
             Manifest.permission.ACCESS_COARSE_LOCATION
         ]
     )
-    fun startScan(onDeviceFound: (Device) -> Unit) {
+    fun startScan(onFound: (Device) -> Unit) {
         Facade.startScan { mac, name, rssi ->
-            onDeviceFound(Device(mac = mac, name = name, rssi = rssi))
+            onFound(Device(mac, name, rssi))
         }
     }
 
     /**
-     * Stops an ongoing BLE scan.
+     * Stops BLE scanning.
      *
-     * @throws SecurityException If scan permissions are missing on the current API level.
-     * @sample com.lightstick.samples.BleSamples.sampleStopScan
+     * @throws SecurityException If scan permissions are missing.
      */
     @JvmStatic
     @MainThread
@@ -87,119 +94,170 @@ object LSBluetooth {
         Facade.stopScan()
     }
 
-    // --------------------------------------------------------------------------------------------
-    // Global queries (connected/bonded lists & counts)
-    // --------------------------------------------------------------------------------------------
+    // ============================================================================================
+    // Global Queries (Connected/Bonded Lists & Counts)
+    // ============================================================================================
 
     /**
-     * Returns the list of **currently connected** devices.
+     * Returns the list of currently connected devices.
      *
-     * @return A list of [Device] objects (name/RSSI may be null or last-known).
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleConnectedDevices
+     * @return List of connected Device objects.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connectedDevices(): List<Device> =
-        Facade.connectedList().map { (mac, name, rssi) -> Device(mac, name, rssi) }
+        Facade.connectedList().map { (mac, name, rssi) ->
+            Device(mac, name, rssi)
+        }
 
     /**
-     * Returns the number of **currently connected** devices.
+     * Returns the number of currently connected devices.
      *
      * @return Connected device count.
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleConnectedCount
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connectedCount(): Int = Facade.connectedCount()
 
     /**
-     * Returns the system-bonded (paired) device list. RSSI is not available and thus `null`.
+     * Returns the system-bonded (paired) device list.
      *
-     * @return A list of bonded [Device] entries (name may be null).
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleBondedDevices
+     * @return List of bonded Device objects (RSSI is null).
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bondedDevices(): List<Device> =
-        Facade.bondedList().map { (mac, name) -> Device(mac, name, /* rssi = */ null) }
+        Facade.bondedList().map { (mac, name) ->
+            Device(mac, name, rssi = null)
+        }
 
     /**
      * Returns the number of system-bonded (paired) devices.
      *
      * @return Bonded device count.
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleBondedCount
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bondedCount(): Int = Facade.bondedCount()
 
-    // --------------------------------------------------------------------------------------------
-    // Broadcast helpers (send to all connected devices)
-    // --------------------------------------------------------------------------------------------
+    // ============================================================================================
+    // Broadcast Helpers
+    // ============================================================================================
 
     /**
-     * Sends the same color to **all currently connected** devices.
+     * Sends the same color to all currently connected devices.
      *
-     * This is a convenience broadcast. If you need per-device timing or different transitions,
-     * connect to each device and use the per-device [Controller] instead.
-     *
-     * Internally this uses a single broadcast call to the internal façade, rather than
-     * iterating the connected list in the public layer.
-     *
-     * @param color The RGB color to send.
-     * @param transition Transition byte (0–255) appended as the 4th byte of the color packet.
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleBroadcastColor
+     * @param color RGB color.
+     * @param transition Transition time parameter (firmware-specific).
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun broadcastColor(color: Color, transition: Int = 0) {
+    fun broadcastColor(color: Color, transition: Int) {
         val packet = byteArrayOf(
-            color.r.toByte(), color.g.toByte(), color.b.toByte(),
-            transition.coerceIn(0, 255).toByte()
+            color.r.toByte(),
+            color.g.toByte(),
+            color.b.toByte(),
+            transition.toByte()
         )
-        // Single internal broadcast instead of per-device loop.
         Facade.sendColorPacket(packet)
     }
 
     /**
-     * Sends the same 20-byte effect frame to **all currently connected** devices.
+     * Sends the same effect payload to all currently connected devices.
      *
-     * Useful when broadcasting a synchronized single-frame effect.
-     * For time-sequenced playback, prefer sending a full timeline from your app logic,
-     * or use per-device controllers for precise control.
-     *
-     * @param payload The effect payload; must encode to 20 bytes.
-     * @throws IllegalArgumentException If the encoded payload is not exactly 20 bytes.
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleBroadcastEffect
+     * @param payload 20-byte effect payload.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun broadcastEffect(payload: LSEffectPayload) {
-        val frame = payload.toByteArray()
-        require(frame.size == 20) { "Effect payload must be 20 bytes" }
-        // Single internal broadcast instead of per-device loop.
-        Facade.sendEffectPayload(frame)
+        Facade.sendEffectPayload(payload.toByteArray())
     }
 
-    // --------------------------------------------------------------------------------------------
-    // Shutdown (release all sessions)
-    // --------------------------------------------------------------------------------------------
+    /**
+     * Plays the same timestamped frames on all currently connected devices.
+     *
+     * @param frames List of (timestampMs, 20-byte payload) pairs.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
+     */
+    @JvmStatic
+    @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun broadcastFrames(frames: List<Pair<Long, LSEffectPayload>>) {
+        val converted = frames.map { (ts, payload) -> ts to payload.toByteArray() }
+        Facade.playAllEntries(converted)
+    }
+
+    // ============================================================================================
+    // State Observation
+    // ============================================================================================
 
     /**
-     * Disconnects from all devices and releases internal resources.
+     * Observes unified device states (connection + device info).
      *
-     * Call this on app shutdown or user logout.
+     * @return Hot StateFlow of device states mapped by MAC address.
+     */
+    @JvmStatic
+    fun observeDeviceStates(): StateFlow<Map<String, DeviceState>> {
+        return Facade.getInternalDeviceStates()
+            .map { internalMap ->
+                internalMap.mapValues { (_, internalState) ->
+                    TypeMappers.toPublic(internalState)
+                }
+            }
+            .stateIn(
+                scope = scope,
+                started = SharingStarted.Eagerly,
+                initialValue = emptyMap()
+            )
+    }
+
+    /**
+     * Observes connection states only.
      *
-     * @throws SecurityException If Bluetooth connect permission is not granted.
-     * @sample com.lightstick.samples.BleSamples.sampleShutdown
+     * @return Hot StateFlow of connection states mapped by MAC address.
+     */
+    @JvmStatic
+    fun observeConnectionStates(): StateFlow<Map<String, ConnectionState>> {
+        return Facade.getInternalConnectionStates()
+            .map { internalMap ->
+                internalMap.mapValues { (_, internalState) ->
+                    TypeMappers.toPublic(internalState)
+                }
+            }
+            .stateIn(
+                scope = scope,
+                started = SharingStarted.Eagerly,
+                initialValue = emptyMap()
+            )
+    }
+
+    /**
+     * Returns cached device info snapshot for a specific device.
+     *
+     * @param mac Device MAC address.
+     * @return DeviceInfo if available, null otherwise.
+     */
+    @JvmStatic
+    fun getCachedDeviceInfo(mac: String): DeviceInfo? {
+        return Facade.getInternalDeviceInfo(mac)?.let { TypeMappers.toPublic(it) }
+    }
+
+    // ============================================================================================
+    // Shutdown
+    // ============================================================================================
+
+    /**
+     * Disconnects all devices and releases SDK resources.
+     *
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
      */
     @JvmStatic
     @MainThread
