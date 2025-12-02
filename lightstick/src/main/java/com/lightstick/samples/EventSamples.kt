@@ -57,7 +57,7 @@ object EventSamples {
                 ),
                 action = EventAction.SendEffectFrame(
                     bytes20 = LSEffectPayload.Effects
-                        .blink(Colors.BLUE, period = 8)
+                        .blink(8, Colors.BLUE)
                         .toByteArray()
                 ),
                 target = ALL_CONNECTED,
@@ -136,7 +136,7 @@ object EventSamples {
             ),
             action = EventAction.SendEffectFrame(
                 bytes20 = LSEffectPayload.Effects
-                    .strobe(Colors.GREEN, period = 6)
+                    .strobe(4, Colors.GREEN)
                     .toByteArray()
             ),
             target = ALL_CONNECTED
@@ -155,7 +155,7 @@ object EventSamples {
             trigger = EventTrigger(type = EventType.CUSTOM),
             action = EventAction.SendEffectFrame(
                 bytes20 = LSEffectPayload.Effects
-                    .breath(Colors.PURPLE, period = 12)
+                    .breath(12, Colors.PURPLE)
                     .toByteArray()
             ),
             target = THIS_DEVICE
@@ -202,7 +202,7 @@ object EventSamples {
                 id = "call-cyan-strobe",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.strobe(Colors.CYAN, period = 5).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.strobe(5, Colors.CYAN).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -220,7 +220,7 @@ object EventSamples {
                 id = "cal-end-pink-blink",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.blink(Colors.PINK, period = 10).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.blink(10, Colors.PINK).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -229,7 +229,7 @@ object EventSamples {
                 id = "custom-orange-breath",
                 trigger = EventTrigger(type),
                 action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.breath(Colors.ORANGE, period = 14).toByteArray()
+                    bytes20 = LSEffectPayload.Effects.breath(14, Colors.ORANGE).toByteArray()
                 ),
                 target = ALL_CONNECTED
             )
@@ -291,7 +291,7 @@ object EventSamples {
     /** sampleSendEffectAction: build EventAction.SendEffectFrame with blink BLUE. */
     fun sampleSendEffectAction(): EventAction.SendEffectFrame =
         EventAction.SendEffectFrame(
-            bytes20 = LSEffectPayload.Effects.blink(Colors.BLUE, period = 10).toByteArray()
+            bytes20 = LSEffectPayload.Effects.blink(10, Colors.BLUE).toByteArray()
         )
 
     /** samplePlayFramesAction: build EventAction.PlayFrames example (two frames). */

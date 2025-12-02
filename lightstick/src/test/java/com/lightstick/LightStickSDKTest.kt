@@ -99,9 +99,9 @@ class LightStickSDKTest {
         )
 
         val bytes = blinkPayload.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (BLINK = 3)
-        assertEquals(3, bytes[7].toInt())
+        assertEquals(3, bytes[10].toInt())
     }
 
     @Test
@@ -113,9 +113,9 @@ class LightStickSDKTest {
         )
 
         val bytes = strobePayload.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (STROBE = 2)
-        assertEquals(2, bytes[7].toInt())
+        assertEquals(2, bytes[10].toInt())
     }
 
     @Test
@@ -127,9 +127,9 @@ class LightStickSDKTest {
         )
 
         val bytes = breathPayload.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (BREATH = 4)
-        assertEquals(4, bytes[7].toInt())
+        assertEquals(4, bytes[10].toInt())
     }
 
     @Test
@@ -138,9 +138,9 @@ class LightStickSDKTest {
         val onPayload = LSEffectPayload.Effects.on(Colors.CYAN)
 
         val bytes = onPayload.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (ON = 1)
-        assertEquals(1, bytes[7].toInt())
+        assertEquals(1, bytes[10].toInt())
     }
 
     @Test
@@ -149,9 +149,9 @@ class LightStickSDKTest {
         val offPayload = LSEffectPayload.Effects.off()
 
         val bytes = offPayload.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (OFF = 0)
-        assertEquals(0, bytes[7].toInt())
+        assertEquals(0, bytes[10].toInt())
     }
 
     // ===========================================================================================
@@ -185,16 +185,16 @@ class LightStickSDKTest {
         // 다양한 이펙트 시퀀스 생성
         val effects = listOf(
             LSEffectPayload.Effects.on(Colors.RED),
-            LSEffectPayload.Effects.blink(Colors.GREEN, period = 5),
-            LSEffectPayload.Effects.strobe(Colors.BLUE, period = 3),
-            LSEffectPayload.Effects.breath(Colors.YELLOW, period = 15),
+            LSEffectPayload.Effects.blink(5,Colors.GREEN),
+            LSEffectPayload.Effects.strobe(3,Colors.BLUE),
+            LSEffectPayload.Effects.breath(15, Colors.YELLOW),
             LSEffectPayload.Effects.off()
         )
 
         // 모든 이펙트가 16바이트인지 확인
         effects.forEach { payload ->
             val bytes = payload.toByteArray()
-            assertEquals(16, bytes.size)
+            assertEquals(20, bytes.size)
         }
     }
 
@@ -221,11 +221,11 @@ class LightStickSDKTest {
         val periods = listOf(1, 5, 10, 20, 30, 60)
 
         periods.forEach { period ->
-            val blink = LSEffectPayload.Effects.blink(Colors.WHITE, period)
-            assertEquals(16, blink.toByteArray().size)
+            val blink = LSEffectPayload.Effects.blink(period, Colors.WHITE)
+            assertEquals(20, blink.toByteArray().size)
 
-            val breath = LSEffectPayload.Effects.breath(Colors.WHITE, period)
-            assertEquals(16, breath.toByteArray().size)
+            val breath = LSEffectPayload.Effects.breath(period, Colors.WHITE)
+            assertEquals(20, breath.toByteArray().size)
         }
     }
 
@@ -266,10 +266,10 @@ class LightStickSDKTest {
     @Test
     fun testPeriodBoundaryValues() {
         // period 경계값 테스트
-        val minPeriod = LSEffectPayload.Effects.blink(Colors.RED, period = 1)
-        assertEquals(16, minPeriod.toByteArray().size)
+        val minPeriod = LSEffectPayload.Effects.blink(1, Colors.RED)
+        assertEquals(20, minPeriod.toByteArray().size)
 
-        val maxPeriod = LSEffectPayload.Effects.blink(Colors.RED, period = 255)
-        assertEquals(16, maxPeriod.toByteArray().size)
+        val maxPeriod = LSEffectPayload.Effects.blink(255, Colors.RED)
+        assertEquals(20, maxPeriod.toByteArray().size)
     }
 }

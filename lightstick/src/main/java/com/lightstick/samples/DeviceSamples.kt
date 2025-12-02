@@ -47,11 +47,11 @@ object DeviceSamples {
 
                 // Controller-scoped calls
                 controller.sendColor(Colors.BLUE, transition = 8)
-                controller.sendEffect(LSEffectPayload.Effects.blink(Colors.RED, period = 6))
+                controller.sendEffect(LSEffectPayload.Effects.blink(6, Colors.RED))
 
                 val frames = listOf(
                     0L to LSEffectPayload.Effects.on(Colors.WHITE).toByteArray(),
-                    250L to LSEffectPayload.Effects.strobe(Colors.CYAN, period = 4).toByteArray()
+                    250L to LSEffectPayload.Effects.strobe(4, Colors.CYAN).toByteArray()
                 )
                 controller.play(frames)
 
@@ -88,7 +88,7 @@ object DeviceSamples {
         // Device-level convenience calls after connection is established
         if (device.isConnected()) {
             device.sendColor(Colors.GREEN, transition = 4)
-            device.sendEffect(LSEffectPayload.Effects.breath(Colors.MAGENTA, period = 10))
+            device.sendEffect(LSEffectPayload.Effects.breath(10, Colors.MAGENTA))
         }
     }
 
@@ -163,7 +163,7 @@ object DeviceSamples {
         if (!device.isConnected()) {
             Log.w("Sample", "Not connected"); return
         }
-        val payload = LSEffectPayload.Effects.strobe(Colors.CYAN, period = 5)
+        val payload = LSEffectPayload.Effects.strobe(5, Colors.CYAN)
         val ok = device.sendEffect(payload)
         Log.d("Sample", "sendEffect submitted=$ok")
     }
@@ -178,7 +178,7 @@ object DeviceSamples {
         }
         val frames = listOf(
             0L to LSEffectPayload.Effects.on(Colors.WHITE).toByteArray(),
-            200L to LSEffectPayload.Effects.blink(Colors.BLUE, period = 4).toByteArray(),
+            200L to LSEffectPayload.Effects.blink(4, Colors.BLUE).toByteArray(),
             400L to LSEffectPayload.Effects.off().toByteArray()
         )
         val ok = device.play(frames)

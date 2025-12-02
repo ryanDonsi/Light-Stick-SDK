@@ -236,9 +236,9 @@ data class LSEffectPayload(
         @JvmStatic
         @JvmOverloads
         fun strobe(
+            period: Int,
             color: Color,
             backgroundColor: Color = Colors.BLACK,
-            period: Int,
             randomColor: Int = 0,
             randomDelay: Int = 0,
             effectIndex: Int = 0,
@@ -266,9 +266,9 @@ data class LSEffectPayload(
          * Blink effect.
          *
          * **Primary Parameters** (commonly used):
+         * @param period Blink period in units of 10ms (required).
          * @param color LED foreground color (required).
          * @param backgroundColor LED background color (default: BLACK).
-         * @param period Blink period in units of 10ms (required).
          * @param randomColor Random color flag (0=disabled, 1=enabled, default: 0).
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
@@ -285,9 +285,9 @@ data class LSEffectPayload(
         @JvmStatic
         @JvmOverloads
         fun blink(
+            period: Int,
             color: Color,
             backgroundColor: Color = Colors.BLACK,
-            period: Int,
             randomColor: Int = 0,
             randomDelay: Int = 0,
             effectIndex: Int = 0,
@@ -315,9 +315,9 @@ data class LSEffectPayload(
          * Breathing effect.
          *
          * **Primary Parameters** (commonly used):
+         * @param period Breath period in units of 10ms (required).
          * @param color LED foreground color (required).
          * @param backgroundColor LED background color (default: BLACK).
-         * @param period Breath period in units of 10ms (required).
          * @param randomColor Random color flag (0=disabled, 1=enabled, default: 0).
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
@@ -334,9 +334,9 @@ data class LSEffectPayload(
         @JvmStatic
         @JvmOverloads
         fun breath(
+            period: Int,
             color: Color,
             backgroundColor: Color = Colors.BLACK,
-            period: Int,
             randomColor: Int = 0,
             randomDelay: Int = 0,
             effectIndex: Int = 0,

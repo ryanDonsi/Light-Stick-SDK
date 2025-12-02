@@ -62,9 +62,9 @@ class BasicLightStickTest {
             period = 10
         )
 
-        // 이펙트 페이로드를 바이트 배열로 변환하면 16바이트여야 함
+        // 이펙트 페이로드를 바이트 배열로 변환하면 20바이트여야 함
         val bytes = blink.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
     }
 
     @Test
@@ -76,7 +76,7 @@ class BasicLightStickTest {
         )
 
         val bytes = strobe.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
     }
 
     @Test
@@ -88,7 +88,7 @@ class BasicLightStickTest {
         )
 
         val bytes = breath.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
     }
 
     @Test
@@ -97,7 +97,7 @@ class BasicLightStickTest {
         val on = LSEffectPayload.Effects.on(Colors.WHITE)
 
         val bytes = on.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
     }
 
     @Test
@@ -106,6 +106,6 @@ class BasicLightStickTest {
         val off = LSEffectPayload.Effects.off()
 
         val bytes = off.toByteArray()
-        assertEquals(16, bytes.size)
+        assertEquals(20, bytes.size)
     }
 }

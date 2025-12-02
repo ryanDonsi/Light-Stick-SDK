@@ -19,7 +19,7 @@ testRules = "1.6.1"
 testRunner = "1.6.2"
 
 # SDK/JVM
-compileSdk = "36"
+compileSdk = "35"
 minSdk = "26"
 jvmTarget = "17"
 
@@ -39,9 +39,9 @@ androidx-test-runner = { group = "androidx.test", name = "runner", version.ref =
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-android-library     = { id = "com.android.library",     version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 android-fusedlibrary = { id = "com.android.fused-library", version.ref = "agp" }
-kotlin-android      = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-kotlin-parcelize    = { id = "org.jetbrains.kotlin.plugin.parcelize" }
-dokka               = { id = "org.jetbrains.dokka", version.ref = "dokka" }
-maven-publish = { id = "maven-publish"}
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+maven-publish = { id = "maven-publish" }

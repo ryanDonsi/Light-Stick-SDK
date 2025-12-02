@@ -56,7 +56,7 @@ object BleSamples {
                         // 연결 테스트: 파랑색 전송
                         ctl.sendColor(Colors.BLUE, transition = 8)
                         // 간단한 이펙트도 한 번
-                        ctl.sendEffect(LSEffectPayload.Effects.blink(Colors.CYAN, period = 6))
+                        ctl.sendEffect(LSEffectPayload.Effects.blink(6, Colors.CYAN))
                     },
                     onFailed = { t ->
                         Log.w("BleSamples", "Connect failed: ${t.message}", t)
