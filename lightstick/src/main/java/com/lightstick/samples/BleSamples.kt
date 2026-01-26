@@ -14,7 +14,6 @@ import android.content.Context
 import android.util.Log
 import com.lightstick.LSBluetooth
 import com.lightstick.device.Device
-import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.LSEffectPayload
 
@@ -51,12 +50,12 @@ object BleSamples {
                 Log.d("BleSamples", "Connecting to ${dev.mac} (${dev.name})")
 
                 dev.connect(
-                    onConnected = { ctl ->
-                        Log.d("BleSamples", "Connected: ${ctl.device.mac}")
+                    onConnected = {
+                        Log.d("BleSamples", "Connected: ${dev.mac}")
                         // 연결 테스트: 파랑색 전송
-                        ctl.sendColor(Colors.BLUE, transition = 8)
+                        dev.sendColor(Colors.BLUE, transition = 8)
                         // 간단한 이펙트도 한 번
-                        ctl.sendEffect(LSEffectPayload.Effects.blink(6, Colors.CYAN))
+                        dev.sendEffect(LSEffectPayload.Effects.blink(6, Colors.CYAN))
                     },
                     onFailed = { t ->
                         Log.w("BleSamples", "Connect failed: ${t.message}", t)
@@ -100,31 +99,5 @@ object BleSamples {
             println("Bonded: ${it.size}")
             it.forEach { d -> println(" - ${d.mac} (${d.name})") }
         }
-    }
-
-    /** Read bonded count. */
-    fun sampleBondedCount(): Int {
-        val n = LSBluetooth.bondedCount()
-        println("Bonded count: $n")
-        return n
-    }
-
-    /** Broadcast a color to all connected devices. */
-    fun sampleBroadcastColor() {
-        LSBluetooth.broadcastColor(Color(255, 80, 0), transition = 16)
-    }
-
-    /** Broadcast a single-frame effect to all connected devices. */
-    fun sampleBroadcastEffect() {
-        // You can construct payload via LSEffectPayload.Effects.* helpers
-        val payload = LSEffectPayload.Effects.blink(
-            color = Colors.BLUE, period = 10
-        )
-        LSBluetooth.broadcastEffect(payload)
-    }
-
-    /** Shutdown all sessions and release resources. */
-    fun sampleShutdown() {
-        LSBluetooth.shutdown()
     }
 }

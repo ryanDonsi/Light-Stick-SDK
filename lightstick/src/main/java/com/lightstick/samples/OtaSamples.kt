@@ -83,7 +83,7 @@ object OtaSamples {
 
         if (!device.isConnected()) {
             device.connect(
-                onConnected = { _ ->
+                onConnected = {
                     Log.d("OtaSamples", "Connected. Start observing OTA state and launch OTA.")
                     startObserveState(device)
                     startOtaNow(device)

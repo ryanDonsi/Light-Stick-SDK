@@ -32,6 +32,10 @@ import kotlin.time.Duration.Companion.seconds
  *           at the system level (e.g., by other apps or previous sessions) and
  *           attempt to restore SDK-level sessions with them. This is useful for
  *           recovering connections after app restart or process death.
+ * @property systemConnectionFilter Optional filter for system connection restoration.
+ *            Only devices that pass this filter will be restored from system-level connections.
+ *            If null, defaults to Light-Stick devices only (name contains "LS").
+ *            Example: `{ name -> name?.contains("LS", ignoreCase = true) == true }`
  * @property autoReadDeviceInfo If true, automatically read Device Information Service
  *           (DIS) characteristics and battery level immediately after successful
  *           connection. This populates the DeviceInfo cache for faster UI updates.
@@ -49,6 +53,7 @@ data class InitConfig(
     val connectionTimeout: Duration = 10.seconds,
     val maxConcurrentConnections: Int = 7,
     val restoreSystemConnections: Boolean = true,
+    val systemConnectionFilter: ((String?) -> Boolean)? = null,
     val autoReadDeviceInfo: Boolean = true,
     val enableConnectionMonitoring: Boolean = true
 )

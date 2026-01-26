@@ -57,13 +57,19 @@ object Facade {
     }
 
     @MainThread
-    fun initialize(context: Context) {
+    fun initialize(
+        context: Context,
+        systemConnectionFilter: ((String?) -> Boolean)? = null
+    ) {
         if (::appContext.isInitialized) return
         appContext = context.applicationContext
         scan = ScanManager()
         bond = BondManager()
 
-        deviceStateManager = DeviceStateManager(appContext)
+        deviceStateManager = DeviceStateManager(
+            context = appContext,
+            deviceFilter = systemConnectionFilter
+        )
 
         EventRouter.initialize(appContext)
         eventInitialized = true
@@ -436,6 +442,90 @@ object Facade {
     fun playAllEntries(frames: List<Pair<Long, ByteArray>>) {
         requireInit()
         sessions.keys.forEach { m -> runCatching { playEntries(m, frames) } }
+    }
+
+    // ============================================================================================
+// ✅ 타임라인 재생 API (기존 Facade.kt에 추가)
+// ============================================================================================
+
+    /**
+     * 타임라인을 로드합니다.
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     * @param frames 타임라인 엔트리 [(timestampMs, 20B payload), ...]
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun loadTimeline(mac: String, frames: List<Pair<Long, ByteArray>>) {
+        requireInit()
+        if (!isConnected(mac)) error("Not connected: $mac")
+        requireSession(mac).led.loadTimeline(frames)
+    }
+
+    /**
+     * 현재 음악 재생 위치를 업데이트합니다.
+     *
+     * 주기적으로 호출되어야 하며 (권장: 100ms), SDK는 내부적으로
+     * 각 이펙트를 정확한 타이밍에 전송합니다.
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     * @param currentPositionMs 현재 음악 재생 위치 (밀리초)
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun updatePlaybackPosition(mac: String, currentPositionMs: Long) {
+        requireInit()
+        if (!isConnected(mac)) return
+        requireSession(mac).led.updatePlaybackPosition(currentPositionMs)
+    }
+
+    /**
+     * 이펙트 전송을 일시정지합니다.
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun pauseEffects(mac: String) {
+        requireInit()
+        if (!isConnected(mac)) return
+        requireSession(mac).led.pauseEffects()
+    }
+
+    /**
+     * 이펙트 전송을 재개합니다.
+     *
+     * 내부적으로 syncIndex가 자동 증가하여 재동기화가 처리됩니다.
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun resumeEffects(mac: String) {
+        requireInit()
+        if (!isConnected(mac)) return
+        requireSession(mac).led.resumeEffects()
+    }
+
+    /**
+     * 타임라인 재생을 완전히 중단합니다.
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun stopTimeline(mac: String) {
+        requireInit()
+        if (!isConnected(mac)) return
+        requireSession(mac).led.stopTimeline()
+    }
+
+    /**
+     * 타임라인 재생 상태를 조회합니다.
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     * @return true if timeline is loaded and effects are enabled
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun isTimelinePlaying(mac: String): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).led.isTimelinePlaying()
     }
 
     // ============================================================================================

@@ -7,7 +7,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.lightstick.LSBluetooth
-import com.lightstick.device.Controller
 import com.lightstick.device.Device
 import com.lightstick.types.Colors
 import com.lightstick.types.LSEffectPayload

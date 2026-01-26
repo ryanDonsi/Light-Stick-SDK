@@ -45,115 +45,56 @@ data class Device(
     // ------------------------------------------------------------------------
 
     /**
-     * Connects to this device and provides a device-scoped [Controller].
+     * Connects to this device.
      *
-     * A [Controller] is created internally and passed to [onConnected].
-     * After a successful connection, you may use Device-level convenience methods
-     * like [sendColor], [sendEffect], [play], [requestMtu], [readBattery], etc.
+     * After a successful connection, you can use all Device methods like
+     * [sendColor], [sendEffect], [loadTimeline], [updatePlaybackPosition], etc.
      *
-     * @param onConnected Invoked with a bound [Controller] on success.
+     * @param onConnected Invoked on successful connection.
      * @param onFailed    Invoked with the encountered [Throwable] on failure.
+     * @param onDeviceInfo Optional callback for device information (name, model, firmware, battery, etc.).
+     *                     If provided, device info will be fetched automatically after connection.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleConnectDevice
+     *
+     * @sample
+     * ```kotlin
+     * // Basic connection with animation
+     * device.connect(
+     *     onConnected = {
+     *         // ✅ 연결 성공! 여기서 초기 연출
+     *         device.sendEffect(LSEffectPayload.Effects.blink(color = Colors.GREEN, period = 3))
+     *     },
+     *     onFailed = { error ->
+     *         Log.e(TAG, "Connect failed: ${error.message}")
+     *     }
+     * )
+     *
+     * // Connection with device info
+     * device.connect(
+     *     onConnected = {
+     *         device.sendColor(Colors.GREEN, transition = 10)
+     *     },
+     *     onDeviceInfo = { info ->
+     *         // DeviceInfo 활용
+     *         Log.d(TAG, "Connected to ${info.deviceName}")
+     *         Log.d(TAG, "Battery: ${info.batteryLevel}%")
+     *     }
+     * )
+     * ```
      */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connect(
-        onConnected: (Controller) -> Unit,
-        onFailed: (Throwable) -> Unit,
+        onConnected: () -> Unit = {},
+        onFailed: (Throwable) -> Unit = {},
         onDeviceInfo: ((DeviceInfo) -> Unit)? = null
     ) {
         Facade.connect(
             mac = mac,
             onConnected = {
-                // Build a transient device-scoped Controller that delegates to Facade.
-                val ctl = object : Controller {
-                    override val device: Device = this@Device
+                onConnected()
 
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun sendColor(color: Color, transition: Int) {
-                        val t = transition.coerceIn(0, 255).toByte()
-                        Facade.sendColorTo(
-                            mac = mac,
-                            packet4 = byteArrayOf(
-                                color.r.toByte(),
-                                color.g.toByte(),
-                                color.b.toByte(),
-                                t
-                            )
-                        )
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun sendEffect(payload: LSEffectPayload) {
-                        Facade.sendEffectTo(mac = mac, bytes20 = payload.toByteArray())
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun play(frames: List<Pair<Long, ByteArray>>) {
-                        Facade.playEntries(mac = mac, frames = frames)
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun requestMtu(preferred: Int, onResult: (Result<Int>) -> Unit) {
-                        Facade.requestMtu(mac, preferred, onResult)
-                    }
-
-                    // ------------------ Device Information ------------------
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun readDeviceName(onResult: (Result<String>) -> Unit) {
-                        Facade.readDeviceName(mac, onResult)
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun readModelNumber(onResult: (Result<String>) -> Unit) {
-                        Facade.readModelNumber(mac, onResult)
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun readFirmwareRevision(onResult: (Result<String>) -> Unit) {
-                        Facade.readFirmwareRevision(mac, onResult)
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun readManufacturer(onResult: (Result<String>) -> Unit) {
-                        Facade.readManufacturer(mac, onResult)
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun readMacAddress(onResult: (Result<String>) -> Unit) {
-                        Facade.readMacAddress(mac, onResult)
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun readBattery(onResult: (Result<Int>) -> Unit) {
-                        Facade.readBattery(mac, onResult)
-                    }
-
-                    // --------------------------- OTA -------------------------
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun startOta(
-                        firmware: ByteArray,
-                        onProgress: (Int) -> Unit,
-                        onResult: (Result<Unit>) -> Unit
-                    ) {
-                        Facade.startOta(
-                            mac = mac,
-                            firmware = firmware,
-                            onProgress = onProgress,
-                            onResult = onResult
-                        )
-                    }
-
-                    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    override fun abortOta() {
-                        Facade.abortOta(mac)
-                    }
-                }
-                onConnected(ctl)
-
+                // onDeviceInfo가 제공된 경우에만 DeviceInfo 조회
                 if (onDeviceInfo != null) {
                     fetchDeviceInfo { info -> onDeviceInfo(info) }
                 }
@@ -167,7 +108,6 @@ data class Device(
      *
      * @return `true` if the disconnect request was submitted; otherwise `false`.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleDisconnect
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect(): Boolean {
@@ -188,7 +128,6 @@ data class Device(
      *
      * @param onDone Invoked when the system reports bonded (or was already bonded).
      * @return `true` if the bond request was submitted to the system; `false` otherwise.
-     * @sample com.lightstick.samples.DeviceSamples.sampleBond
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bond(
@@ -211,7 +150,6 @@ data class Device(
      *
      * @param onDone Invoked on success (when system confirms removal).
      * @return `true` if the unbond request was submitted; `false` otherwise.
-     * @sample com.lightstick.samples.DeviceSamples.sampleUnbond
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun unbond(
@@ -222,7 +160,6 @@ data class Device(
                 mac = mac,
                 onResult = { result ->
                     result.onSuccess { onDone?.invoke() }
-                    // onFailure is swallowed to keep API error-less; submission already true.
                 }
             )
             true
@@ -240,7 +177,6 @@ data class Device(
      *
      * @return `true` if connected; otherwise `false`.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleIsConnected
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun isConnected(): Boolean = Facade.isConnected(mac)
@@ -250,13 +186,12 @@ data class Device(
      *
      * @return `true` if bonded; otherwise `false`.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleIsBonded
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun isBonded(): Boolean = Facade.isBonded(mac)
 
     // ------------------------------------------------------------------------
-    // Device-level convenience (Boolean-only + no onError)
+    // LED Control
     // ------------------------------------------------------------------------
 
     /**
@@ -266,7 +201,6 @@ data class Device(
      * @param transition Transition parameter, clamped to [0, 255].
      * @return `true` if the packet was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleSendColor
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendColor(
@@ -292,7 +226,6 @@ data class Device(
      * @param payload 20-byte structured effect payload.
      * @return `true` if the frame was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleSendEffect
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffect(payload: LSEffectPayload): Boolean {
@@ -306,14 +239,13 @@ data class Device(
     }
 
     /**
-     * Streams timestamped frames to THIS device.
+     * Streams timestamped frames to THIS device (legacy API).
      *
      * Each frame is (timestampMs, 20B payload).
      *
      * @param frames Ordered list of frames to play.
      * @return `true` if the stream was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.samplePlayFrames
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun play(frames: List<Pair<Long, ByteArray>>): Boolean {
@@ -326,15 +258,162 @@ data class Device(
         }
     }
 
+    // ------------------------------------------------------------------------
+    // Timeline Playback (Music Sync)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Loads an EFX timeline for music-synchronized playback.
+     *
+     * The SDK automatically:
+     * - Recalculates effectIndex to be sequential (1, 2, 3, ...)
+     * - Increments syncIndex for new playback session
+     * - Manages timeline state internally
+     *
+     * @param frames Timeline entries [(timestampMs, 20B payload), ...]
+     * @return true if the request was submitted; false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     *
+     * @sample
+     * ```kotlin
+     * val efx = Efx.read(musicFile)
+     * device.loadTimeline(efx.body.toFrames())
+     * ```
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun loadTimeline(frames: List<Pair<Long, ByteArray>>): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.loadTimeline(mac, frames)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Updates the current music playback position.
+     *
+     * Call this periodically (recommended: every 100ms) with the current music position.
+     * The SDK internally sends each effect at the precise timing.
+     *
+     * @param currentPositionMs Current position in milliseconds
+     * @return true if the request was submitted; false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // In your music player loop (every 100ms)
+     * device.updatePlaybackPosition(player.currentPosition)
+     * ```
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun updatePlaybackPosition(currentPositionMs: Long): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.updatePlaybackPosition(mac, currentPositionMs)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Pauses effect transmission.
+     *
+     * Timeline tracking continues internally, but BLE transmission is suspended.
+     * When resumed, the SDK will automatically resync with the device.
+     *
+     * @return true if the request was submitted; false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // User toggles effects OFF
+     * device.pauseEffects()
+     * ```
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun pauseEffects(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.pauseEffects(mac)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Resumes effect transmission.
+     *
+     * The SDK automatically increments syncIndex for device resynchronization.
+     *
+     * @return true if the request was submitted; false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // User toggles effects ON
+     * device.resumeEffects()
+     * ```
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun resumeEffects(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.resumeEffects(mac)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Stops timeline playback completely and clears the timeline.
+     *
+     * To restart, call [loadTimeline] again.
+     *
+     * @return true if the request was submitted; false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun stopTimeline(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.stopTimeline(mac)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Checks if timeline is loaded and effects are currently being transmitted.
+     *
+     * @return true if playing, false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun isTimelinePlaying(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.isTimelinePlaying(mac)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // MTU Negotiation
+    // ------------------------------------------------------------------------
+
     /**
      * Requests MTU negotiation with THIS device.
-     *
-     * The negotiated MTU should be observed via your Facade/VM/Flow pipeline.
      *
      * @param preferred Preferred MTU value.
      * @return `true` if the request was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleRequestMtu
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun requestMtu(preferred: Int): Boolean {
@@ -348,7 +427,7 @@ data class Device(
     }
 
     // ------------------------------------------------------------------------
-    // Device Information (Result<T>-only)
+    // Device Information
     // ------------------------------------------------------------------------
 
     /**
@@ -357,7 +436,6 @@ data class Device(
      * @param onResult Called with `Result.success(name)` or `Result.failure(cause)`.
      * @return `true` if the read request was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readDeviceName(onResult: (Result<String>) -> Unit): Boolean =
@@ -365,11 +443,6 @@ data class Device(
 
     /**
      * Reads DIS 2A24: Model Number from THIS device.
-     *
-     * @param onResult Called with `Result.success(modelNumber)` or `Result.failure(cause)`.
-     * @return `true` if the read request was submitted; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readModelNumber(onResult: (Result<String>) -> Unit): Boolean =
@@ -377,11 +450,6 @@ data class Device(
 
     /**
      * Reads DIS 2A26: Firmware Revision from THIS device.
-     *
-     * @param onResult Called with `Result.success(firmwareRevision)` or `Result.failure(cause)`.
-     * @return `true` if the read request was submitted; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readFirmwareRevision(onResult: (Result<String>) -> Unit): Boolean =
@@ -389,24 +457,13 @@ data class Device(
 
     /**
      * Reads DIS 2A29: Manufacturer Name from THIS device.
-     *
-     * @param onResult Called with `Result.success(manufacturerName)` or `Result.failure(cause)`.
-     * @return `true` if the read request was submitted; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readManufacturer(onResult: (Result<String>) -> Unit): Boolean =
         submitReadWithResult({ cb -> Facade.readManufacturer(mac, cb) }, onResult)
 
     /**
-     * Reads a custom MAC Address characteristic from THIS device
-     * (device-firmware specific; not part of standard DIS).
-     *
-     * @param onResult Called with `Result.success(macString)` or `Result.failure(cause)`.
-     * @return `true` if the read request was submitted; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
+     * Reads custom MAC Address characteristic from THIS device.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readMacAddress(onResult: (Result<String>) -> Unit): Boolean =
@@ -414,21 +471,15 @@ data class Device(
 
     /**
      * Reads BAS 2A19: Battery Level (0..100) from THIS device.
-     *
-     * @param onResult Called with `Result.success(levelPercent)` or `Result.failure(cause)`.
-     * @return `true` if the read request was submitted; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readBattery(onResult: (Result<Int>) -> Unit): Boolean =
         submitReadWithResult({ cb -> Facade.readBattery(mac, cb) }, onResult)
 
     /**
-     * Reads 4 DIS fields (2A00, 2A24, 2A26, 2A29) in parallel and returns an aggregated DeviceInfo.
-     * Values that fail to read will be null.
+     * Reads multiple device info fields in parallel and returns aggregated DeviceInfo.
      *
-     * @param onResult Callback invoked once all four reads have completed.
+     * @param onResult Callback invoked once all reads have completed.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun fetchDeviceInfo(onResult: (DeviceInfo) -> Unit): Boolean {
@@ -449,7 +500,7 @@ data class Device(
                         modelNumber = model,
                         firmwareRevision = fw,
                         manufacturer = mfr,
-                        macAddress = mac,  // ✅ 추가
+                        macAddress = mac,
                         isConnected = true,
                         lastUpdated = System.currentTimeMillis()
                     )
@@ -458,28 +509,27 @@ data class Device(
         }
 
         readDeviceName { r ->
-            r.onSuccess { name = it }.onFailure { /* ignore, stays null */ }
+            r.onSuccess { name = it }
             completeOne()
         }
         readModelNumber { r ->
-            r.onSuccess { model = it }.onFailure { /* ignore */ }
+            r.onSuccess { model = it }
             completeOne()
         }
         readFirmwareRevision { r ->
-            r.onSuccess { fw = it }.onFailure { /* ignore */ }
+            r.onSuccess { fw = it }
             completeOne()
         }
         readManufacturer { r ->
-            r.onSuccess { mfr = it }.onFailure { /* ignore */ }
+            r.onSuccess { mfr = it }
             completeOne()
         }
 
         return true
     }
 
-
     // ------------------------------------------------------------------------
-    // OTA (Result<Unit>-style completion)
+    // OTA
     // ------------------------------------------------------------------------
 
     /**
@@ -487,11 +537,9 @@ data class Device(
      *
      * @param firmware   Raw firmware bytes.
      * @param onProgress Optional progress callback (0..100).
-     * @param onResult   Optional completion callback: `Result.success(Unit)` on success,
-     *                   or `Result.failure(Throwable)` on failure.
+     * @param onResult   Optional completion callback.
      * @return `true` if the OTA session was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleStartOta
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun startOta(
@@ -522,7 +570,6 @@ data class Device(
      *
      * @return `true` if the abort request was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @sample com.lightstick.samples.DeviceSamples.sampleAbortOta
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun abortOta(): Boolean {
@@ -536,14 +583,13 @@ data class Device(
     }
 
     // ------------------------------------------------------------------------
-    // Event API (device-scoped) — delegate to public EventManager
+    // Event API (device-scoped)
     // ------------------------------------------------------------------------
 
     /**
-     * Registers [EventRule]s that apply **only to this device**.
+     * Registers event rules that apply **only to this device**.
      *
      * @param rules List of event rules to register for THIS device.
-     * @sample com.lightstick.samples.DeviceSamples.sampleRegisterDeviceRules
      */
     @MainThread
     fun registerEventRules(rules: List<EventRule>) {
@@ -556,8 +602,6 @@ data class Device(
 
     /**
      * Clears all event rules associated with THIS device.
-     *
-     * @sample com.lightstick.samples.DeviceSamples.sampleClearDeviceRules
      */
     @MainThread
     fun clearEventRules() {
@@ -571,8 +615,7 @@ data class Device(
     /**
      * Returns the current device-scoped event rules for THIS device.
      *
-     * @return List of [EventRule] currently registered for this MAC (may be empty).
-     * @sample com.lightstick.samples.DeviceSamples.sampleGetDeviceRules
+     * @return List of event rules currently registered (may be empty).
      */
     @MainThread
     fun getEventRules(): List<EventRule> {

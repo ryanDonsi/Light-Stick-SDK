@@ -16,7 +16,8 @@ import java.util.concurrent.ConcurrentHashMap
  * Centralized manager for BLE device state tracking.
  */
 internal class DeviceStateManager(
-    private val context: Context
+    private val context: Context,
+    private val deviceFilter: ((String?) -> Boolean)? = null
 ) {
 
     private val bluetoothManager: BluetoothManager? =
@@ -44,6 +45,15 @@ internal class DeviceStateManager(
 
     fun updateConnectionState(macAddress: String, state: InternalConnectionState) {
         connectionStatesMap[macAddress] = state
+        emitConnectionStates()
+        rebuildAndEmitDeviceStates()
+    }
+
+    fun removeConnectionState(macAddress: String) {
+        connectionStatesMap.remove(macAddress)
+        deviceInfoMap.remove(macAddress)
+        deviceNamesMap.remove(macAddress)
+        deviceRssiMap.remove(macAddress)
         emitConnectionStates()
         rebuildAndEmitDeviceStates()
     }
@@ -164,24 +174,34 @@ internal class DeviceStateManager(
             // Other errors - return empty list
             emptyList()
         }
+        if (connectedDevices.isEmpty()) {
+            return
+        }
+
+        var hasIncluded = false
 
         connectedDevices.forEach { device ->
             val mac = device.address
-
             val name = try {
                 device.name
             } catch (e: SecurityException) {
                 null
             }
 
-            connectionStatesMap[mac] = InternalConnectionState.Connected()
+            val shouldInclude = deviceFilter?.invoke(name) ?: true
 
-            if (name != null) {
-                deviceNamesMap[mac] = name
+            if (shouldInclude) {
+                connectionStatesMap[mac] = InternalConnectionState.Connected()
+                if (name != null) {
+                    deviceNamesMap[mac] = name
+                }
+                hasIncluded = true
             }
         }
 
-        emitConnectionStates()
-        rebuildAndEmitDeviceStates()
+        if (hasIncluded) {
+            emitConnectionStates()
+            rebuildAndEmitDeviceStates()
+        }
     }
 }
