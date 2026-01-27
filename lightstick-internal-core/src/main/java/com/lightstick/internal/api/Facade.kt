@@ -30,7 +30,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
-
+import android.util.Log
+import com.lightstick.internal.ble.DeviceFilter
 /**
  * 내부 Facade.
  *
@@ -52,6 +53,8 @@ object Facade {
 
     private lateinit var deviceStateManager: DeviceStateManager
 
+    private lateinit var globalDeviceFilter: DeviceFilter
+
     private fun requireInit() {
         check(::appContext.isInitialized) { "Facade.initialize(context) must be called first." }
     }
@@ -59,20 +62,42 @@ object Facade {
     @MainThread
     fun initialize(
         context: Context,
-        systemConnectionFilter: ((String?) -> Boolean)? = null
+        filter: DeviceFilter? = null
     ) {
         if (::appContext.isInitialized) return
         appContext = context.applicationContext
         scan = ScanManager()
         bond = BondManager()
 
+        globalDeviceFilter = filter ?: DeviceFilter.acceptAll()
+
+        val deviceFilter: (String, String?, Int?) -> Boolean = { mac, name, rssi ->
+            globalDeviceFilter.matches(mac, name, rssi)
+        }
+
         deviceStateManager = DeviceStateManager(
             context = appContext,
-            deviceFilter = systemConnectionFilter
+            deviceFilter = deviceFilter
         )
 
         EventRouter.initialize(appContext)
         eventInitialized = true
+    }
+
+    /**
+     * Checks if a device is allowed by the global filter.
+     *
+     * @param mac Device MAC address.
+     * @param name Device name (nullable).
+     * @param rssi Device RSSI (nullable).
+     * @return `true` if the device passes the filter; `false` otherwise.
+     */
+    fun isDeviceAllowed(mac: String, name: String?, rssi: Int? = null): Boolean {
+        return if (::globalDeviceFilter.isInitialized) {
+            globalDeviceFilter.matches(mac, name, rssi)
+        } else {
+            true
+        }
     }
 
     // ============================================================================================
@@ -133,10 +158,24 @@ object Facade {
             Manifest.permission.ACCESS_COARSE_LOCATION
         ]
     )
-    fun startScan(onFound: (mac: String, name: String?, rssi: Int?) -> Unit) {
+    fun startScan(
+        scanTimeSeconds: Int = 3,
+        onFound: (mac: String, name: String?, rssi: Int?) -> Unit
+    ) {
         requireInit()
+
+        val validScanTime = scanTimeSeconds.coerceIn(1, 300)
+        if (scanTimeSeconds != validScanTime) {
+            Log.w("Facade", "Scan time adjusted: $scanTimeSeconds → $validScanTime seconds")
+        }
+
         scan.start(appContext) { mac, name, rssi ->
             if (mac.isNotBlank()) {
+                if (!isDeviceAllowed(mac, name, rssi)) {
+                    Log.d("Facade", "Scan filtered: $mac ($name)")
+                    return@start
+                }
+
                 if (name != null) {
                     lastSeenName[mac] = name
                 } else {
@@ -154,6 +193,12 @@ object Facade {
 
                 onFound(mac, name, rssi)
             }
+        }
+
+        scope.launch {
+            kotlinx.coroutines.delay(validScanTime * 1000L)
+            stopScan()
+            Log.d("Facade", "Scan stopped after $validScanTime seconds")
         }
     }
 
@@ -178,7 +223,17 @@ object Facade {
             return
         }
 
+        val deviceName = lastSeenName[mac]
+        val deviceRssi = lastSeenRssi[mac]
+
+        if (!isDeviceAllowed(mac, deviceName, deviceRssi)) {
+            Log.w("Facade", "Connection blocked by filter: $mac ($deviceName)")
+            onFailed(IllegalArgumentException("Device not allowed by filter: $deviceName"))
+            return
+        }
+
         deviceStateManager.updateConnectionState(mac, InternalConnectionState.Connecting())
+
 
         val gatt = GattClient(appContext)
 
@@ -196,7 +251,7 @@ object Facade {
                         address,
                         InternalConnectionState.Disconnected(reason)
                     )
-                    removeSession(address)  // ✅ 세션 정리 및 상태 제거
+                    removeSession(address)
                 }
                 BluetoothProfile.STATE_CONNECTING -> {
                     deviceStateManager.updateConnectionState(
@@ -265,7 +320,7 @@ object Facade {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect(mac: String) {
         requireInit()
-        removeSession(mac)  // ✅ 세션 정리 및 상태 제거
+        removeSession(mac)
 
         deviceStateManager.updateConnectionState(
             mac,
@@ -285,41 +340,66 @@ object Facade {
     fun shutdown() {
         requireInit()
         disconnectAll()
-        deviceStateManager.clearAll()  // ✅ 모든 상태 정리
+        deviceStateManager.clearAll()
         scope.cancel()
     }
 
     // ============================================================================================
-    // Internal State 접근 (공개 모듈용)
+    // Device State
     // ============================================================================================
 
     /**
-     * Internal device states 접근 (공개 모듈에서 변환용).
+     * Returns filtered device states flow.
      */
-    fun getInternalDeviceStates(): StateFlow<Map<String, InternalDeviceState>> {
+    fun getInternalDeviceStates(): Flow<Map<String, InternalDeviceState>> {
         requireInit()
-        return deviceStateManager.deviceStates
+        return deviceStateManager.deviceStates.map { states ->
+            states.filter { (mac, state) ->
+                val name = state.deviceInfo?.deviceName
+                val rssi = state.deviceInfo?.rssi
+                isDeviceAllowed(mac, name, rssi)
+            }
+        }
     }
 
     /**
-     * Internal connection states 접근 (공개 모듈에서 변환용).
+     * Returns filtered connection states flow.
      */
-    fun getInternalConnectionStates(): StateFlow<Map<String, InternalConnectionState>> {
+    fun getInternalConnectionStates(): Flow<Map<String, InternalConnectionState>> {
         requireInit()
-        return deviceStateManager.connectionStates
+        return deviceStateManager.connectionStates.map { states ->
+            states.filter { (mac, _) ->
+                val deviceState = deviceStateManager.deviceStates.value[mac]
+                val name = deviceState?.deviceInfo?.deviceName
+                val rssi = deviceState?.deviceInfo?.rssi
+                isDeviceAllowed(mac, name, rssi)
+            }
+        }
     }
 
-    /**
-     * Cached internal device info 접근.
-     */
-    fun getInternalDeviceInfo(mac: String): InternalDeviceInfo? {
-        requireInit()
-        return deviceStateManager.getDeviceInfo(mac)
-    }
+
+
 
     // ============================================================================================
     // 디바이스 정보 읽기
     // ============================================================================================
+
+    /**
+     * Returns cached device info for a specific device.
+     */
+    fun getInternalDeviceInfo(mac: String): InternalDeviceInfo? {
+        requireInit()
+
+        val deviceState = deviceStateManager.deviceStates.value[mac]
+        val name = deviceState?.deviceInfo?.deviceName
+        val rssi = deviceState?.deviceInfo?.rssi
+
+        if (!isDeviceAllowed(mac, name, rssi)) {
+            return null
+        }
+
+        return deviceState?.deviceInfo
+    }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readDeviceName(mac: String, onResult: (Result<String>) -> Unit): Boolean {
@@ -445,8 +525,8 @@ object Facade {
     }
 
     // ============================================================================================
-// ✅ 타임라인 재생 API (기존 Facade.kt에 추가)
-// ============================================================================================
+    // 타임라인 재생 API (기존 Facade.kt에 추가)
+    // ============================================================================================
 
     /**
      * 타임라인을 로드합니다.
@@ -578,13 +658,19 @@ object Facade {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connectedList(): List<Triple<String, String?, Int?>> {
         requireInit()
-        return sessions.keys.map { mac ->
-            Triple(
-                mac,
-                lastSeenName[mac],
-                lastSeenRssi[mac]
-            )
-        }
+        return sessions.keys
+            .filter { mac ->
+                val name = lastSeenName[mac]
+                val rssi = lastSeenRssi[mac]
+                isDeviceAllowed(mac, name, rssi)
+            }
+            .map { mac ->
+                Triple(
+                    mac,
+                    lastSeenName[mac],
+                    lastSeenRssi[mac]
+                )
+            }
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -597,7 +683,12 @@ object Facade {
     fun bondedList(): List<Pair<String, String?>> {
         requireInit()
         var result: List<Pair<String, String?>> = emptyList()
-        bond.listBonded(appContext) { res -> result = res.getOrElse { emptyList() } }
+        bond.listBonded(appContext) { res ->
+            result = res.getOrElse { emptyList() }
+                .filter { (mac, name) ->
+                    globalDeviceFilter.matches(mac, name, null)
+                }
+        }
         return result
     }
 

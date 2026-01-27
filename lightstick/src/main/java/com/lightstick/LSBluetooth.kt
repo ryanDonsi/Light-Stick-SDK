@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.config.DeviceFilter
+import com.lightstick.config.DeviceFilterMapper.toInternal
 import com.lightstick.device.ConnectionState
 import com.lightstick.device.Device
 import com.lightstick.device.DeviceInfo
@@ -50,11 +52,42 @@ object LSBluetooth {
      * Safe to call multiple times; only the first call has effect.
      *
      * @param context Application context.
+     * @param deviceFilter Optional device filter configuration.
+     *        If `null`, all devices are accepted (no filtering).
+     *
+     * Examples:
+     * ```
+     * // Accept all devices (default)
+     * LSBluetooth.initialize(context)
+     *
+     * // Filter by device name
+     * LSBluetooth.initialize(
+     *     context,
+     *     deviceFilter = DeviceFilter.byName("LS")
+     * )
+     *
+     * // Filter by MAC address OUI
+     * LSBluetooth.initialize(
+     *     context,
+     *     deviceFilter = DeviceFilter.byMacPrefix("AA:BB:CC")
+     * )
+     *
+     * // Combined filters
+     * val filter = DeviceFilter.byName("LS")
+     *     .and(DeviceFilter.byMacPrefix("AA:BB:CC"))
+     *     .and(DeviceFilter.byMinRssi(-70))
+     * LSBluetooth.initialize(context, deviceFilter = filter)
+     * ```
+     *
+     * @see DeviceFilter
      */
     @JvmStatic
     @MainThread
-    fun initialize(context: Context) {
-        Facade.initialize(context)
+    fun initialize(
+        context: Context,
+        deviceFilter: DeviceFilter? = null
+    ) {
+        Facade.initialize(context, deviceFilter?.toInternal())
     }
 
     // ============================================================================================
@@ -62,12 +95,31 @@ object LSBluetooth {
     // ============================================================================================
 
     /**
-     * Starts BLE scanning.
+     * Starts BLE scanning with optional timeout.
      *
+     * @param scanTimeSeconds Scan duration in seconds (default: 3, range: 1-300).
      * @param onFound Callback invoked for each discovered device.
-     * @throws SecurityException If scan permissions are missing.
+     *
+     * Examples:
+     * ```
+     * // Default 3 seconds
+     * LSBluetooth.startScan { device ->
+     *     println("Found: ${device.name}")
+     * }
+     *
+     * // Custom 10 seconds
+     * LSBluetooth.startScan(scanTimeSeconds = 10) { device ->
+     *     println("Found: ${device.name}")
+     * }
+     *
+     * // Long scan 30 seconds
+     * LSBluetooth.startScan(30) { device ->
+     *     println("Found: ${device.name}")
+     * }
+     * ```
      */
     @JvmStatic
+    @JvmOverloads
     @MainThread
     @RequiresPermission(
         anyOf = [
@@ -76,8 +128,11 @@ object LSBluetooth {
             Manifest.permission.ACCESS_COARSE_LOCATION
         ]
     )
-    fun startScan(onFound: (Device) -> Unit) {
-        Facade.startScan { mac, name, rssi ->
+    fun startScan(
+        scanTimeSeconds: Int = 3,  // ✅ 추가
+        onFound: (Device) -> Unit
+    ) {
+        Facade.startScan(scanTimeSeconds) { mac, name, rssi ->
             onFound(Device(mac, name, rssi))
         }
     }

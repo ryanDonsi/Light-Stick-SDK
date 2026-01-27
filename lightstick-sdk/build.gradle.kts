@@ -11,6 +11,9 @@ plugins {
     alias(libs.plugins.maven.publish)
 }
 
+group = "com.lightstick"
+version = "1.4.1"
+
 androidFusedLibrary {
     namespace = "com.lightstick.sdk"
     minSdk = libs.versions.minSdk.get().toInt()
@@ -101,6 +104,9 @@ publishing {
         }
     }
     repositories {
-        maven { url = uri(layout.buildDirectory.dir("repo")) }
+        maven {
+            name = "local"
+            url = uri("${layout.buildDirectory.dir("repo").get().asFile.absolutePath}")
+        }
     }
 }
