@@ -85,9 +85,10 @@ object LSBluetooth {
     @MainThread
     fun initialize(
         context: Context,
-        deviceFilter: DeviceFilter? = null
+        deviceFilter: DeviceFilter? = null,
+        allowUnknownDevices: Boolean = false
     ) {
-        Facade.initialize(context, deviceFilter?.toInternal())
+        Facade.initialize(context, deviceFilter?.toInternal(), allowUnknownDevices)
     }
 
     // ============================================================================================

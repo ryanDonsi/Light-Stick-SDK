@@ -54,7 +54,7 @@ object Facade {
     private lateinit var deviceStateManager: DeviceStateManager
 
     private lateinit var globalDeviceFilter: DeviceFilter
-
+    private var allowUnknownDevices: Boolean = false
     private fun requireInit() {
         check(::appContext.isInitialized) { "Facade.initialize(context) must be called first." }
     }
@@ -62,7 +62,8 @@ object Facade {
     @MainThread
     fun initialize(
         context: Context,
-        filter: DeviceFilter? = null
+        filter: DeviceFilter? = null,
+        allowUnknownDevices: Boolean = false
     ) {
         if (::appContext.isInitialized) return
         appContext = context.applicationContext
@@ -70,9 +71,11 @@ object Facade {
         bond = BondManager()
 
         globalDeviceFilter = filter ?: DeviceFilter.acceptAll()
+        this.allowUnknownDevices = allowUnknownDevices
+
 
         val deviceFilter: (String, String?, Int?) -> Boolean = { mac, name, rssi ->
-            globalDeviceFilter.matches(mac, name, rssi)
+            isDeviceAllowed(mac, name, rssi)
         }
 
         deviceStateManager = DeviceStateManager(
@@ -94,7 +97,11 @@ object Facade {
      */
     fun isDeviceAllowed(mac: String, name: String?, rssi: Int? = null): Boolean {
         return if (::globalDeviceFilter.isInitialized) {
-            globalDeviceFilter.matches(mac, name, rssi)
+            if (name == null && !allowUnknownDevices) {
+                false
+            } else {
+                globalDeviceFilter.matches(mac, name, rssi)
+            }
         } else {
             true
         }
@@ -117,9 +124,6 @@ object Facade {
         val deviceInfo: DeviceInfoManager,
         val ota: OtaManager?
     ) {
-        /**
-         * ✅ 세션의 모든 리소스를 정리합니다.
-         */
         fun cleanup() {
             runCatching { ota?.abort() }
             runCatching { led.close() }
@@ -135,14 +139,10 @@ object Facade {
     private fun requireSession(mac: String): Session =
         sessions[mac] ?: error("No active session for $mac")
 
-    /**
-     * ✅ 세션을 안전하게 제거하고 정리합니다.
-     */
     private fun removeSession(mac: String) {
         sessions.remove(mac)?.let { session ->
             session.cleanup()
         }
-        // ✅ DeviceStateManager에서도 제거
         deviceStateManager.removeDevice(mac)
     }
 
@@ -227,7 +227,6 @@ object Facade {
         val deviceRssi = lastSeenRssi[mac]
 
         if (!isDeviceAllowed(mac, deviceName, deviceRssi)) {
-            Log.w("Facade", "Connection blocked by filter: $mac ($deviceName)")
             onFailed(IllegalArgumentException("Device not allowed by filter: $deviceName"))
             return
         }
@@ -676,7 +675,7 @@ object Facade {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connectedCount(): Int {
         requireInit()
-        return sessions.size
+        return connectedList().size
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -686,7 +685,7 @@ object Facade {
         bond.listBonded(appContext) { res ->
             result = res.getOrElse { emptyList() }
                 .filter { (mac, name) ->
-                    globalDeviceFilter.matches(mac, name, null)
+                    isDeviceAllowed(mac, name, null)
                 }
         }
         return result
