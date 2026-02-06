@@ -25,6 +25,9 @@ import java.nio.charset.StandardCharsets
  * @property version Unsigned 16-bit version (default: 0x0103).
  * @property reserved Exactly 3 bytes reserved for future use (default: [0, 0, 0]).
  * @property musicId Deterministic 32-bit id (default: 0 = no music).
+ *                   This is a signed [Int] representing an unsigned 32-bit value.
+ *                   Negative values are valid (e.g., -1 represents 0xFFFFFFFF).
+ *                   Use `.toUInt()` for unsigned representation when displaying.
  * @property entryCount Number of effect entries in the body (default: 0 = empty).
  *
  * @throws IllegalArgumentException If any constraint is violated.
@@ -50,9 +53,6 @@ data class EfxHeader(
         }
         require(reserved.size == 3) {
             "reserved must be 3 bytes"
-        }
-        require(musicId >= 0) {
-            "musicId must be >= 0"
         }
         require(entryCount >= 0) {
             "entryCount must be >= 0"
