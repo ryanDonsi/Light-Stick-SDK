@@ -7,7 +7,7 @@ import java.io.File
  * EFX binary format: concatenated header + body sections.
  *
  * **Structure:**
- * - [header]: 20B metadata block (magic, version, musicId, entryCount, etc.)
+ * - [header]: 17B metadata block (magic, version, reserved(3B), musicId, entryCount)
  * - [body]: list of (timestamp_ms, 20B LED payload) pairs
  *
  * The EFX binary can be read from or written to files, then played on devices via

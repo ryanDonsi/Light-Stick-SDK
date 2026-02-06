@@ -9,7 +9,7 @@ import java.nio.ByteOrder
  *
  * Header (little-endian):
  *   magic[4] = "EFX1"
- *   version  = 0x0103 (u16)
+ *   version  = 0x0104 (u16)
  *   reserved3= 0x00 0x00 0x00
  *   musicId  = u32
  *   entryCnt = u32
@@ -25,7 +25,7 @@ internal object EfxBinary {
 
     // Defaults (source of truth for defaults)
     const val MAGIC = "EFX1"
-    const val VERSION = 0x0103
+    const val VERSION = 0x0104
     val RESERVED3 = byteArrayOf(0x00, 0x00, 0x00)
 
     data class Parsed(
