@@ -1,17 +1,22 @@
 package com.lightstick.internal.ble
 
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
+//import android.bluetooth.BluetoothAdapter
+//import android.bluetooth.BluetoothManager
+//import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.util.Log
 import com.lightstick.internal.ble.state.InternalConnectionState
 import com.lightstick.internal.ble.state.InternalDeviceInfo
 import com.lightstick.internal.ble.state.InternalDeviceState
+import com.lightstick.internal.ble.state.InternalDeviceStateEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.util.concurrent.ConcurrentHashMap
+
 
 /**
  * Centralized manager for BLE device state tracking.
@@ -23,9 +28,9 @@ internal class DeviceStateManager(
 
     private val TAG = "DeviceStateManager"
 
-    private val bluetoothManager: BluetoothManager? =
-        context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-    private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
+//    private val bluetoothManager: BluetoothManager? =
+//        context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+//    private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     private val connectionStatesMap = ConcurrentHashMap<String, InternalConnectionState>()
     private val deviceInfoMap = ConcurrentHashMap<String, InternalDeviceInfo>()
@@ -38,16 +43,30 @@ internal class DeviceStateManager(
     private val _deviceStates = MutableStateFlow<Map<String, InternalDeviceState>>(emptyMap())
     val deviceStates: StateFlow<Map<String, InternalDeviceState>> = _deviceStates.asStateFlow()
 
-    init {
-        detectSystemConnectedDevices()
-    }
+    private val _Internal_deviceStateEvents = MutableSharedFlow<InternalDeviceStateEvent>(
+        extraBufferCapacity = 8
+    )
+    val internalDeviceStateEvents: SharedFlow<InternalDeviceStateEvent> = _Internal_deviceStateEvents.asSharedFlow()
+
+
+
+//    init {
+//        detectSystemConnectedDevices()
+//    }
 
     // ============================================================================================
     // Public API - State Updates
     // ============================================================================================
 
+//    fun updateConnectionState(macAddress: String, state: InternalConnectionState) {
+//        connectionStatesMap[macAddress] = state
+//        emitConnectionStates()
+//        rebuildAndEmitDeviceStates()
+//    }
     fun updateConnectionState(macAddress: String, state: InternalConnectionState) {
         connectionStatesMap[macAddress] = state
+        _Internal_deviceStateEvents.tryEmit(InternalDeviceStateEvent(mac = macAddress, state = state))
+        Log.d(TAG, "📤 DeviceStateEvent emitted: $macAddress → $state")
         emitConnectionStates()
         rebuildAndEmitDeviceStates()
     }
@@ -174,48 +193,48 @@ internal class DeviceStateManager(
      * Applies the global device filter to only restore devices that pass the filter.
      * If no filter is set, all system-connected devices are restored.
      */
-    private fun detectSystemConnectedDevices() {
-        val connectedDevices = try {
-            bluetoothManager?.getConnectedDevices(BluetoothProfile.GATT) ?: emptyList()
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Permission denied for getConnectedDevices")
-            emptyList()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting connected devices: ${e.message}")
-            emptyList()
-        }
-        if (connectedDevices.isEmpty()) {
-            Log.d(TAG, "No system-level connected devices found")
-            return
-        }
-
-        var hasIncluded = false
-
-        connectedDevices.forEach { device ->
-            val mac = device.address
-            val name = try {
-                device.name
-            } catch (e: SecurityException) {
-                null
-            }
-
-            val shouldInclude = deviceFilter?.invoke(mac, name, null) ?: true
-
-            if (shouldInclude) {
-                connectionStatesMap[mac] = InternalConnectionState.Connected()
-                if (name != null) {
-                    deviceNamesMap[mac] = name
-                }
-                Log.d(TAG, "include: $mac (${name ?: "Unknown"})")
-                hasIncluded = true
-            } else {
-                Log.d(TAG, "filtered: $mac (${name ?: "Unknown"})")
-            }
-        }
-
-        if (hasIncluded) {
-            emitConnectionStates()
-            rebuildAndEmitDeviceStates()
-        }
-    }
+//    private fun detectSystemConnectedDevices() {
+//        val connectedDevices = try {
+//            bluetoothManager?.getConnectedDevices(BluetoothProfile.GATT) ?: emptyList()
+//        } catch (e: SecurityException) {
+//            Log.w(TAG, "Permission denied for getConnectedDevices")
+//            emptyList()
+//        } catch (e: Exception) {
+//            Log.e(TAG, "Error getting connected devices: ${e.message}")
+//            emptyList()
+//        }
+//        if (connectedDevices.isEmpty()) {
+//            Log.d(TAG, "No system-level connected devices found")
+//            return
+//        }
+//
+//        var hasIncluded = false
+//
+//        connectedDevices.forEach { device ->
+//            val mac = device.address
+//            val name = try {
+//                device.name
+//            } catch (e: SecurityException) {
+//                null
+//            }
+//
+//            val shouldInclude = deviceFilter?.invoke(mac, name, null) ?: true
+//
+//            if (shouldInclude) {
+//                connectionStatesMap[mac] = InternalConnectionState.Connected()
+//                if (name != null) {
+//                    deviceNamesMap[mac] = name
+//                }
+//                Log.d(TAG, "include: $mac (${name ?: "Unknown"})")
+//                hasIncluded = true
+//            } else {
+//                Log.d(TAG, "filtered: $mac (${name ?: "Unknown"})")
+//            }
+//        }
+//
+//        if (hasIncluded) {
+//            emitConnectionStates()
+//            rebuildAndEmitDeviceStates()
+//        }
+//    }
 }

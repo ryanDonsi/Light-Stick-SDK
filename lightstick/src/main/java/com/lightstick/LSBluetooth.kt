@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.shareIn
 
 /**
  * Main entry point for the LightStick BLE SDK.
@@ -89,6 +91,7 @@ object LSBluetooth {
         allowUnknownDevices: Boolean = false
     ) {
         Facade.initialize(context, deviceFilter?.toInternal(), allowUnknownDevices)
+        Facade.restoreSystemConnectedDevices()
     }
 
     // ============================================================================================
@@ -254,6 +257,27 @@ object LSBluetooth {
     // ============================================================================================
     // State Observation
     // ============================================================================================
+
+    data class DeviceStateEvent(
+        val mac:   String,
+        val state: ConnectionState
+    )
+
+    @JvmStatic
+    fun observeDeviceStateEvents(): SharedFlow<DeviceStateEvent> {
+        return Facade.getDeviceStateEvents()
+            .map { event ->
+                DeviceStateEvent(
+                    mac   = event.mac,
+                    state = TypeMappers.toPublic(event.state)
+                )
+            }
+            .shareIn(
+                scope   = scope,
+                started = SharingStarted.Eagerly,
+                replay  = 0
+            )
+    }
 
     /**
      * Observes unified device states (connection + device info).

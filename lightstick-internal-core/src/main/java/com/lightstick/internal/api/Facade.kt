@@ -24,14 +24,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import android.util.Log
 import com.lightstick.internal.ble.DeviceFilter
+import android.bluetooth.BluetoothManager
+import com.lightstick.internal.ble.state.InternalDeviceStateEvent
+import kotlinx.coroutines.flow.SharedFlow
+
 /**
  * 내부 Facade.
  *
@@ -315,6 +317,55 @@ object Facade {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun restoreSystemConnectedDevices() {
+        requireInit()
+
+        val bluetoothManager = appContext.getSystemService(Context.BLUETOOTH_SERVICE)
+                as? BluetoothManager ?: return
+
+        val systemConnectedDevices = try {
+            bluetoothManager.getConnectedDevices(BluetoothProfile.GATT)
+        } catch (e: SecurityException) {
+            Log.w("Facade", "Permission denied: ${e.message}")
+            return
+        } catch (e: Exception) {
+            Log.e("Facade", "Error: ${e.message}")
+            return
+        }
+
+        if (systemConnectedDevices.isEmpty()) {
+            Log.d("Facade", "No system-level connected devices found")
+            return
+        }
+
+        Log.d("Facade", "System connected devices: ${systemConnectedDevices.size}")
+
+        systemConnectedDevices.forEach { bluetoothDevice ->
+            val mac  = bluetoothDevice.address
+            val name = runCatching { bluetoothDevice.name }.getOrNull()
+
+            if (!isDeviceAllowed(mac, name, null)) {
+                Log.d("Facade", "Filtered: $mac ($name)")
+                return@forEach
+            }
+
+            if (sessions.containsKey(mac)) {
+                Log.d("Facade", "Already has session: $mac")
+                return@forEach
+            }
+
+            if (name != null) lastSeenName[mac] = name
+
+            Log.d("Facade", "Restoring: $mac ($name)")
+            connect(
+                mac         = mac,
+                onConnected = { Log.d("Facade", "Restored: $mac") },
+                onFailed    = { e -> Log.w("Facade", "Restore failed: $mac → ${e.message}") }
+            )
+        }
+    }
+
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect(mac: String) {
@@ -346,6 +397,11 @@ object Facade {
     // ============================================================================================
     // Device State
     // ============================================================================================
+
+    fun getDeviceStateEvents(): SharedFlow<InternalDeviceStateEvent> {
+        requireInit()
+        return deviceStateManager.internalDeviceStateEvents
+    }
 
     /**
      * Returns filtered device states flow.
