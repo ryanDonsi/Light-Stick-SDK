@@ -737,14 +737,9 @@ object Facade {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bondedList(): List<Pair<String, String?>> {
         requireInit()
-        var result: List<Pair<String, String?>> = emptyList()
-        bond.listBonded(appContext) { res ->
-            result = res.getOrElse { emptyList() }
-                .filter { (mac, name) ->
-                    isDeviceAllowed(mac, name, null)
-                }
-        }
-        return result
+        // listBondedSync은 adapter.bondedDevices를 동기적으로 조회하므로 직접 반환
+        return bond.listBondedSync(appContext)
+            .filter { (mac, name) -> isDeviceAllowed(mac, name, null) }
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)

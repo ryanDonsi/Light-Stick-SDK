@@ -44,6 +44,23 @@ internal class BondManager {
             .onFailure { onResult(Result.failure(it)) }
     }
 
+    /**
+     * Returns bonded devices synchronously.
+     *
+     * `adapter.bondedDevices` is a synchronous Android API call; this method
+     * returns the result directly without a callback.
+     *
+     * @return List of (MAC, name) pairs, empty if adapter is unavailable or an error occurs.
+     */
+    @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun listBondedSync(context: Context): List<Pair<String, String?>> {
+        val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+            ?: return emptyList()
+        return runCatching { adapter.bondedDevices?.map { it.address to it.name } ?: emptyList() }
+            .getOrElse { emptyList() }
+    }
+
     private fun device(context: Context, mac: String): BluetoothDevice? {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         return adapter?.getRemoteDevice(mac)

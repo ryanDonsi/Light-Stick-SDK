@@ -22,10 +22,12 @@ import kotlinx.parcelize.Parcelize
  * controlling LEDs, OTA, and registering event rules.
  *
  * API principles:
- *  - Methods return `Boolean` meaning "request was submitted to the system (true/false)".
+ *  - Methods return `Boolean` meaning **"request was submitted to the BLE stack"**, NOT
+ *    "the operation succeeded on the device". A `true` return only guarantees the command
+ *    was enqueued; actual BLE write success is not confirmed at this layer.
  *  - Success/failure data is delivered via `Result<T>` callback when applicable.
  *  - No `onError` side-channel: failures are surfaced through `Result.failure(...)`
- *    (or simply by `false` when the request could not be submitted).
+ *    (or simply by `false` when the request could not be submitted, e.g. device not connected).
  *
  * @property mac  Bluetooth MAC address of the device.
  * @property name Device name (nullable, may vary per scan).
@@ -106,7 +108,8 @@ data class Device(
     /**
      * Disconnects from this device.
      *
-     * @return `true` if the disconnect request was submitted; otherwise `false`.
+     * @return `true` if the disconnect request was submitted to the stack; `false` if an
+     *         unexpected error prevented submission (e.g., internal state corruption).
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -126,18 +129,21 @@ data class Device(
     /**
      * Initiates system bonding (pairing) for THIS device.
      *
-     * @param onDone Invoked when the system reports bonded (or was already bonded).
+     * @param onDone   Invoked when the system reports bonded (or was already bonded).
+     * @param onFailed Invoked with the encountered [Throwable] if bonding fails.
+     *                 If `null`, bond failures are silently ignored.
      * @return `true` if the bond request was submitted to the system; `false` otherwise.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bond(
-        onDone: (() -> Unit)? = null
+        onDone: (() -> Unit)? = null,
+        onFailed: ((Throwable) -> Unit)? = null
     ): Boolean {
         return try {
             Facade.ensureBond(
                 mac = mac,
                 onDone = { onDone?.invoke() },
-                onFailed = { /* swallowed: submission still returned true */ }
+                onFailed = { t -> onFailed?.invoke(t) }
             )
             true
         } catch (_: Throwable) {
@@ -199,7 +205,9 @@ data class Device(
      *
      * @param color      Logical color (0..255 per channel).
      * @param transition Transition parameter, clamped to [0, 255].
-     * @return `true` if the packet was submitted; `false` otherwise.
+     * @return `true` if the packet was enqueued to the BLE write queue; `false` if the
+     *         device is not connected or an error prevented enqueuing. Does **not** indicate
+     *         that the device received or applied the color.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -224,7 +232,8 @@ data class Device(
      * Sends a 20-byte effect payload to THIS device.
      *
      * @param payload 20-byte structured effect payload.
-     * @return `true` if the frame was submitted; `false` otherwise.
+     * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
+     *         device is not connected or an error prevented enqueuing.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
