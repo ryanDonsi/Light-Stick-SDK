@@ -2,6 +2,7 @@ package com.lightstick.internal.ble
 
 import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
+import android.util.Log
 import androidx.annotation.RequiresPermission
 
 /**
@@ -21,10 +22,15 @@ import androidx.annotation.RequiresPermission
 internal class GameManager(private val gattClient: GattClient) {
 
     companion object {
+        private const val TAG = "GameManager"           // DEBUG
         private const val EFFECT_INDEX_GAME = 0x0005
         private const val CMD_READY  = 1
         private const val CMD_STOP   = 3
         private const val CMD_CLEAR  = 4
+
+        // DEBUG — remove after verification
+        private fun ByteArray.toHex(): String =
+            joinToString(" ") { "%02X".format(it) }
     }
 
     // -------------------------------------------------------------------------
@@ -34,17 +40,33 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun subscribeResults(onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit) {
         gattClient.addNotificationListener(UuidConstants.LCS_GAME_RESULT) { bytes ->
-            parseResult(bytes)?.let { (si, r, b, t, w) -> onResult(si, r, b, t, w) }
+            // DEBUG — raw FF04 Notify payload
+            Log.d(TAG, "FF04 RX [${bytes.size}B] raw : ${bytes.toHex()}")
+
+            val parsed = parseResult(bytes)
+            if (parsed == null) {
+                Log.w(TAG, "FF04 RX — parse failed (size=${bytes.size}, need ≥12)")
+                return@addNotificationListener
+            }
+            val (si, r, b, t, w) = parsed
+            // DEBUG — parsed fields
+            Log.d(TAG, "FF04 RX parsed : subIndex=$si  redScore=$r  blueScore=$b  totalCount=$t  wandId=0x%04X".format(w))
+            onResult(si, r, b, t, w)
         }
         gattClient.setCharacteristicNotification(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid    = UuidConstants.LCS_GAME_RESULT,
             enable      = true,
-            onResult    = {}
+            onResult    = { result ->
+                // DEBUG
+                result.onSuccess { Log.d(TAG, "FF04 CCCD subscribe OK") }
+                result.onFailure { Log.w(TAG, "FF04 CCCD subscribe FAILED: ${it.message}") }
+            }
         )
     }
 
     fun unsubscribeResults() {
+        Log.d(TAG, "FF04 CCCD unsubscribe")   // DEBUG
         gattClient.removeNotificationListener(UuidConstants.LCS_GAME_RESULT)
     }
 
@@ -53,16 +75,31 @@ internal class GameManager(private val gattClient: GattClient) {
     // -------------------------------------------------------------------------
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendReady(subIndex: Int, level: Int, option: Int): Boolean =
-        writeGameCmd(buildPayload(subIndex, CMD_READY, level, option))
+    fun sendReady(subIndex: Int, level: Int, option: Int): Boolean {
+        val payload = buildPayload(subIndex, CMD_READY, level, option)
+        // DEBUG
+        Log.d(TAG, "FF03 TX READY  subIndex=$subIndex  level=$level  option=0x%02X".format(option))
+        Log.d(TAG, "FF03 TX raw   : ${payload.toHex()}")
+        return writeGameCmd(payload)
+    }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendStop(): Boolean =
-        writeGameCmd(buildPayload(0, CMD_STOP, 0, 0))
+    fun sendStop(): Boolean {
+        val payload = buildPayload(0, CMD_STOP, 0, 0)
+        // DEBUG
+        Log.d(TAG, "FF03 TX STOP")
+        Log.d(TAG, "FF03 TX raw  : ${payload.toHex()}")
+        return writeGameCmd(payload)
+    }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendClear(): Boolean =
-        writeGameCmd(buildPayload(0, CMD_CLEAR, 0, 0))
+    fun sendClear(): Boolean {
+        val payload = buildPayload(0, CMD_CLEAR, 0, 0)
+        // DEBUG
+        Log.d(TAG, "FF03 TX CLEAR")
+        Log.d(TAG, "FF03 TX raw  : ${payload.toHex()}")
+        return writeGameCmd(payload)
+    }
 
     // -------------------------------------------------------------------------
     // Internals
@@ -95,6 +132,12 @@ internal class GameManager(private val gattClient: GattClient) {
         val wandId     = if (bytes.size >= 16) getU16LE(bytes, 14) else 0
         return arrayOf(subIndex, redScore, blueScore, totalCount, wandId)
     }
+
+    private operator fun Array<Int>.component1() = this[0]
+    private operator fun Array<Int>.component2() = this[1]
+    private operator fun Array<Int>.component3() = this[2]
+    private operator fun Array<Int>.component4() = this[3]
+    private operator fun Array<Int>.component5() = this[4]
 
     private fun putU16LE(buf: ByteArray, offset: Int, value: Int) {
         buf[offset]     = (value and 0xFF).toByte()
