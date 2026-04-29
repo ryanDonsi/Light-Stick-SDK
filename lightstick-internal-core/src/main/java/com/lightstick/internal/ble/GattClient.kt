@@ -55,6 +55,8 @@ internal class GattClient(private val context: Context) : AutoCloseable {
     private val pendingEnableNotify = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
     private val pendingDescWrite = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
 
+    private val notificationListeners = ConcurrentHashMap<java.util.UUID, (ByteArray) -> Unit>()
+
     private val connectTimeouts = ConcurrentHashMap<String, Runnable>()
 
     private val queueManager = CmdQueueManager(
@@ -73,6 +75,14 @@ internal class GattClient(private val context: Context) : AutoCloseable {
      * 현재 연결된 디바이스의 MAC 주소를 반환합니다.
      */
     fun getCurrentAddress(): String? = currentAddress
+
+    fun addNotificationListener(charUuid: java.util.UUID, listener: (ByteArray) -> Unit) {
+        notificationListeners[charUuid] = listener
+    }
+
+    fun removeNotificationListener(charUuid: java.util.UUID) {
+        notificationListeners.remove(charUuid)
+    }
 
     /**
      * 연결 상태 변경 리스너를 설정합니다.
@@ -157,6 +167,7 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             pendingEnableNotify.remove(addr)
             pendingDescWrite.remove(addr)
         }
+        notificationListeners.clear()
 
         try {
             gatt?.disconnect()
@@ -429,6 +440,23 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             }
             pendingRead.remove(address)?.invoke(Result.success(value))
             queueManager.signalComplete(address)
+        }
+
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            notificationListeners[characteristic.uuid]?.invoke(characteristic.value ?: return)
+        }
+
+        @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            notificationListeners[characteristic.uuid]?.invoke(value)
         }
 
         @Suppress("OVERRIDE_DEPRECATION")

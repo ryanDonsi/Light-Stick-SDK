@@ -9,6 +9,9 @@ import com.lightstick.types.Color
 import com.lightstick.types.LSEffectPayload
 import com.lightstick.events.EventRule
 import com.lightstick.events.EventManager
+import com.lightstick.game.GameLevel
+import com.lightstick.game.GameMode
+import com.lightstick.game.GameResult
 import com.lightstick.ota.OtaManager
 import com.lightstick.device.DeviceInfo
 import java.util.concurrent.atomic.AtomicInteger
@@ -637,8 +640,124 @@ data class Device(
     }
 
     // ------------------------------------------------------------------------
+    // Game Mode
+    // ------------------------------------------------------------------------
+
+    /**
+     * Subscribes to FF04 game result Notify and sends a READY command (FF03) to start a game.
+     *
+     * The relay / master wand broadcasts READY via 802.15.4; wands auto-start ~2 s later.
+     * [onResult] is called once per wand result packet received (up to 2 s after game ends).
+     *
+     * Typical usage:
+     * ```kotlin
+     * device.startGame(GameMode.SPEED_REACTION, GameLevel.NORMAL) { result ->
+     *     if (result.isWandIdValid && result.redScore == 5) {
+     *         // wand result.wandId finished first
+     *     }
+     * }
+     * ```
+     * For Mode 3 use [GAME_OPTION_RANDOM_TEAM] as [option] to randomise team assignment:
+     * ```kotlin
+     * device.startGame(GameMode.TEAM_BATTLE, GameLevel.EASY, Device.GAME_OPTION_RANDOM_TEAM) { result ->
+     *     val winner = if (result.redScore > result.blueScore) "Red" else "Blue"
+     * }
+     * ```
+     *
+     * @param mode     Game mode to start.
+     * @param level    Difficulty level (default: [GameLevel.NORMAL]).
+     * @param option   Extra option byte: use [GAME_OPTION_RANDOM_TEAM] for Mode 3 random team
+     *                 assignment, 0 for Mode 1 / Mode 2.
+     * @param onResult Called for each [GameResult] Notify received from the relay.
+     * @return `true` if both the subscribe and READY write were submitted; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun startGame(
+        mode: GameMode,
+        level: GameLevel = GameLevel.NORMAL,
+        option: Int = 0,
+        onResult: (GameResult) -> Unit
+    ): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.subscribeGameResults(mac) { subIndex, redScore, blueScore, totalCount, wandId ->
+                val gameMode = GameMode.fromSubIndex(subIndex) ?: return@subscribeGameResults
+                onResult(
+                    GameResult(
+                        mode       = gameMode,
+                        redScore   = redScore,
+                        blueScore  = blueScore,
+                        totalCount = totalCount,
+                        wandId     = wandId
+                    )
+                )
+            }
+            Facade.sendGameReady(mac, mode.subIndex, level.value, option)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Sends a STOP command (cmdIndex=3) to FF03 to abort a running game immediately.
+     *
+     * @return `true` if the command was enqueued; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun stopGame(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.sendGameStop(mac)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Sends a CLEAR command (cmdIndex=4) to FF03 to reset the device to idle.
+     *
+     * Call this after a game ends to prepare for the next round. Unsubscribes game result
+     * notifications automatically.
+     *
+     * @return `true` if the command was enqueued; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun clearGame(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.unsubscribeGameResults(mac)
+            Facade.sendGameClear(mac)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Cancels the FF04 Notify subscription without sending any command to the device.
+     *
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun unsubscribeGameResults() {
+        try {
+            Facade.unsubscribeGameResults(mac)
+        } catch (_: Throwable) { }
+    }
+
+    // ------------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------------
+
+    companion object {
+        /**
+         * Pass as the `option` argument of [startGame] for [GameMode.TEAM_BATTLE] to let the
+         * relay assign Red / Blue teams randomly (spec §5, option = 0xFF).
+         */
+        const val GAME_OPTION_RANDOM_TEAM: Int = 0xFF
+    }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private inline fun <T> submitReadWithResult(

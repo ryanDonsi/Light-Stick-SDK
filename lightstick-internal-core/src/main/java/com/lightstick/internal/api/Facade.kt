@@ -124,10 +124,12 @@ object Facade {
         val gatt: GattClient,
         val led: LedControlManager,
         val deviceInfo: DeviceInfoManager,
-        val ota: OtaManager?
+        val ota: OtaManager?,
+        val game: GameManager
     ) {
         fun cleanup() {
             runCatching { ota?.abort() }
+            runCatching { game.unsubscribeResults() }
             runCatching { led.close() }
             runCatching { gatt.close() }
         }
@@ -274,7 +276,8 @@ object Facade {
             onConnected = {
                 val led = LedControlManager(gatt)
                 val deviceInfo = DeviceInfoManager(gatt)
-                sessions[mac] = Session(gatt, led, deviceInfo, null)
+                val game = GameManager(gatt)
+                sessions[mac] = Session(gatt, led, deviceInfo, null, game)
 
                 deviceStateManager.updateConnectionState(
                     mac,
@@ -664,6 +667,56 @@ object Facade {
     }
 
     // ============================================================================================
+    // Game Mode
+    // ============================================================================================
+
+    /**
+     * Subscribes to FF04 game result Notify on the given device.
+     *
+     * The callback parameters map directly to the 20-byte result packet (spec §2.3 / §7.1):
+     * subIndex, redScore, blueScore, totalCount, wandId.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun subscribeGameResults(
+        mac: String,
+        onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
+    ): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        requireSession(mac).game.subscribeResults(onResult)
+        return true
+    }
+
+    fun unsubscribeGameResults(mac: String) {
+        requireInit()
+        sessions[mac]?.game?.unsubscribeResults()
+    }
+
+    /** Sends a READY command (cmdIndex=1) to FF03 to start a game. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameReady(mac: String, subIndex: Int, level: Int, option: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendReady(subIndex, level, option)
+    }
+
+    /** Sends a STOP command (cmdIndex=3) to FF03 to abort a running game. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameStop(mac: String): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendStop()
+    }
+
+    /** Sends a CLEAR command (cmdIndex=4) to FF03 to reset to idle. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameClear(mac: String): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendClear()
+    }
+
+    // ============================================================================================
     // OTA
     // ============================================================================================
 
@@ -679,7 +732,7 @@ object Facade {
         requireInit()
         if (!isConnected(mac)) error("Not connected: $mac")
         val s = requireSession(mac)
-        val otaMgr = s.ota ?: OtaManager(s.gatt).also { sessions[mac] = s.copy(ota = it) }
+        val otaMgr = s.ota ?: OtaManager(s.gatt).also { mgr -> sessions[mac] = s.copy(ota = mgr) }
         otaMgr.start(
             serviceUuid = UuidConstants.OTA_SERVICE,
             dataCharUuid = UuidConstants.OTA_DATA,

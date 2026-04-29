@@ -73,4 +73,11 @@ internal object UuidConstants {
 
     /** Concert data characteristic. */
     val CONCERT_CHAR: UUID = UUID.fromString("0001ff04-0000-1000-8000-00805f9800c4")
+
+    // ===== Game Mode (Custom) ================================================
+    /** Game Command characteristic (FF03): Write READY / STOP / CLEAR payloads. */
+    val LCS_GAME_CMD: UUID = UUID.fromString("0001ff03-0000-1000-8000-00805f9800c4")
+
+    /** Game Result characteristic (FF04): Notify 20-byte result packets from relay. */
+    val LCS_GAME_RESULT: UUID = UUID.fromString("0001ff04-0000-1000-8000-00805f9800c4")
 }
