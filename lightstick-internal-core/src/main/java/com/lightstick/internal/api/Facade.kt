@@ -227,6 +227,20 @@ object Facade {
             return
         }
 
+        // lastSeenName은 현재 세션 스캔 결과만 보유.
+        // 앱 재시작 후 저장된 MAC으로 바로 연결하거나, 기기가 scan response에 이름을
+        // 싣지 않는 경우 null이 된다. Android BT 스택 캐시를 fallback으로 사용한다.
+        if (!lastSeenName.containsKey(mac)) {
+            val btAdapter = (appContext.getSystemService(Context.BLUETOOTH_SERVICE)
+                    as? android.bluetooth.BluetoothManager)?.adapter
+            val cachedName = try { btAdapter?.getRemoteDevice(mac)?.name } catch (_: Throwable) { null }
+            if (cachedName != null) {
+                lastSeenName[mac] = cachedName
+                deviceStateManager.updateDeviceName(mac, cachedName)
+                Log.d("Facade", "connect: resolved name from BT cache → $cachedName ($mac)")
+            }
+        }
+
         val deviceName = lastSeenName[mac]
         val deviceRssi = lastSeenRssi[mac]
 
