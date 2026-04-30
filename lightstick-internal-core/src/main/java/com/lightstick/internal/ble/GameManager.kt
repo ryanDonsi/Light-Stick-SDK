@@ -51,6 +51,9 @@ internal class GameManager(private val gattClient: GattClient) {
             val (si, r, b, t, w) = parsed
             // DEBUG — parsed fields
             Log.d(TAG, "FF04 RX parsed : subIndex=$si  redScore=$r  blueScore=$b  totalCount=$t  wandId=0x%04X".format(w))
+            // DEBUG — subIndex 이상값 경고 (유효값: 1=Speed, 2=Tempo, 3=TeamBattle)
+            if (si !in 1..3) Log.w(TAG, "FF04 RX — unexpected subIndex=$si (expected 1~3); caller will use started mode as fallback")
+            if (w == 0x0000 || w == 0xFFFF) Log.w(TAG, "FF04 RX — wandId=0x%04X is invalid sentinel".format(w))
             onResult(si, r, b, t, w)
         }
         gattClient.setCharacteristicNotification(

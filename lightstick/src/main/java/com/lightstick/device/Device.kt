@@ -682,7 +682,9 @@ data class Device(
         return try {
             if (!isConnected()) return false
             Facade.subscribeGameResults(mac) { subIndex, redScore, blueScore, totalCount, wandId ->
-                val gameMode = GameMode.fromSubIndex(subIndex) ?: return@subscribeGameResults
+                // 펌웨어가 결과 패킷의 subIndex를 0 또는 다른 값으로 내려보낼 수 있다.
+                // 이 경우 startGame()에 전달된 mode를 fallback으로 사용한다.
+                val gameMode = GameMode.fromSubIndex(subIndex) ?: mode
                 onResult(
                     GameResult(
                         mode       = gameMode,
