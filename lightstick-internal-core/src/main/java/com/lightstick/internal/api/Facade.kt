@@ -822,6 +822,12 @@ object Facade {
         return runCatching { session.gatt.isConnected() }.getOrDefault(false)
     }
 
+    /** Returns the device name from the in-session cache (scan advertising or BT stack). */
+    fun getCachedDeviceName(mac: String): String? {
+        requireInit()
+        return lastSeenName[mac]
+    }
+
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun isBonded(mac: String): Boolean {
         requireInit()
