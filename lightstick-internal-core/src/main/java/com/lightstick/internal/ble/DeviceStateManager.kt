@@ -184,8 +184,11 @@ internal class DeviceStateManager(
     }
 
     /**
-     * DIS 읽기 완료 전에도 스캔에서 얻은 이름을 DeviceInfo에 담아 전달한다.
-     * "Unknown" 은 이름 미확인 placeholder 이므로 null 과 동일하게 처리한다.
+     * DIS 콜백 데이터와 스캔 이름을 합산해 DeviceState용 DeviceInfo를 구성한다.
+     *
+     * - deviceInfoMap : DIS 콜백 결과만 저장 (순수 GATT 데이터)
+     * - deviceNamesMap: 스캔 advertising 이름 저장
+     * - deviceName 표시는 스캔 이름 우선 (DIS 0x2A00은 비어있는 경우가 많음)
      */
     private fun resolveDeviceInfo(
         mac: String,
@@ -197,13 +200,15 @@ internal class DeviceStateManager(
         val connected = connectionState is com.lightstick.internal.ble.state.InternalConnectionState.Connected
 
         return when {
-            // DIS 읽기 완료 + 이름 있음 → 그대로 사용
-            gattInfo != null && !gattInfo.deviceName.isNullOrBlank() -> gattInfo
+            // DIS 읽기 완료: model/firmware/battery 등 DIS 데이터 사용.
+            // deviceName은 스캔 이름 우선 (DIS에 보통 없음), 없으면 DIS 값 유지.
+            gattInfo != null -> gattInfo.copy(
+                deviceName  = scanName ?: gattInfo.deviceName,
+                rssi        = rssi ?: gattInfo.rssi,
+                isConnected = connected
+            )
 
-            // DIS 읽기 완료 + 이름 없음 → 스캔 이름 보완
-            gattInfo != null -> gattInfo.copy(deviceName = scanName)
-
-            // DIS 읽기 전 + 스캔 이름 있음 → 최소 DeviceInfo 생성
+            // DIS 읽기 전: 스캔 이름으로 최소 DeviceInfo 즉시 구성
             scanName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
                 deviceName  = scanName,
                 macAddress  = mac,
@@ -211,7 +216,6 @@ internal class DeviceStateManager(
                 isConnected = connected
             )
 
-            // 이름을 아직 알 수 없음
             else -> null
         }
     }
