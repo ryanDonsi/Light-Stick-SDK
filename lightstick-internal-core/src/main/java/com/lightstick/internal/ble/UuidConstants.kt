@@ -23,14 +23,19 @@ internal object UuidConstants {
     /** CCCD: 비활성화 (0x0000) */
     val CCCD_DISABLE: ByteArray = byteArrayOf(0x00, 0x00)
 
-    // ===== LED Control (Custom) ==============================================
+    // ===== LED Control Service (Custom, 0001fe01) ============================
+    // All FF01–FF04 characteristics belong to this single service.
     /** LED Control Service (LCS). */
     val LCS_SERVICE: UUID = UUID.fromString("0001fe01-0000-1000-8000-00805f9800c4")
 
-    /** 4B color packet characteristic: [R, G, B, transition]. */
+    /** FF01 — 4B color packet: [R, G, B, transition]. */
     val LCS_COLOR: UUID = UUID.fromString("0001ff01-0000-1000-8000-00805f9800c4")
-    /** 20B effect payload characteristic (LSEffectPayload v1.4). */
+    /** FF02 — 20B effect payload (LSEffectPayload v1.4). */
     val LCS_PAYLOAD: UUID = UUID.fromString("0001ff02-0000-1000-8000-00805f9800c4")
+    /** FF03 — Game Command: Write READY / STOP / CLEAR payloads (spec §9.2). */
+    val LCS_GAME_CMD: UUID = UUID.fromString("0001ff03-0000-1000-8000-00805f9800c4")
+    /** FF04 — Game Result: Notify 20-byte result packets from relay (spec §2.3 / §7.1). */
+    val LCS_GAME_RESULT: UUID = UUID.fromString("0001ff04-0000-1000-8000-00805f9800c4")
 
     // ===== Battery Service (Standard) ========================================
     /** Battery Service (BAS). */
@@ -67,10 +72,10 @@ internal object UuidConstants {
     /** OTA Data characteristic (write/notify as per protocol). */
     val OTA_DATA: UUID = UUID.fromString("1d14d6ee-fd63-4fa1-bfa4-8f47b42119f1")
 
-    // ===== Concert Library (Optional Custom) =================================
+    // ===== Concert Library (Optional Custom, 0001fe02) =======================
     /** Concert Library Service (optional, for batch EFX sync). */
     val CONCERT_SERVICE: UUID = UUID.fromString("0001fe02-0000-1000-8000-00805f9800c4")
 
-    /** Concert data characteristic. */
+    /** Concert data characteristic (FF04 under CONCERT_SERVICE — distinct from LCS_GAME_RESULT). */
     val CONCERT_CHAR: UUID = UUID.fromString("0001ff04-0000-1000-8000-00805f9800c4")
 }

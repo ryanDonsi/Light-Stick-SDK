@@ -173,13 +173,50 @@ internal class DeviceStateManager(
                 InternalDeviceState(
                     macAddress = mac,
                     connectionState = connectionState,
-                    deviceInfo = deviceInfoMap[mac],
+                    deviceInfo = resolveDeviceInfo(mac, connectionState),
                     lastSeenTimestamp = System.currentTimeMillis()
                 )
             }
 
         if (_deviceStates.value != unified) {
             _deviceStates.value = unified
+        }
+    }
+
+    /**
+     * DIS 콜백 데이터와 스캔 이름을 합산해 DeviceState용 DeviceInfo를 구성한다.
+     *
+     * - deviceInfoMap : DIS 콜백 결과만 저장 (순수 GATT 데이터)
+     * - deviceNamesMap: 스캔 advertising 이름 저장
+     * - deviceName 표시는 스캔 이름 우선 (DIS 0x2A00은 비어있는 경우가 많음)
+     */
+    private fun resolveDeviceInfo(
+        mac: String,
+        connectionState: com.lightstick.internal.ble.state.InternalConnectionState
+    ): com.lightstick.internal.ble.state.InternalDeviceInfo? {
+        val gattInfo  = deviceInfoMap[mac]
+        val scanName  = deviceNamesMap[mac]?.takeUnless { it.isBlank() || it == "Unknown" }
+        val rssi      = deviceRssiMap[mac]
+        val connected = connectionState is com.lightstick.internal.ble.state.InternalConnectionState.Connected
+
+        return when {
+            // DIS 읽기 완료: model/firmware/battery 등 DIS 데이터 사용.
+            // deviceName은 스캔 이름 우선 (DIS에 보통 없음), 없으면 DIS 값 유지.
+            gattInfo != null -> gattInfo.copy(
+                deviceName  = scanName ?: gattInfo.deviceName,
+                rssi        = rssi ?: gattInfo.rssi,
+                isConnected = connected
+            )
+
+            // DIS 읽기 전: 스캔 이름으로 최소 DeviceInfo 즉시 구성
+            scanName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
+                deviceName  = scanName,
+                macAddress  = mac,
+                rssi        = rssi,
+                isConnected = connected
+            )
+
+            else -> null
         }
     }
 

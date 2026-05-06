@@ -124,10 +124,12 @@ object Facade {
         val gatt: GattClient,
         val led: LedControlManager,
         val deviceInfo: DeviceInfoManager,
-        val ota: OtaManager?
+        val ota: OtaManager?,
+        val game: GameManager
     ) {
         fun cleanup() {
             runCatching { ota?.abort() }
+            runCatching { game.unsubscribeResults() }
             runCatching { led.close() }
             runCatching { gatt.close() }
         }
@@ -225,6 +227,24 @@ object Facade {
             return
         }
 
+        // lastSeenName은 현재 세션 스캔 결과만 보유한다.
+        // 기기가 advertising에 이름을 싣지 않으면 스캔 시 "Unknown"으로 저장되고,
+        // 앱 재시작 후 연결하면 키 자체가 없다.
+        // 두 경우 모두 Android BT 스택 캐시(본딩/이전 스캔 결과)를 fallback으로 조회한다.
+        val currentCachedName = lastSeenName[mac]
+        if (currentCachedName.isNullOrBlank() || currentCachedName == "Unknown") {
+            val btAdapter = (appContext.getSystemService(Context.BLUETOOTH_SERVICE)
+                    as? android.bluetooth.BluetoothManager)?.adapter
+            val cachedName = try { btAdapter?.getRemoteDevice(mac)?.name } catch (_: Throwable) { null }
+            if (!cachedName.isNullOrBlank()) {
+                lastSeenName[mac] = cachedName
+                deviceStateManager.updateDeviceName(mac, cachedName)
+                Log.d("Facade", "connect: resolved name from BT cache → $cachedName ($mac)")
+            } else {
+                Log.d("Facade", "connect: name unavailable in scan and BT cache ($mac)")
+            }
+        }
+
         val deviceName = lastSeenName[mac]
         val deviceRssi = lastSeenRssi[mac]
 
@@ -274,7 +294,8 @@ object Facade {
             onConnected = {
                 val led = LedControlManager(gatt)
                 val deviceInfo = DeviceInfoManager(gatt)
-                sessions[mac] = Session(gatt, led, deviceInfo, null)
+                val game = GameManager(gatt)
+                sessions[mac] = Session(gatt, led, deviceInfo, null, game)
 
                 deviceStateManager.updateConnectionState(
                     mac,
@@ -664,6 +685,56 @@ object Facade {
     }
 
     // ============================================================================================
+    // Game Mode
+    // ============================================================================================
+
+    /**
+     * Subscribes to FF04 game result Notify on the given device.
+     *
+     * The callback parameters map directly to the 20-byte result packet (spec §2.3 / §7.1):
+     * subIndex, redScore, blueScore, totalCount, wandId.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun subscribeGameResults(
+        mac: String,
+        onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
+    ): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        requireSession(mac).game.subscribeResults(onResult)
+        return true
+    }
+
+    fun unsubscribeGameResults(mac: String) {
+        requireInit()
+        sessions[mac]?.game?.unsubscribeResults()
+    }
+
+    /** Sends a READY command (cmdIndex=1) to FF03 to start a game. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameReady(mac: String, subIndex: Int, level: Int, option: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendReady(subIndex, level, option)
+    }
+
+    /** Sends a STOP command (cmdIndex=3) to FF03 to abort a running game. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameStop(mac: String): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendStop()
+    }
+
+    /** Sends a CLEAR command (cmdIndex=4) to FF03 to reset to idle. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameClear(mac: String): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendClear()
+    }
+
+    // ============================================================================================
     // OTA
     // ============================================================================================
 
@@ -679,7 +750,7 @@ object Facade {
         requireInit()
         if (!isConnected(mac)) error("Not connected: $mac")
         val s = requireSession(mac)
-        val otaMgr = s.ota ?: OtaManager(s.gatt).also { sessions[mac] = s.copy(ota = it) }
+        val otaMgr = s.ota ?: OtaManager(s.gatt).also { mgr -> sessions[mac] = s.copy(ota = mgr) }
         otaMgr.start(
             serviceUuid = UuidConstants.OTA_SERVICE,
             dataCharUuid = UuidConstants.OTA_DATA,
@@ -753,6 +824,12 @@ object Facade {
         requireInit()
         val session = sessions[mac] ?: return false
         return runCatching { session.gatt.isConnected() }.getOrDefault(false)
+    }
+
+    /** Returns the device name from the in-session cache (scan advertising or BT stack). */
+    fun getCachedDeviceName(mac: String): String? {
+        requireInit()
+        return lastSeenName[mac]
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
