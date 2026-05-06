@@ -506,10 +506,12 @@ data class Device(
         val done = AtomicInteger(0)
         fun completeOne() {
             if (done.incrementAndGet() == total) {
-                // DIS 읽기 실패 시 fallback: 스캔 advertising name → Android BT 스택 캐시 순으로 시도
-                val resolvedName = name
-                    ?: this.name                          // Device 객체에 담긴 스캔 시 이름
-                    ?: Facade.getCachedDeviceName(mac)    // Facade 세션 캐시 (BT 스택 포함)
+                // DIS 읽기 실패 시 fallback: 스캔 advertising name → Android BT 스택 캐시 순으로 시도.
+                // "Unknown"은 이름 미확인 placeholder이므로 null과 동일하게 처리한다.
+                fun String?.realOrNull() = takeUnless { it.isNullOrBlank() || it == "Unknown" }
+                val resolvedName = name.realOrNull()
+                    ?: this.name.realOrNull()                        // Device 객체에 담긴 스캔 시 이름
+                    ?: Facade.getCachedDeviceName(mac).realOrNull()  // Facade 세션 캐시 (BT 스택 포함)
                 onResult(
                     DeviceInfo(
                         deviceName = resolvedName,
