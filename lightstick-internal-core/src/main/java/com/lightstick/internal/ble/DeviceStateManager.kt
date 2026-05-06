@@ -173,13 +173,46 @@ internal class DeviceStateManager(
                 InternalDeviceState(
                     macAddress = mac,
                     connectionState = connectionState,
-                    deviceInfo = deviceInfoMap[mac],
+                    deviceInfo = resolveDeviceInfo(mac, connectionState),
                     lastSeenTimestamp = System.currentTimeMillis()
                 )
             }
 
         if (_deviceStates.value != unified) {
             _deviceStates.value = unified
+        }
+    }
+
+    /**
+     * DIS 읽기 완료 전에도 스캔에서 얻은 이름을 DeviceInfo에 담아 전달한다.
+     * "Unknown" 은 이름 미확인 placeholder 이므로 null 과 동일하게 처리한다.
+     */
+    private fun resolveDeviceInfo(
+        mac: String,
+        connectionState: com.lightstick.internal.ble.state.InternalConnectionState
+    ): com.lightstick.internal.ble.state.InternalDeviceInfo? {
+        val gattInfo  = deviceInfoMap[mac]
+        val scanName  = deviceNamesMap[mac]?.takeUnless { it.isBlank() || it == "Unknown" }
+        val rssi      = deviceRssiMap[mac]
+        val connected = connectionState is com.lightstick.internal.ble.state.InternalConnectionState.Connected
+
+        return when {
+            // DIS 읽기 완료 + 이름 있음 → 그대로 사용
+            gattInfo != null && !gattInfo.deviceName.isNullOrBlank() -> gattInfo
+
+            // DIS 읽기 완료 + 이름 없음 → 스캔 이름 보완
+            gattInfo != null -> gattInfo.copy(deviceName = scanName)
+
+            // DIS 읽기 전 + 스캔 이름 있음 → 최소 DeviceInfo 생성
+            scanName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
+                deviceName  = scanName,
+                macAddress  = mac,
+                rssi        = rssi,
+                isConnected = connected
+            )
+
+            // 이름을 아직 알 수 없음
+            else -> null
         }
     }
 
