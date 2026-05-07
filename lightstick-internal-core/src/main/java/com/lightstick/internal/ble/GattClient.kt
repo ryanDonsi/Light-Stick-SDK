@@ -193,6 +193,13 @@ internal class GattClient(private val context: Context) : AutoCloseable {
     }
 
     /**
+     * Returns true if the connected device exposes [charUuid] under [serviceUuid].
+     * Safe to call from any thread; returns false if not connected or services not discovered.
+     */
+    fun hasCharacteristic(serviceUuid: java.util.UUID, charUuid: java.util.UUID): Boolean =
+        gatt?.getService(serviceUuid)?.getCharacteristic(charUuid) != null
+
+    /**
      * MTU 변경 요청 (API 21+).
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)

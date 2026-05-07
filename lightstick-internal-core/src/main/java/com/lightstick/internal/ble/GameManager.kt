@@ -34,6 +34,18 @@ internal class GameManager(private val gattClient: GattClient) {
     }
 
     // -------------------------------------------------------------------------
+    // Capability check
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns true if the connected device exposes both FF03 (LCS_GAME_CMD) and
+     * FF04 (LCS_GAME_RESULT) under LCS_SERVICE. Must be called after service discovery.
+     */
+    fun isGameModeSupported(): Boolean =
+        gattClient.hasCharacteristic(UuidConstants.LCS_SERVICE, UuidConstants.LCS_GAME_CMD) &&
+        gattClient.hasCharacteristic(UuidConstants.LCS_SERVICE, UuidConstants.LCS_GAME_RESULT)
+
+    // -------------------------------------------------------------------------
     // Notification subscription
     // -------------------------------------------------------------------------
 

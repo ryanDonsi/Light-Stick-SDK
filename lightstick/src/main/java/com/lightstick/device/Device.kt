@@ -650,6 +650,20 @@ data class Device(
     // ------------------------------------------------------------------------
 
     /**
+     * Returns `true` if this device's firmware exposes the game command (FF03) and
+     * result notify (FF04) characteristics under LCS_SERVICE.
+     *
+     * Must be called after a successful [connect] (service discovery complete).
+     * Returns `false` if the device is not connected or game characteristics are absent.
+     *
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsGameMode(): Boolean = Facade.supportsGameMode(mac)
+
+
+
+    /**
      * Subscribes to FF04 game result Notify and sends a READY command (FF03) to start a game.
      *
      * The relay / master wand broadcasts READY via 802.15.4; wands auto-start ~2 s later.

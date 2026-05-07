@@ -688,6 +688,16 @@ object Facade {
     // ============================================================================================
 
     /**
+     * Returns true if [mac]'s firmware exposes FF03 + FF04 under LCS_SERVICE.
+     * Must be called after the device is connected (service discovery complete).
+     * Returns false if not connected or services not yet discovered.
+     */
+    fun supportsGameMode(mac: String): Boolean {
+        requireInit()
+        return sessions[mac]?.game?.isGameModeSupported() ?: false
+    }
+
+    /**
      * Subscribes to FF04 game result Notify on the given device.
      *
      * The callback parameters map directly to the 20-byte result packet (spec §2.3 / §7.1):
