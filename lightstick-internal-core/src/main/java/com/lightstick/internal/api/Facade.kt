@@ -261,10 +261,9 @@ object Facade {
         gatt.setConnectionStateListener { address, newState, gattStatus ->
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    deviceStateManager.updateConnectionState(
-                        address,
-                        InternalConnectionState.Connected()
-                    )
+                    // Connected is emitted in gatt.connect(onConnected) after session creation.
+                    // Emitting here would fire before sessions[mac] exists, causing
+                    // connectedDevices() to return null RSSI in the app's first callback.
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     val reason = parseDisconnectReason(gattStatus)
