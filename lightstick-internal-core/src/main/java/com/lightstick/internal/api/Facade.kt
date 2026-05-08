@@ -531,6 +531,16 @@ object Facade {
         return true
     }
 
+    /**
+     * Returns true if [mac]'s firmware exposes the BAS Battery Level characteristic (0x2A19).
+     * Must be called after the device is connected (service discovery complete).
+     * Returns false if not connected or the characteristic is absent.
+     */
+    fun supportsBattery(mac: String): Boolean {
+        requireInit()
+        return sessions[mac]?.deviceInfo?.isBatterySupported() ?: false
+    }
+
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readBattery(mac: String, onResult: (Result<Int>) -> Unit): Boolean {
         requireInit()

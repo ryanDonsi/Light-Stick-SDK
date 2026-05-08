@@ -482,6 +482,18 @@ data class Device(
         submitReadWithResult({ cb -> Facade.readMacAddress(mac, cb) }, onResult)
 
     /**
+     * Returns `true` if this device exposes the BAS Battery Level characteristic (0x2A19).
+     *
+     * Must be called after a successful [connect] (service discovery complete).
+     * Returns `false` if the device is not connected or the characteristic is absent.
+     * Use this to guard [readBattery] calls and battery monitoring UI.
+     *
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsBattery(): Boolean = Facade.supportsBattery(mac)
+
+    /**
      * Reads BAS 2A19: Battery Level (0..100) from THIS device.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)

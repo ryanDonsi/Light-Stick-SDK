@@ -25,6 +25,13 @@ internal class DeviceInfoManager(
     // ============================================================================================
 
     /**
+     * Returns true if the connected device exposes the BAS Battery Level characteristic (0x2A19).
+     * Safe to call from any thread after service discovery; returns false if not connected.
+     */
+    fun isBatterySupported(): Boolean =
+        gattClient.hasCharacteristic(UuidConstants.BAS_SERVICE, UuidConstants.BAS_LEVEL)
+
+    /**
      * Battery Level (0..100).
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
