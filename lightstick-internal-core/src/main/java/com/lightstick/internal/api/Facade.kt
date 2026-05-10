@@ -176,7 +176,6 @@ object Facade {
         scan.start(appContext) { mac, name, rssi ->
             if (mac.isNotBlank()) {
                 if (!isDeviceAllowed(mac, name, rssi)) {
-                    Log.d("Facade", "Scan filtered: $mac ($name)")
                     return@start
                 }
 
@@ -202,7 +201,6 @@ object Facade {
         scope.launch {
             kotlinx.coroutines.delay(validScanTime * 1000L)
             stopScan()
-            Log.d("Facade", "Scan stopped after $validScanTime seconds")
         }
     }
 
@@ -239,9 +237,6 @@ object Facade {
             if (!cachedName.isNullOrBlank()) {
                 lastSeenName[mac] = cachedName
                 deviceStateManager.updateDeviceName(mac, cachedName)
-                Log.d("Facade", "connect: resolved name from BT cache → $cachedName ($mac)")
-            } else {
-                Log.d("Facade", "connect: name unavailable in scan and BT cache ($mac)")
             }
         }
 
@@ -354,34 +349,21 @@ object Facade {
             return
         }
 
-        if (systemConnectedDevices.isEmpty()) {
-            Log.d("Facade", "No system-level connected devices found")
-            return
-        }
-
-        Log.d("Facade", "System connected devices: ${systemConnectedDevices.size}")
+        if (systemConnectedDevices.isEmpty()) return
 
         systemConnectedDevices.forEach { bluetoothDevice ->
             val mac  = bluetoothDevice.address
             val name = runCatching { bluetoothDevice.name }.getOrNull()
 
-            if (!isDeviceAllowed(mac, name, null)) {
-                Log.d("Facade", "Filtered: $mac ($name)")
-                return@forEach
-            }
-
-            if (sessions.containsKey(mac)) {
-                Log.d("Facade", "Already has session: $mac")
-                return@forEach
-            }
+            if (!isDeviceAllowed(mac, name, null)) return@forEach
+            if (sessions.containsKey(mac)) return@forEach
 
             if (name != null) lastSeenName[mac] = name
 
-            Log.d("Facade", "Restoring: $mac ($name)")
             connect(
                 mac         = mac,
-                onConnected = { Log.d("Facade", "Restored: $mac") },
-                onFailed    = { e -> Log.w("Facade", "Restore failed: $mac → ${e.message}") }
+                onConnected = {},
+                onFailed    = { e -> Log.w("Facade", "Restore failed: $mac - ${e.message}") }
             )
         }
     }

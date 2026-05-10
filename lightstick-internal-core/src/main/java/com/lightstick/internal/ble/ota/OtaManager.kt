@@ -68,11 +68,9 @@ internal class OtaManager(
 
                 // 1) MTU 협상
                 val mtu = if (preferredMtu > 0) suspendMtu(preferredMtu) else DEFAULT_MTU
-                Log.d("MTU 협상 결과: $mtu")
 
                 // 2) Notification 활성화
                 suspendEnableNotify(serviceUuid, dataCharUuid)
-                Log.d("Notification 활성화 완료")
 
                 // 3) START Opcode 전송
                 if (startOpcodes?.isNotEmpty() == true) {
@@ -83,7 +81,6 @@ internal class OtaManager(
                         writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                     )
                     if (!ok) error("START Opcode 전송 실패")
-                    Log.d("START Opcode 전송 완료")
                     delay(500)
                 }
 

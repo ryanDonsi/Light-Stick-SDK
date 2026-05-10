@@ -1,7 +1,6 @@
 package com.lightstick.internal.ble
 
 import android.Manifest
-import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.state.InternalDeviceInfo
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -124,16 +123,6 @@ internal class DeviceInfoManager(
         val dis = readDeviceInfoAll()
         val bat = readBatteryLevel().getOrNull()
         val mac = readMacAddress().getOrNull()
-
-        // DEBUG — DIS 읽기 결과 확인 (remove after verification)
-        Log.d("DeviceInfoManager", "=== DIS read result [$address] ===")
-        Log.d("DeviceInfoManager", "  deviceName       : ${dis.deviceName ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  modelNumber      : ${dis.modelNumber ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  firmwareRevision : ${dis.firmwareRevision ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  manufacturer     : ${dis.manufacturer ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  batteryLevel     : ${bat ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  macAddress (DIS) : ${mac ?: "(null → using GATT addr)"}")
-        Log.d("DeviceInfoManager", "=== end ===")
 
         return InternalDeviceInfo(
             deviceName = dis.deviceName,

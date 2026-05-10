@@ -405,7 +405,6 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
             val cb = pendingConnect.remove(address)
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                logDiscoveredServices(address, gatt)  // DEBUG
                 cb?.onConnected?.invoke()
             } else {
                 cb?.onFailed?.invoke(IllegalStateException("Service discovery failed: $status"))
@@ -512,24 +511,6 @@ internal class GattClient(private val context: Context) : AutoCloseable {
     ): BluetoothGattCharacteristic? {
         val svc = g.getService(serviceUuid) ?: return null
         return svc.getCharacteristic(charUuid)
-    }
-
-    // DEBUG — remove after verification
-    private fun logDiscoveredServices(address: String, gatt: BluetoothGatt) {
-        val sb = StringBuilder()
-        sb.appendLine("=== GATT services discovered [$address] ===")
-        gatt.services.forEachIndexed { si, service ->
-            sb.appendLine("  Service[$si] ${service.uuid}  type=${service.type}")
-            service.characteristics.forEachIndexed { ci, char ->
-                val props = buildPropertiesString(char.properties)
-                sb.appendLine("    Char[$ci] ${char.uuid}  props=[$props]")
-                char.descriptors.forEach { desc ->
-                    sb.appendLine("      Desc ${desc.uuid}")
-                }
-            }
-        }
-        sb.append("=== end ===")
-        android.util.Log.d("GattClient", sb.toString())
     }
 
     private fun buildPropertiesString(props: Int): String {

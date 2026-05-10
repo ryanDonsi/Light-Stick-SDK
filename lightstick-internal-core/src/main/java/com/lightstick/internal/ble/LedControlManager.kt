@@ -175,8 +175,7 @@ internal class LedControlManager(
         // ✅ 새 타임라인 로드 시 syncIndex 자동 증가
         currentSyncIndex = (currentSyncIndex % 255) + 1
 
-        Log.d(TAG, "✅ Timeline loaded: ${timeline.size} frames, " +
-                "effectIndex: 1~${timeline.size}, syncIndex=$currentSyncIndex")
+        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, effectIndex: 1~${timeline.size}, syncIndex=$currentSyncIndex")
     }
 
     /**
@@ -197,15 +196,11 @@ internal class LedControlManager(
         // ✅ Seek 감지 (뒤로 1초 이상)
         if (currentPositionMs < lastProcessedPositionMs - 1000) {
             lastSentIndex = timeline.indexOfLast { it.first <= currentPositionMs }
-            Log.d(TAG, "⏪ Seek backward detected: position=${currentPositionMs}ms, " +
-                    "reset index to $lastSentIndex")
         }
 
         // ✅ Seek 감지 (앞으로 10초 이상)
         if (currentPositionMs > lastProcessedPositionMs + 10000) {
             lastSentIndex = timeline.indexOfLast { it.first <= currentPositionMs }
-            Log.d(TAG, "⏩ Seek forward detected: position=${currentPositionMs}ms, " +
-                    "reset index to $lastSentIndex")
         }
 
         lastProcessedPositionMs = currentPositionMs
@@ -255,8 +250,7 @@ internal class LedControlManager(
         if (transmittedCount > 0) {
             val effectIndexStart = lastSentIndex - transmittedCount + 1
             val effectIndexEnd = lastSentIndex
-            Log.d(TAG, "📤 Transmitted $transmittedCount effects at ${currentPositionMs}ms " +
-                    "(effectIndex: ${effectIndexStart + 1}~${effectIndexEnd + 1}, syncIndex=$currentSyncIndex)")
+            Log.d(TAG, "Transmitted $transmittedCount effects at ${currentPositionMs}ms (effectIndex: ${effectIndexStart + 1}~${effectIndexEnd + 1}, syncIndex=$currentSyncIndex)")
         }
     }
 
@@ -267,13 +261,8 @@ internal class LedControlManager(
      */
     @MainThread
     fun pauseEffects() {
-        if (!isEffectTransmissionEnabled) {
-            Log.d(TAG, "⏸ Effects already paused")
-            return
-        }
-
+        if (!isEffectTransmissionEnabled) return
         isEffectTransmissionEnabled = false
-        Log.d(TAG, "⏸ Effects paused (syncIndex=$currentSyncIndex)")
     }
 
     /**
@@ -283,16 +272,9 @@ internal class LedControlManager(
      */
     @MainThread
     fun resumeEffects() {
-        if (isEffectTransmissionEnabled) {
-            Log.d(TAG, "▶️ Effects already playing")
-            return
-        }
-
-        // ✅ syncIndex 자동 증가 (재동기화)
+        if (isEffectTransmissionEnabled) return
         currentSyncIndex = (currentSyncIndex % 255) + 1
         isEffectTransmissionEnabled = true
-
-        Log.d(TAG, "▶️ Effects resumed with syncIndex=$currentSyncIndex (resync)")
     }
 
     /**
@@ -310,8 +292,6 @@ internal class LedControlManager(
         lastSentIndex = -1
         currentPlaybackPositionMs = 0
         lastProcessedPositionMs = -1
-
-        Log.d(TAG, "⏹ Timeline stopped")
     }
 
     /**
