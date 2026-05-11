@@ -1,6 +1,7 @@
 package com.lightstick.internal.ble
 
 import android.Manifest
+import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.state.InternalDeviceInfo
 import kotlinx.coroutines.delay
@@ -83,11 +84,12 @@ internal class DeviceInfoManager(
     private suspend fun readDeviceInfoAll(): DisInfo {
         delay(POST_CONNECT_DELAY_MS)
 
-        val name  = readWithRetry { readDeviceName() }
-        val model = readWithRetry { readModelNumber() }
-        val fw    = readWithRetry { readFirmwareRevision() }
-        val mfr   = readWithRetry { readManufacturerName() }
+        val name  = readWithRetry("deviceName")  { readDeviceName() }
+        val model = readWithRetry("modelNumber")  { readModelNumber() }
+        val fw    = readWithRetry("fwRevision")   { readFirmwareRevision() }
+        val mfr   = readWithRetry("manufacturer") { readManufacturerName() }
 
+        Log.d(TAG, "DIS read complete — name=$name model=$model fw=$fw mfr=$mfr")
         return DisInfo(name, model, fw, mfr)
     }
 
@@ -96,11 +98,13 @@ internal class DeviceInfoManager(
      * success value. Returns null only if all attempts fail or return a blank string.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private suspend fun readWithRetry(read: suspend () -> Result<String>): String? {
+    private suspend fun readWithRetry(label: String, read: suspend () -> Result<String>): String? {
         repeat(READ_RETRY_ATTEMPTS) { attempt ->
             if (attempt > 0) delay(READ_RETRY_DELAY_MS)
-            val value = read().getOrNull()?.takeUnless { it.isBlank() }
+            val result = read()
+            val value = result.getOrNull()?.takeUnless { it.isBlank() }
             if (value != null) return value
+            Log.w(TAG, "[$label] attempt ${attempt + 1}/$READ_RETRY_ATTEMPTS failed: ${result.exceptionOrNull()?.message ?: "blank"}")
         }
         return null
     }
@@ -199,6 +203,7 @@ internal class DeviceInfoManager(
     )
 
     companion object {
+        private const val TAG = "DeviceInfoManager"
         /** Delay after connection before starting DIS reads (device stabilization). */
         private const val POST_CONNECT_DELAY_MS = 300L
         /** Maximum read attempts per characteristic. */
