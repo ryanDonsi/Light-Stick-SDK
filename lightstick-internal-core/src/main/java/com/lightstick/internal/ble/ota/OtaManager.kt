@@ -79,10 +79,9 @@ internal class OtaManager(
 
         private const val PROGRESS_LOG_INTERVAL = 10
 
-        // OTA opcode (little-endian 2바이트)
-        private val OPCODE_START = byteArrayOf(0x01.toByte(), 0xFF.toByte())   // CMD_OTA_START
-        private val OPCODE_END   = byteArrayOf(0x02.toByte(), 0xFF.toByte())   // CMD_OTA_END
-        private val OPCODE_RESULT_VALUE = 0xFF06                                // CMD_OTA_RESULT
+        private val OPCODE_START        = OtaOpcode.CMD_OTA_START.toBytes()
+        private val OPCODE_END          = OtaOpcode.CMD_OTA_END.toBytes()
+        private val OPCODE_RESULT_VALUE = OtaOpcode.CMD_OTA_RESULT.code.toInt()
 
         private fun resultCodeName(code: Int) = when (code) {
             0x01 -> "OTA_SUCCESS"

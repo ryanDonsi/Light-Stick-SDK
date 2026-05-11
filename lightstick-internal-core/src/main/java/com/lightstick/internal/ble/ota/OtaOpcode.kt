@@ -1,51 +1,57 @@
 package com.lightstick.internal.ble.ota
 
 /**
- * Telink-style OTA opcodes used by the device firmware.
+ * Telink OTA 오퍼코드 (Opcode.java 기준).
  *
- * Each opcode is 2 bytes (UShort), typically transferred in **little-endian** order
- * on the wire (LSB first).
+ * 전송 포맷: 2바이트 little-endian [LSB, MSB].
  *
- * This enum mirrors the legacy SDK values to keep backward compatibility at the
- * protocol level while living inside the internal module namespace.
+ * Legacy Protocol 필수:
+ *   CMD_OTA_VERSION (선택) → CMD_OTA_START → 데이터 PDU → CMD_OTA_END
+ *
+ * Extended Protocol 필수:
+ *   CMD_OTA_FW_VERSION_REQ → CMD_OTA_FW_VERSION_RSP(notify) → CMD_OTA_START_EXT → 데이터 PDU → CMD_OTA_END
+ *
+ * 공통:
+ *   CMD_OTA_RESULT (0xFF06): 디바이스가 OTA 완료/실패 시 notification으로 전송
+ *   CMD_OTA_SET_FW_INDEX (0xFF80): 선택적으로 펌웨어 인덱스 지정
  */
 internal enum class OtaOpcode(val code: UShort) {
 
-    /** Legacy OTA Start (0xFF01). */
-    START_LEGACY(0xFF01u),
+    /** Legacy: slave의 현재 firmware 버전 조회 (선택적 사용). */
+    CMD_OTA_VERSION(0xFF00u),
 
-    /** OTA End (0xFF02). */
-    END(0xFF02u),
+    /** Legacy: OTA 시작 명령. Legacy Protocol 사용 시 필수. */
+    CMD_OTA_START(0xFF01u),
 
-    /** OTA Check (0xFF03) — optional step on some devices. */
-    CHECK(0xFF03u),
+    /** All: OTA 종료 명령. Legacy/Extended 모두 사용. */
+    CMD_OTA_END(0xFF02u),
 
-    /** OTA Result response (0xFF06) — sent by the peripheral to indicate result. */
-    RESULT(0xFF06u),
+    /** Extended: OTA 시작 명령. Extended Protocol 사용 시 필수. */
+    CMD_OTA_START_EXT(0xFF03u),
 
-    /** Extended OTA header/version negotiation (0xFF00). */
-    OTA_VERSION(0xFF00u),
+    /** Extended: 버전 비교 요청 (master → slave). */
+    CMD_OTA_FW_VERSION_REQ(0xFF04u),
 
-    /** Extended OTA End (0xFF11) — reserved/not widely used. */
-    END_EXTENDED(0xFF11u);
+    /** Extended: 버전 비교 응답 (slave → master, notification). */
+    CMD_OTA_FW_VERSION_RSP(0xFF05u),
+
+    /** All: OTA 결과 통지 (slave → master, notification). 성공/실패 1회 전송. */
+    CMD_OTA_RESULT(0xFF06u),
+
+    /** All: 펌웨어 인덱스 설정 (선택적). */
+    CMD_OTA_SET_FW_INDEX(0xFF80u);
 
     /**
-     * Encodes this opcode as a 2-byte **little-endian** array: [LSB, MSB].
-     *
-     * @return byte array of size 2 containing the opcode in little-endian order.
+     * 2바이트 little-endian 배열로 인코딩: [LSB, MSB].
      */
     fun toBytes(): ByteArray = byteArrayOf(
-        (code.toInt() and 0xFF).toByte(),          // LSB
-        ((code.toInt() shr 8) and 0xFF).toByte()   // MSB
+        (code.toInt() and 0xFF).toByte(),
+        ((code.toInt() shr 8) and 0xFF).toByte()
     )
 
     companion object {
         /**
-         * Parses a 2-byte little-endian array into an [OtaOpcode], if known.
-         *
-         * @param leTwoBytes byte array of length 2, little-endian order (LSB, MSB).
-         * @return matching [OtaOpcode] or `null` if unknown.
-         * @throws IllegalArgumentException if [leTwoBytes] size is not exactly 2.
+         * 2바이트 little-endian 배열을 OtaOpcode로 파싱.
          */
         fun fromBytes(leTwoBytes: ByteArray): OtaOpcode? {
             require(leTwoBytes.size == 2) { "Opcode must be exactly 2 bytes (got ${leTwoBytes.size})" }
