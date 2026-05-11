@@ -1,7 +1,6 @@
 package com.lightstick.internal.ble
 
 import android.Manifest
-import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.state.InternalDeviceInfo
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -23,6 +22,13 @@ internal class DeviceInfoManager(
     // ============================================================================================
     // BAS (Battery Service)
     // ============================================================================================
+
+    /**
+     * Returns true if the connected device exposes the BAS Battery Level characteristic (0x2A19).
+     * Safe to call from any thread after service discovery; returns false if not connected.
+     */
+    fun isBatterySupported(): Boolean =
+        gattClient.hasCharacteristic(UuidConstants.BAS_SERVICE, UuidConstants.BAS_LEVEL)
 
     /**
      * Battery Level (0..100).
@@ -117,16 +123,6 @@ internal class DeviceInfoManager(
         val dis = readDeviceInfoAll()
         val bat = readBatteryLevel().getOrNull()
         val mac = readMacAddress().getOrNull()
-
-        // DEBUG — DIS 읽기 결과 확인 (remove after verification)
-        Log.d("DeviceInfoManager", "=== DIS read result [$address] ===")
-        Log.d("DeviceInfoManager", "  deviceName       : ${dis.deviceName ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  modelNumber      : ${dis.modelNumber ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  firmwareRevision : ${dis.firmwareRevision ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  manufacturer     : ${dis.manufacturer ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  batteryLevel     : ${bat ?: "(null)"}")
-        Log.d("DeviceInfoManager", "  macAddress (DIS) : ${mac ?: "(null → using GATT addr)"}")
-        Log.d("DeviceInfoManager", "=== end ===")
 
         return InternalDeviceInfo(
             deviceName = dis.deviceName,

@@ -18,6 +18,31 @@ enum class GameMode(val subIndex: Int) {
     companion object {
         fun fromSubIndex(subIndex: Int): GameMode? = entries.find { it.subIndex == subIndex }
     }
+
+    /**
+     * Maximum time (ms) the app should wait for a [GameResult] Notify after calling
+     * [Device.startGame], per spec §3. Includes the 2-second auto-start delay plus
+     * a 2-second safety margin.
+     *
+     * Usage:
+     * ```kotlin
+     * val timeout = GameMode.SPEED_REACTION.resultTimeoutMs(GameLevel.NORMAL)
+     * // start a coroutine timeout or Handler.postDelayed with this value
+     * ```
+     */
+    fun resultTimeoutMs(level: GameLevel): Long = when (this) {
+        SPEED_REACTION -> when (level) {
+            GameLevel.EASY   -> 64_000L   // 2 + 60 + 2
+            GameLevel.NORMAL -> 44_000L   // 2 + 40 + 2
+            GameLevel.HARD   -> 24_000L   // 2 + 20 + 2
+        }
+        TEMPO -> 24_000L                  // 2 + 20 + 2 (level-independent)
+        TEAM_BATTLE -> when (level) {
+            GameLevel.EASY   -> 24_000L   // 2 + 17.5 + 2 + 2 → rounded up
+            GameLevel.NORMAL -> 21_000L   // 2 + 15   + 2 + 2
+            GameLevel.HARD   -> 19_000L   // 2 + 13   + 2 + 2
+        }
+    }
 }
 
 /**

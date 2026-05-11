@@ -66,7 +66,7 @@ internal class DeviceStateManager(
     fun updateConnectionState(macAddress: String, state: InternalConnectionState) {
         connectionStatesMap[macAddress] = state
         _Internal_deviceStateEvents.tryEmit(InternalDeviceStateEvent(mac = macAddress, state = state))
-        Log.d(TAG, "📤 DeviceStateEvent emitted: $macAddress → $state")
+        Log.d(TAG, "DeviceStateEvent: $macAddress - $state")
         emitConnectionStates()
         rebuildAndEmitDeviceStates()
     }
