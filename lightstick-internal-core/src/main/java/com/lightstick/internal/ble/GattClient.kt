@@ -55,6 +55,7 @@ internal class GattClient(private val context: Context) : AutoCloseable {
     private val pendingRead = ConcurrentHashMap<String, (Result<ByteArray>) -> Unit>()
     private val pendingEnableNotify = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
     private val pendingDescWrite = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
+    private val pendingWriteAck = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
 
     private val notificationListeners = ConcurrentHashMap<java.util.UUID, (ByteArray) -> Unit>()
 
@@ -167,6 +168,7 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             pendingRead.remove(addr)
             pendingEnableNotify.remove(addr)
             pendingDescWrite.remove(addr)
+            pendingWriteAck.remove(addr)
         }
         notificationListeners.clear()
 
@@ -308,6 +310,50 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             }
         }
         return true
+    }
+
+    /**
+     * OTA 전용: 쓰기 완료(onCharacteristicWrite)를 기다리는 버전.
+     * 일반 writeCharacteristic은 큐에 등록만 하고 즉시 반환하지만,
+     * 이 함수는 실제 BLE write 콜백 후 onResult를 호출한다.
+     * OTA처럼 패킷 단위 순서 보장이 필수인 경우에만 사용.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun writeCharacteristicAndWait(
+        serviceUuid: UUID,
+        charUuid: UUID,
+        data: ByteArray,
+        writeType: Int = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        Perms.ensureBtConnect(context)
+        val g = gatt ?: run {
+            onResult(Result.failure(IllegalStateException("Not connected")))
+            return
+        }
+        val address = g.device.address
+        val chr = findCharacteristic(g, serviceUuid, charUuid) ?: run {
+            onResult(Result.failure(IllegalStateException("OTA characteristic not found: $charUuid")))
+            return
+        }
+        chr.writeType = writeType
+
+        queueManager.enqueue(address, "ota-write") {
+            pendingWriteAck[address] = onResult
+            chr.value = data
+            try {
+                val success = g.writeCharacteristic(chr)
+                if (!success) {
+                    pendingWriteAck.remove(address)?.invoke(
+                        Result.failure(IllegalStateException("writeCharacteristic returned false"))
+                    )
+                    queueManager.signalComplete(address)
+                }
+            } catch (e: Throwable) {
+                pendingWriteAck.remove(address)?.invoke(Result.failure(e))
+                queueManager.signalComplete(address)
+            }
+        }
     }
 
     // ============================================================================================
@@ -497,11 +543,17 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
+            val address = gatt.device.address
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.w("[GattClient] onCharacteristicWrite 실패: ${gatt.device.address} " +
+                Log.w("[GattClient] onCharacteristicWrite 실패: $address " +
                     "char=${characteristic.uuid.toString().takeLast(8)} status=$status(0x${status.toString(16)})")
             }
-            queueManager.signalComplete(gatt.device.address)
+            // OTA 전용 ack 콜백 (writeCharacteristicAndWait 사용 시)
+            pendingWriteAck.remove(address)?.invoke(
+                if (status == BluetoothGatt.GATT_SUCCESS) Result.success(Unit)
+                else Result.failure(IllegalStateException("Write failed: status=$status"))
+            )
+            queueManager.signalComplete(address)
         }
 
         @Suppress("OVERRIDE_DEPRECATION")
