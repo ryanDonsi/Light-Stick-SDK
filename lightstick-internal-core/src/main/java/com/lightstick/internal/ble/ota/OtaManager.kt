@@ -83,15 +83,7 @@ internal class OtaManager(
         private val OPCODE_END          = OtaOpcode.CMD_OTA_END.toBytes()
         private val OPCODE_RESULT_VALUE = OtaOpcode.CMD_OTA_RESULT.code.toInt()
 
-        private fun resultCodeName(code: Int) = when (code) {
-            0x01 -> "OTA_SUCCESS"
-            0x02 -> "OTA_DATA_CRC_ERR"
-            0x03 -> "OTA_WRITE_FLASH_ERR"
-            0x04 -> "OTA_DATA_INCOMPLETE"
-            0x05 -> "OTA_ERASE_ERR"
-            0x06 -> "OTA_START_ERR"
-            else -> "UNKNOWN(0x${code.toString(16)})"
-        }
+        private fun resultCodeName(code: Int) = OtaResultCode.from(code).toString()
     }
 
     // ============================================================================================
@@ -296,13 +288,14 @@ internal class OtaManager(
         val opcode = (data[0].toInt() and 0xFF) or ((data[1].toInt() and 0xFF) shl 8)
         if (opcode != OPCODE_RESULT_VALUE) return
 
-        val code = data[2].toInt() and 0xFF
-        val codeName = resultCodeName(code)
-        Log.d("[OTA] RESULT 통지 수신: code=$code ($codeName)")
+        val resultCode = OtaResultCode.from(data[2].toInt() and 0xFF)
+        Log.d("[OTA] RESULT 통지 수신: $resultCode")
 
-        if (code != 0x01) { // 0x01 = OTA_SUCCESS
-            deviceResultError = RuntimeException("[OTA] 디바이스 OTA 실패: $codeName")
-            Log.e("[OTA] 디바이스 OTA 실패 — $codeName. 다음 write 시 중단됩니다.")
+        // Legacy: success는 END command write 완료로 판정 (OtaController 참조).
+        // RESULT 통지는 실패 감지 전용으로 사용.
+        if (resultCode != OtaResultCode.OTA_SUCCESS) {
+            deviceResultError = RuntimeException("[OTA] 디바이스 OTA 실패: $resultCode")
+            Log.e("[OTA] 디바이스 OTA 실패 — $resultCode. 다음 write 시 중단됩니다.")
         }
     }
 
