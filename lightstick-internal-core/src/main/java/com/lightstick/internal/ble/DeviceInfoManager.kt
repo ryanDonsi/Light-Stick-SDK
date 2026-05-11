@@ -3,6 +3,7 @@ package com.lightstick.internal.ble
 import android.Manifest
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.state.InternalDeviceInfo
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.UUID
 import kotlin.coroutines.resume
@@ -45,11 +46,11 @@ internal class DeviceInfoManager(
     // ============================================================================================
 
     /**
-     * Device Name (2A00).
+     * Device Name (0x2A00 under GAP 0x1800, not DIS 0x180A).
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     suspend fun readDeviceName(): Result<String> =
-        readUtf8String(UuidConstants.DIS_SERVICE, UuidConstants.DIS_DEVICE_NAME)
+        readUtf8String(UuidConstants.GAP_SERVICE, UuidConstants.DIS_DEVICE_NAME)
 
     /**
      * Model Number (2A24).
@@ -74,15 +75,34 @@ internal class DeviceInfoManager(
 
     /**
      * Read all DIS items (partial success allowed).
+     *
+     * Waits briefly for the device to stabilize after connection, then retries
+     * each characteristic up to [READ_RETRY_ATTEMPTS] times before accepting null.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private suspend fun readDeviceInfoAll(): DisInfo {
-        val name  = readDeviceName().getOrNull()
-        val model = readModelNumber().getOrNull()
-        val fw    = readFirmwareRevision().getOrNull()
-        val mfr   = readManufacturerName().getOrNull()
+        delay(POST_CONNECT_DELAY_MS)
+
+        val name  = readWithRetry { readDeviceName() }
+        val model = readWithRetry { readModelNumber() }
+        val fw    = readWithRetry { readFirmwareRevision() }
+        val mfr   = readWithRetry { readManufacturerName() }
 
         return DisInfo(name, model, fw, mfr)
+    }
+
+    /**
+     * Retries [read] up to [READ_RETRY_ATTEMPTS] times, returning the first non-blank
+     * success value. Returns null only if all attempts fail or return a blank string.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private suspend fun readWithRetry(read: suspend () -> Result<String>): String? {
+        repeat(READ_RETRY_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(READ_RETRY_DELAY_MS)
+            val value = read().getOrNull()?.takeUnless { it.isBlank() }
+            if (value != null) return value
+        }
+        return null
     }
 
     // ============================================================================================
@@ -171,13 +191,19 @@ internal class DeviceInfoManager(
     // Models
     // ============================================================================================
 
-    /**
-     * Internal data class for DIS information.
-     */
     private data class DisInfo(
         val deviceName: String? = null,
         val modelNumber: String? = null,
         val firmwareRevision: String? = null,
         val manufacturer: String? = null
     )
+
+    companion object {
+        /** Delay after connection before starting DIS reads (device stabilization). */
+        private const val POST_CONNECT_DELAY_MS = 300L
+        /** Maximum read attempts per characteristic. */
+        private const val READ_RETRY_ATTEMPTS = 3
+        /** Delay between retry attempts. */
+        private const val READ_RETRY_DELAY_MS = 400L
+    }
 }

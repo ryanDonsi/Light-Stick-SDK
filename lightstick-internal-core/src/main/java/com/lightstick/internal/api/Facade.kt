@@ -300,8 +300,10 @@ object Facade {
                     try {
                         val info = deviceInfo.readAllInfo()
                         deviceStateManager.updateDeviceInfo(mac, info)
+                        Log.d("Facade", "DeviceInfo loaded: $mac " +
+                            "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
                     } catch (e: Exception) {
-                        // 실패해도 연결은 유지
+                        Log.w("Facade", "DeviceInfo read failed: $mac — ${e.message}")
                     }
                 }
 
