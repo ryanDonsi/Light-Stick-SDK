@@ -80,7 +80,7 @@ data class Device(
      *     },
      *     onDeviceInfo = { info ->
      *         // DeviceInfo 활용
-     *         Log.d(TAG, "Connected to ${info.deviceName}")
+     *         Log.d(TAG, "Connected to ${info.modelName}")
      *         Log.d(TAG, "Battery: ${info.batteryLevel}%")
      *     }
      * )
@@ -527,7 +527,7 @@ data class Device(
                     ?: Facade.getCachedDeviceName(mac).realOrNull()
                 onResult(
                     DeviceInfo(
-                        deviceName = name.realOrNull(),
+                        modelName = name.realOrNull(),
                         advertisingName = advName,
                         modelNumber = model,
                         firmwareRevision = fw,

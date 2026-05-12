@@ -89,7 +89,7 @@ object DeviceSamples {
             },
             onDeviceInfo = { info ->
                 Log.d("Sample", "DeviceInfo received:")
-                Log.d("Sample", "  Name: ${info.deviceName}")
+                Log.d("Sample", "  Name: ${info.modelName}")
                 Log.d("Sample", "  Model: ${info.modelNumber}")
                 Log.d("Sample", "  FW: ${info.firmwareRevision}")
                 Log.d("Sample", "  Manufacturer: ${info.manufacturer}")

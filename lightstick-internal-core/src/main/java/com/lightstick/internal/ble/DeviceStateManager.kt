@@ -186,7 +186,7 @@ internal class DeviceStateManager(
     /**
      * DIS 데이터와 스캔 advertising 이름을 별도 필드로 구성한다.
      *
-     * - deviceInfoMap  : GATT DIS 읽기 결과 (deviceName = GAP 2A00, model/fw/mfr 등)
+     * - deviceInfoMap  : GATT DIS 읽기 결과 (modelName = GAP 2A00, model/fw/mfr 등)
      * - deviceNamesMap : BLE advertising 패킷에서 관찰된 이름 (advertisingName)
      *
      * deviceName과 advertisingName은 다를 수 있으므로 별도 필드로 유지한다.

@@ -67,7 +67,7 @@ internal object TypeMappers {
 
     fun toPublic(info: InternalDeviceInfo): DeviceInfo {
         return DeviceInfo(
-            deviceName = info.deviceName,
+            modelName = info.modelName,
             advertisingName = info.advertisingName,
             modelNumber = info.modelNumber,
             firmwareRevision = info.firmwareRevision,

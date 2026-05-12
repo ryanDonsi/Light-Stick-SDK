@@ -422,7 +422,7 @@ object Facade {
         requireInit()
         return deviceStateManager.deviceStates.map { states ->
             states.filter { (mac, state) ->
-                val name = state.deviceInfo?.deviceName
+                val name = state.deviceInfo?.advertisingName
                 val rssi = state.deviceInfo?.rssi
                 isDeviceAllowed(mac, name, rssi)
             }
@@ -437,7 +437,7 @@ object Facade {
         return deviceStateManager.connectionStates.map { states ->
             states.filter { (mac, _) ->
                 val deviceState = deviceStateManager.deviceStates.value[mac]
-                val name = deviceState?.deviceInfo?.deviceName
+                val name = deviceState?.deviceInfo?.advertisingName
                 val rssi = deviceState?.deviceInfo?.rssi
                 isDeviceAllowed(mac, name, rssi)
             }
@@ -458,7 +458,7 @@ object Facade {
         requireInit()
 
         val deviceState = deviceStateManager.deviceStates.value[mac]
-        val name = deviceState?.deviceInfo?.deviceName
+        val name = deviceState?.deviceInfo?.advertisingName
         val rssi = deviceState?.deviceInfo?.rssi
 
         if (!isDeviceAllowed(mac, name, rssi)) {

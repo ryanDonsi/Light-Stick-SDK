@@ -9,9 +9,9 @@ package com.lightstick.device
  * - Connection metadata (MAC, RSSI, connection status)
  * - Last update timestamp
  *
- * @property deviceName      Device name read from GATT GAP characteristic (2A00).
- *                           This is the name stored in the device firmware, which may differ
- *                           from the name seen during BLE scan — see [advertisingName].
+ * @property modelName       Internal model name read from GATT GAP characteristic (2A00).
+ *                           This is the name stored in the device firmware (e.g. "m1s1_demo"),
+ *                           used for device-specific features. May differ from [advertisingName].
  * @property advertisingName Name observed from the BLE advertising packet during scan.
  *                           This is what appears in the system Bluetooth device list.
  *                           May be null if the device was connected without a prior scan.
@@ -29,7 +29,7 @@ package com.lightstick.device
  * @sample com.lightstick.samples.DeviceSamples.sampleReadDeviceInfo
  */
 data class DeviceInfo(
-    val deviceName: String? = null,
+    val modelName: String? = null,
     val advertisingName: String? = null,
     val modelNumber: String? = null,
     val firmwareRevision: String? = null,

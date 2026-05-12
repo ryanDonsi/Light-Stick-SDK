@@ -84,7 +84,7 @@ internal class DeviceInfoManager(
     private suspend fun readDeviceInfoAll(): DisInfo {
         delay(POST_CONNECT_DELAY_MS)
 
-        val name  = readWithRetry("deviceName")  { readDeviceName() }
+        val name  = readWithRetry("modelName")  { readDeviceName() }
         val model = readWithRetry("modelNumber")  { readModelNumber() }
         val fw    = readWithRetry("fwRevision")   { readFirmwareRevision() }
         val mfr   = readWithRetry("manufacturer") { readManufacturerName() }
@@ -149,7 +149,7 @@ internal class DeviceInfoManager(
         val mac = readMacAddress().getOrNull()
 
         return InternalDeviceInfo(
-            deviceName = dis.deviceName,
+            modelName = dis.modelName,
             modelNumber = dis.modelNumber,
             firmwareRevision = dis.firmwareRevision,
             manufacturer = dis.manufacturer,
@@ -198,7 +198,7 @@ internal class DeviceInfoManager(
     // ============================================================================================
 
     private data class DisInfo(
-        val deviceName: String? = null,
+        val modelName: String? = null,
         val modelNumber: String? = null,
         val firmwareRevision: String? = null,
         val manufacturer: String? = null
