@@ -98,9 +98,13 @@ data class Device(
             onConnected = {
                 onConnected()
 
-                // onDeviceInfo가 제공된 경우에만 DeviceInfo 조회
+                // Facade가 onConnected 호출 전에 DIS 읽기를 완료하므로
+                // 캐시에서 즉시 가져올 수 있음. 재읽기(fetchDeviceInfo) 불필요.
                 if (onDeviceInfo != null) {
-                    fetchDeviceInfo { info -> onDeviceInfo(info) }
+                    val cached = Facade.getInternalDeviceInfo(mac)
+                    if (cached != null) {
+                        onDeviceInfo(TypeMappers.toPublic(cached))
+                    }
                 }
             },
             onFailed = onFailed
