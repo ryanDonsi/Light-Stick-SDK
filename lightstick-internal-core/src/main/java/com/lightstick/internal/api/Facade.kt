@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import android.util.Log
 import com.lightstick.internal.ble.DeviceFilter
@@ -298,16 +299,22 @@ object Facade {
 
                 scope.launch {
                     try {
-                        val info = deviceInfo.readAllInfo()
-                        deviceStateManager.updateDeviceInfo(mac, info)
-                        Log.d("Facade", "DeviceInfo loaded: $mac " +
-                            "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
+                        val info = withTimeoutOrNull(DEVICE_INFO_TIMEOUT_MS) {
+                            deviceInfo.readAllInfo()
+                        }
+                        if (info != null) {
+                            deviceStateManager.updateDeviceInfo(mac, info)
+                            Log.d("Facade", "DeviceInfo loaded: $mac " +
+                                "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
+                        } else {
+                            Log.w("Facade", "DeviceInfo read timeout: $mac")
+                        }
                     } catch (e: Exception) {
                         Log.w("Facade", "DeviceInfo read failed: $mac — ${e.message}")
+                    } finally {
+                        onConnected()
                     }
                 }
-
-                onConnected()
             },
             onFailed = { t ->
                 runCatching { gatt.disconnect() }
@@ -1022,5 +1029,10 @@ object Facade {
     fun removeBond(mac: String, onResult: (Result<Unit>) -> Unit) {
         requireInit()
         bond.removeBond(appContext, mac, onResult)
+    }
+
+    companion object {
+        /** onConnected fires only after DIS read completes or this timeout elapses. */
+        private const val DEVICE_INFO_TIMEOUT_MS = 10_000L
     }
 }

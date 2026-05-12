@@ -167,14 +167,16 @@ internal class DeviceInfoManager(
 
     /**
      * Reads a characteristic and decodes as UTF-8 string.
+     * Strips null bytes before the first '\0' (BLE devices often send null-terminated C strings).
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private suspend fun readUtf8String(
         service: UUID,
         characteristic: UUID
     ): Result<String> =
-        readBytes(service, characteristic).mapCatching {
-            String(it, Charsets.UTF_8).trim()
+        readBytes(service, characteristic).mapCatching { bytes ->
+            val end = bytes.indexOfFirst { it == 0.toByte() }.let { if (it < 0) bytes.size else it }
+            String(bytes, 0, end, Charsets.UTF_8).trim()
         }
 
     /**
