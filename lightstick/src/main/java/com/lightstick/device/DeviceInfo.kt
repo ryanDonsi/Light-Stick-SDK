@@ -9,15 +9,20 @@ package com.lightstick.device
  * - Connection metadata (MAC, RSSI, connection status)
  * - Last update timestamp
  *
- * @property deviceName The device name (DIS 2A00), or null if unavailable
- * @property modelNumber The model number (DIS 2A24), or null if unavailable
+ * @property deviceName      Device name read from GATT GAP characteristic (2A00).
+ *                           This is the name stored in the device firmware, which may differ
+ *                           from the name seen during BLE scan — see [advertisingName].
+ * @property advertisingName Name observed from the BLE advertising packet during scan.
+ *                           This is what appears in the system Bluetooth device list.
+ *                           May be null if the device was connected without a prior scan.
+ * @property modelNumber     The model number (DIS 2A24), or null if unavailable
  * @property firmwareRevision The firmware revision (DIS 2A26), or null if unavailable
- * @property manufacturer The manufacturer name (DIS 2A29), or null if unavailable
- * @property batteryLevel Battery level percentage (0-100), or null if unavailable
- * @property macAddress Device MAC address
- * @property rssi Signal strength (RSSI) in dBm, or null if unavailable
- * @property isConnected Whether the device is currently connected
- * @property lastUpdated Timestamp when this info was last updated (system time in milliseconds)
+ * @property manufacturer    The manufacturer name (DIS 2A29), or null if unavailable
+ * @property batteryLevel    Battery level percentage (0-100), or null if unavailable
+ * @property macAddress      Device MAC address
+ * @property rssi            Signal strength (RSSI) in dBm, or null if unavailable
+ * @property isConnected     Whether the device is currently connected
+ * @property lastUpdated     Timestamp when this info was last updated (system time in milliseconds)
  *
  * @since 1.0.0
  *
@@ -25,6 +30,7 @@ package com.lightstick.device
  */
 data class DeviceInfo(
     val deviceName: String? = null,
+    val advertisingName: String? = null,
     val modelNumber: String? = null,
     val firmwareRevision: String? = null,
     val manufacturer: String? = null,

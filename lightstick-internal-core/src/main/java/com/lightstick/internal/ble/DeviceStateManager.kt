@@ -93,7 +93,7 @@ internal class DeviceStateManager(
         }
 
         deviceInfoMap[macAddress]?.let { existing ->
-            deviceInfoMap[macAddress] = existing.copy(deviceName = name)
+            deviceInfoMap[macAddress] = existing.copy(advertisingName = name)
             rebuildAndEmitDeviceStates()
         }
     }
@@ -184,36 +184,36 @@ internal class DeviceStateManager(
     }
 
     /**
-     * DIS 콜백 데이터와 스캔 이름을 합산해 DeviceState용 DeviceInfo를 구성한다.
+     * DIS 데이터와 스캔 advertising 이름을 별도 필드로 구성한다.
      *
-     * - deviceInfoMap : DIS 콜백 결과만 저장 (순수 GATT 데이터)
-     * - deviceNamesMap: 스캔 advertising 이름 저장
-     * - deviceName 표시는 스캔 이름 우선 (DIS 0x2A00은 비어있는 경우가 많음)
+     * - deviceInfoMap  : GATT DIS 읽기 결과 (deviceName = GAP 2A00, model/fw/mfr 등)
+     * - deviceNamesMap : BLE advertising 패킷에서 관찰된 이름 (advertisingName)
+     *
+     * deviceName과 advertisingName은 다를 수 있으므로 별도 필드로 유지한다.
      */
     private fun resolveDeviceInfo(
         mac: String,
         connectionState: com.lightstick.internal.ble.state.InternalConnectionState
     ): com.lightstick.internal.ble.state.InternalDeviceInfo? {
-        val gattInfo  = deviceInfoMap[mac]
-        val scanName  = deviceNamesMap[mac]?.takeUnless { it.isBlank() || it == "Unknown" }
-        val rssi      = deviceRssiMap[mac]
-        val connected = connectionState is com.lightstick.internal.ble.state.InternalConnectionState.Connected
+        val gattInfo      = deviceInfoMap[mac]
+        val advertisingName = deviceNamesMap[mac]?.takeUnless { it.isBlank() || it == "Unknown" }
+        val rssi          = deviceRssiMap[mac]
+        val connected     = connectionState is com.lightstick.internal.ble.state.InternalConnectionState.Connected
 
         return when {
-            // DIS 읽기 완료: model/firmware/battery 등 DIS 데이터 사용.
-            // deviceName은 스캔 이름 우선 (DIS에 보통 없음), 없으면 DIS 값 유지.
+            // DIS 읽기 완료: GATT 데이터 사용, advertisingName은 스캔값으로 별도 보존.
             gattInfo != null -> gattInfo.copy(
-                deviceName  = scanName ?: gattInfo.deviceName,
-                rssi        = rssi ?: gattInfo.rssi,
-                isConnected = connected
+                advertisingName = advertisingName ?: gattInfo.advertisingName,
+                rssi            = rssi ?: gattInfo.rssi,
+                isConnected     = connected
             )
 
-            // DIS 읽기 전: 스캔 이름으로 최소 DeviceInfo 즉시 구성
-            scanName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
-                deviceName  = scanName,
-                macAddress  = mac,
-                rssi        = rssi,
-                isConnected = connected
+            // DIS 읽기 전: advertising 이름으로 최소 DeviceInfo 즉시 구성
+            advertisingName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
+                advertisingName = advertisingName,
+                macAddress      = mac,
+                rssi            = rssi,
+                isConnected     = connected
             )
 
             else -> null
