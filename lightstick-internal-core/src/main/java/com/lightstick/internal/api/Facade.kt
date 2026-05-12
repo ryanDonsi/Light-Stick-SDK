@@ -298,22 +298,23 @@ object Facade {
                 )
 
                 scope.launch {
-                    try {
-                        val info = withTimeoutOrNull(DEVICE_INFO_TIMEOUT_MS) {
+                    val info = try {
+                        withTimeoutOrNull(DEVICE_INFO_TIMEOUT_MS) {
                             deviceInfo.readAllInfo()
-                        }
-                        if (info != null) {
-                            deviceStateManager.updateDeviceInfo(mac, info)
-                            Log.d("Facade", "DeviceInfo loaded: $mac " +
-                                "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
-                        } else {
-                            Log.w("Facade", "DeviceInfo read timeout: $mac")
+                        } ?: run {
+                            Log.w("Facade", "DeviceInfo read timeout: $mac — delivering partial info")
+                            InternalDeviceInfo(macAddress = mac, isConnected = true)
                         }
                     } catch (e: Exception) {
                         Log.w("Facade", "DeviceInfo read failed: $mac — ${e.message}")
-                    } finally {
-                        onConnected()
+                        InternalDeviceInfo(macAddress = mac, isConnected = true)
                     }
+
+                    deviceStateManager.updateDeviceInfo(mac, info)
+                    Log.d("Facade", "DeviceInfo stored: $mac " +
+                        "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
+
+                    onConnected()
                 }
             },
             onFailed = { t ->

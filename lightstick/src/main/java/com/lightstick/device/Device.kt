@@ -98,8 +98,9 @@ data class Device(
             onConnected = {
                 onConnected()
 
-                // Facade가 onConnected 호출 전에 DIS 읽기를 완료하므로
-                // 캐시에서 즉시 가져올 수 있음. 재읽기(fetchDeviceInfo) 불필요.
+                // Facade는 DIS 읽기 성공/실패/타임아웃 여부와 관계없이
+                // onConnected() 호출 직전에 updateDeviceInfo를 완료함.
+                // 따라서 onDeviceInfo 콜백은 항상 발동이 보장됨.
                 if (onDeviceInfo != null) {
                     val cached = Facade.getInternalDeviceInfo(mac)
                     if (cached != null) {
