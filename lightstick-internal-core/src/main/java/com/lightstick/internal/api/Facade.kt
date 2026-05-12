@@ -1031,8 +1031,6 @@ object Facade {
         bond.removeBond(appContext, mac, onResult)
     }
 
-    companion object {
-        /** onConnected fires only after DIS read completes or this timeout elapses. */
-        private const val DEVICE_INFO_TIMEOUT_MS = 10_000L
-    }
+    /** onConnected fires only after DIS read completes or this timeout elapses. */
+    private const val DEVICE_INFO_TIMEOUT_MS = 10_000L
 }
