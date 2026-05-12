@@ -11,8 +11,8 @@ package com.lightstick.device
  *
  * @property modelName       Internal model name read from GATT GAP characteristic (2A00).
  *                           This is the name stored in the device firmware (e.g. "m1s1_demo"),
- *                           used for device-specific features. May differ from [advertisingName].
- * @property advertisingName Name observed from the BLE advertising packet during scan.
+ *                           used for device-specific features. May differ from [deviceName].
+ * @property deviceName Name observed from the BLE advertising packet during scan.
  *                           This is what appears in the system Bluetooth device list.
  *                           May be null if the device was connected without a prior scan.
  * @property modelNumber     The model number (DIS 2A24), or null if unavailable
@@ -30,7 +30,7 @@ package com.lightstick.device
  */
 data class DeviceInfo(
     val modelName: String? = null,
-    val advertisingName: String? = null,
+    val deviceName: String? = null,
     val modelNumber: String? = null,
     val firmwareRevision: String? = null,
     val manufacturer: String? = null,

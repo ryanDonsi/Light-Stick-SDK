@@ -93,7 +93,7 @@ internal class DeviceStateManager(
         }
 
         deviceInfoMap[macAddress]?.let { existing ->
-            deviceInfoMap[macAddress] = existing.copy(advertisingName = name)
+            deviceInfoMap[macAddress] = existing.copy(deviceName = name)
             rebuildAndEmitDeviceStates()
         }
     }
@@ -187,30 +187,30 @@ internal class DeviceStateManager(
      * DIS 데이터와 스캔 advertising 이름을 별도 필드로 구성한다.
      *
      * - deviceInfoMap  : GATT DIS 읽기 결과 (modelName = GAP 2A00, model/fw/mfr 등)
-     * - deviceNamesMap : BLE advertising 패킷에서 관찰된 이름 (advertisingName)
+     * - deviceNamesMap : BLE advertising 패킷에서 관찰된 이름 (deviceName)
      *
-     * deviceName과 advertisingName은 다를 수 있으므로 별도 필드로 유지한다.
+     * modelName과 deviceName은 다를 수 있으므로 별도 필드로 유지한다.
      */
     private fun resolveDeviceInfo(
         mac: String,
         connectionState: com.lightstick.internal.ble.state.InternalConnectionState
     ): com.lightstick.internal.ble.state.InternalDeviceInfo? {
         val gattInfo      = deviceInfoMap[mac]
-        val advertisingName = deviceNamesMap[mac]?.takeUnless { it.isBlank() || it == "Unknown" }
+        val deviceName = deviceNamesMap[mac]?.takeUnless { it.isBlank() || it == "Unknown" }
         val rssi          = deviceRssiMap[mac]
         val connected     = connectionState is com.lightstick.internal.ble.state.InternalConnectionState.Connected
 
         return when {
-            // DIS 읽기 완료: GATT 데이터 사용, advertisingName은 스캔값으로 별도 보존.
+            // DIS 읽기 완료: GATT 데이터 사용, deviceName은 스캔값으로 별도 보존.
             gattInfo != null -> gattInfo.copy(
-                advertisingName = advertisingName ?: gattInfo.advertisingName,
+                deviceName = deviceName ?: gattInfo.deviceName,
                 rssi            = rssi ?: gattInfo.rssi,
                 isConnected     = connected
             )
 
             // DIS 읽기 전: advertising 이름으로 최소 DeviceInfo 즉시 구성
-            advertisingName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
-                advertisingName = advertisingName,
+            deviceName != null -> com.lightstick.internal.ble.state.InternalDeviceInfo(
+                deviceName = deviceName,
                 macAddress      = mac,
                 rssi            = rssi,
                 isConnected     = connected

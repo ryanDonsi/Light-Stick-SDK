@@ -12,8 +12,8 @@ package com.lightstick.internal.ble.state
  * Internal visibility ensures this type is only used within the internal module
  * and converted to public types at the API boundary.
  *
- * @property modelName       Internal model name read from GATT GAP service (2A00). May differ from [advertisingName].
- * @property advertisingName BLE advertising packet name observed during scan. Separate from [modelName].
+ * @property modelName       Internal model name read from GATT GAP service (2A00). May differ from [deviceName].
+ * @property deviceName BLE advertising packet name observed during scan. Separate from [modelName].
  * @property modelNumber     Model number from DIS (2A24)
  * @property firmwareRevision Firmware revision from DIS (2A26)
  * @property manufacturer    Manufacturer name from DIS (2A29)
@@ -25,7 +25,7 @@ package com.lightstick.internal.ble.state
  */
 data class InternalDeviceInfo(
     val modelName: String? = null,
-    val advertisingName: String? = null,
+    val deviceName: String? = null,
     val modelNumber: String? = null,
     val firmwareRevision: String? = null,
     val manufacturer: String? = null,

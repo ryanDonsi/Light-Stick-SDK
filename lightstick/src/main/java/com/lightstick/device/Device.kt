@@ -528,7 +528,7 @@ data class Device(
                 onResult(
                     DeviceInfo(
                         modelName = name.realOrNull(),
-                        advertisingName = advName,
+                        deviceName = advName,
                         modelNumber = model,
                         firmwareRevision = fw,
                         manufacturer = mfr,
