@@ -9,6 +9,7 @@ import com.lightstick.config.DeviceFilterMapper.toInternal
 import com.lightstick.device.ConnectionState
 import com.lightstick.device.Device
 import com.lightstick.device.DeviceInfo
+import com.lightstick.device.DeviceInfoResult
 import com.lightstick.device.DeviceState
 import com.lightstick.device.TypeMappers
 import com.lightstick.internal.api.Facade
@@ -322,12 +323,22 @@ object LSBluetooth {
     /**
      * Returns cached device info snapshot for a specific device.
      *
+     * Under normal usage the SDK reads DIS automatically before delivering the
+     * [Device.connect] onConnected callback, so [DeviceInfoResult.Available] is
+     * expected whenever this is called from within or after that callback.
+     *
      * @param mac Device MAC address.
-     * @return DeviceInfo if available, null otherwise.
+     * @return [DeviceInfoResult.Available] with full info, or [DeviceInfoResult.Error]
+     *         with a specific [DeviceInfoResult.ErrorCode] explaining why info is absent.
      */
     @JvmStatic
-    fun getCachedDeviceInfo(mac: String): DeviceInfo? {
-        return Facade.getInternalDeviceInfo(mac)?.let { TypeMappers.toPublic(it) }
+    fun getCachedDeviceInfo(mac: String): DeviceInfoResult {
+        if (!Facade.isConnected(mac)) {
+            return DeviceInfoResult.Error(DeviceInfoResult.ErrorCode.NOT_CONNECTED)
+        }
+        val info = Facade.getInternalDeviceInfo(mac)
+            ?: return DeviceInfoResult.Error(DeviceInfoResult.ErrorCode.INFO_NOT_READY)
+        return DeviceInfoResult.Available(TypeMappers.toPublic(info))
     }
 
     // ============================================================================================

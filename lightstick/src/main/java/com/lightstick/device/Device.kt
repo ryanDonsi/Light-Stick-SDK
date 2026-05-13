@@ -80,7 +80,7 @@ data class Device(
      *     },
      *     onDeviceInfo = { info ->
      *         // DeviceInfo 활용
-     *         Log.d(TAG, "Connected to ${info.deviceName}")
+     *         Log.d(TAG, "Connected to ${info.modelName}")
      *         Log.d(TAG, "Battery: ${info.batteryLevel}%")
      *     }
      * )
@@ -98,9 +98,14 @@ data class Device(
             onConnected = {
                 onConnected()
 
-                // onDeviceInfo가 제공된 경우에만 DeviceInfo 조회
+                // Facade는 DIS 읽기 성공/실패/타임아웃 여부와 관계없이
+                // onConnected() 호출 직전에 updateDeviceInfo를 완료함.
+                // 따라서 onDeviceInfo 콜백은 항상 발동이 보장됨.
                 if (onDeviceInfo != null) {
-                    fetchDeviceInfo { info -> onDeviceInfo(info) }
+                    val cached = Facade.getInternalDeviceInfo(mac)
+                    if (cached != null) {
+                        onDeviceInfo(TypeMappers.toPublic(cached))
+                    }
                 }
             },
             onFailed = onFailed
@@ -517,15 +522,13 @@ data class Device(
         val done = AtomicInteger(0)
         fun completeOne() {
             if (done.incrementAndGet() == total) {
-                // DIS 읽기 실패 시 fallback: 스캔 advertising name → Android BT 스택 캐시 순으로 시도.
-                // "Unknown"은 이름 미확인 placeholder이므로 null과 동일하게 처리한다.
                 fun String?.realOrNull() = takeUnless { it.isNullOrBlank() || it == "Unknown" }
-                val resolvedName = name.realOrNull()
-                    ?: this.name.realOrNull()                        // Device 객체에 담긴 스캔 시 이름
-                    ?: Facade.getCachedDeviceName(mac).realOrNull()  // Facade 세션 캐시 (BT 스택 포함)
+                val advName = this.name.realOrNull()
+                    ?: Facade.getCachedDeviceName(mac).realOrNull()
                 onResult(
                     DeviceInfo(
-                        deviceName = resolvedName,
+                        modelName = name.realOrNull(),
+                        deviceName = advName,
                         modelNumber = model,
                         firmwareRevision = fw,
                         manufacturer = mfr,
