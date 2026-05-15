@@ -38,9 +38,9 @@ enum class GameMode(val subIndex: Int) {
         }
         TEMPO -> 24_000L                  // 2 + 20 + 2 (level-independent)
         TEAM_BATTLE -> when (level) {
-            GameLevel.EASY   -> 24_000L   // 2 + 17.5 + 2 + 2 → rounded up
-            GameLevel.NORMAL -> 21_000L   // 2 + 15   + 2 + 2
-            GameLevel.HARD   -> 19_000L   // 2 + 13   + 2 + 2
+            GameLevel.EASY   -> 36_000L   // 2 + 30 + 2 + 2
+            GameLevel.NORMAL -> 31_000L   // 2 + 25 + 2 + 2
+            GameLevel.HARD   -> 26_000L   // 2 + 20 + 2 + 2
         }
     }
 }
