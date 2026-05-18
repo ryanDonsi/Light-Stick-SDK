@@ -772,6 +772,29 @@ data class Device(
     }
 
     /**
+     * Sends a WINNER command (cmdIndex=6) to FF03 to announce the winning wand.
+     *
+     * Only valid for [GameMode.SPEED_REACTION] (Mode 1) and [GameMode.TEMPO] (Mode 2).
+     * [GameMode.TEAM_BATTLE] is not supported; returns `false` without sending.
+     *
+     * @param mode         Game mode that just concluded (must be Mode 1 or Mode 2).
+     * @param winnerWandId Wand ID of the winner, written at payload offset 14–15 (LE).
+     * @return `true` if the command was enqueued; `false` if not connected, mode is unsupported,
+     *         or an error prevented submission.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendWinner(mode: GameMode, winnerWandId: Int): Boolean {
+        if (mode == GameMode.TEAM_BATTLE) return false
+        return try {
+            if (!isConnected()) return false
+            Facade.sendGameWinner(mac, mode.subIndex, winnerWandId)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
      * Cancels the FF04 Notify subscription without sending any command to the device.
      *
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.

@@ -14,10 +14,18 @@ import androidx.annotation.RequiresPermission
  * Packet format (spec §9.2 / §7.1):
  *   Offset 0-1  effectIndex = 0x0005 (little-endian)
  *   Offset 2-3  subIndex    = game mode (1/2/3)
- *   Offset 4-5  cmdIndex    = READY(1) / STOP(3) / CLEAR(4) / RESULT(5)
+ *   Offset 4-5  cmdIndex    = READY(1) / STOP(3) / CLEAR(4) / RESULT(5) / WINNER(6)
  *   Offset 6-7  level       = 1=easy / 2=normal / 3=hard
  *   Offset 8-9  option      = 0 (Mode1/2) / 0xFF (Mode3 random team)
  *   Offset 10-19 reserved   = 0x00
+ *
+ * WINNER packet (spec §9.2 v2.4, cmdIndex=6, Mode 1/2 only):
+ *   Offset 0-1  effectIndex = 0x0005
+ *   Offset 2-3  subIndex    = mode (1 or 2)
+ *   Offset 4-5  cmdIndex    = 0x0006
+ *   Offset 6-13 all zeros
+ *   Offset 14-15 wand_id   = winnerWandId (LE)
+ *   Offset 16-19 reserved  = 0x00
  */
 internal class GameManager(private val gattClient: GattClient) {
 
@@ -27,6 +35,7 @@ internal class GameManager(private val gattClient: GattClient) {
         private const val CMD_READY  = 1
         private const val CMD_STOP   = 3
         private const val CMD_CLEAR  = 4
+        private const val CMD_WINNER = 6
 
         private fun ByteArray.toHex(): String =
             joinToString(" ") { "%02X".format(it) }
@@ -105,6 +114,14 @@ internal class GameManager(private val gattClient: GattClient) {
         return writeGameCmd(payload)
     }
 
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendWinner(subIndex: Int, winnerWandId: Int): Boolean {
+        val payload = buildWinnerPayload(subIndex, winnerWandId)
+        Log.d(TAG, "FF03 TX WINNER subIndex=$subIndex winnerWandId=0x%04X".format(winnerWandId))
+        Log.d(TAG, "FF03 TX raw : ${payload.toHex()}")
+        return writeGameCmd(payload)
+    }
+
     // -------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------
@@ -125,6 +142,14 @@ internal class GameManager(private val gattClient: GattClient) {
             putU16LE(buf, 4, cmdIndex)
             putU16LE(buf, 6, level)
             putU16LE(buf, 8, option)
+        }
+
+    private fun buildWinnerPayload(subIndex: Int, winnerWandId: Int): ByteArray =
+        ByteArray(20).also { buf ->
+            putU16LE(buf, 0, EFFECT_INDEX_GAME)
+            putU16LE(buf, 2, subIndex)
+            putU16LE(buf, 4, CMD_WINNER)
+            putU16LE(buf, 14, winnerWandId)
         }
 
     /** Returns null if bytes are too short to parse. wandId lives at offset 14 per spec §7.1. */
