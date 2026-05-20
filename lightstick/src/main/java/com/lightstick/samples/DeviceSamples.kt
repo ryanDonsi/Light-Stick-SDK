@@ -6,7 +6,6 @@ import android.content.Context
 import android.util.Log
 import com.lightstick.LSBluetooth
 import com.lightstick.device.Device
-import com.lightstick.events.EventRule
 import com.lightstick.types.Colors
 import com.lightstick.types.LSEffectPayload
 import java.util.concurrent.atomic.AtomicInteger
@@ -484,42 +483,4 @@ object DeviceSamples {
         Log.d("Sample", "abortOta submitted=$ok")
     }
 
-    // --------------------------------------------------------------------------------------------
-    // Event API (device-scoped)
-    // --------------------------------------------------------------------------------------------
-    // Event API 샘플은 실제 EventRule 구조에 맞게 구현 필요
-    // 현재는 placeholder로 남겨둠
-
-    /** Sample: Register device-specific event rules. */
-    @JvmStatic
-    fun sampleRegisterDeviceRules(context: Context) {
-        LSBluetooth.initialize(context)
-        val device = Device(mac = "AA:BB:CC:DD:EE:FF")
-
-        // TODO: 실제 EventRule 구조에 맞게 구현
-        val rules = emptyList<EventRule>()
-
-        device.registerEventRules(rules)
-        Log.d("Sample", "Registered ${rules.size} device-specific rules")
-    }
-
-    /** Sample: Clear device-specific event rules. */
-    @JvmStatic
-    fun sampleClearDeviceRules(context: Context) {
-        LSBluetooth.initialize(context)
-        val device = Device(mac = "AA:BB:CC:DD:EE:FF")
-
-        device.clearEventRules()
-        Log.d("Sample", "Cleared device-specific rules")
-    }
-
-    /** Sample: Get device-specific event rules. */
-    @JvmStatic
-    fun sampleGetDeviceRules(context: Context) {
-        LSBluetooth.initialize(context)
-        val device = Device(mac = "AA:BB:CC:DD:EE:FF")
-
-        val rules = device.getEventRules()
-        Log.d("Sample", "Device has ${rules.size} event rules")
-    }
 }
