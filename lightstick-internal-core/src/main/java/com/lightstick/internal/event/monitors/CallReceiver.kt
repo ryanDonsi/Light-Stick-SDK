@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.telephony.TelephonyManager
 import com.lightstick.internal.event.EventRouter
+import com.lightstick.internal.util.Log
 
 /**
  * Manifest-declared phone state BroadcastReceiver (legacy path).
@@ -14,10 +15,22 @@ import com.lightstick.internal.event.EventRouter
  */
 class CallReceiver : BroadcastReceiver() {
 
-    override fun onReceive(context: Context, intent: Intent) {
-        if (TelephonyManager.ACTION_PHONE_STATE_CHANGED != intent.action) return
+    companion object {
+        private const val TAG = "CallReceiver"
+    }
 
-        val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
+    override fun onReceive(context: Context, intent: Intent) {
+        Log.d("$TAG onReceive: action=${intent.action}")
+
+        if (TelephonyManager.ACTION_PHONE_STATE_CHANGED != intent.action) {
+            Log.d("$TAG onReceive: ignored (unexpected action)")
+            return
+        }
+
+        val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: run {
+            Log.w("$TAG onReceive: EXTRA_STATE is null, ignoring")
+            return
+        }
 
         // Android 13+ 에서는 번호를 읽지 않음
         val number: String? =
@@ -30,10 +43,23 @@ class CallReceiver : BroadcastReceiver() {
                     ?.takeIf { it.isNotBlank() }
             }
 
+        val hasNumber = number != null
+        Log.d("$TAG state=$state, hasNumber=$hasNumber (API ${Build.VERSION.SDK_INT})")
+
         when (state) {
-            TelephonyManager.EXTRA_STATE_RINGING -> EventRouter.onCallRinging(number)
-            TelephonyManager.EXTRA_STATE_OFFHOOK -> EventRouter.onCallActive(number)
-            TelephonyManager.EXTRA_STATE_IDLE    -> EventRouter.onCallIdle(number) // ✅ 종료 처리
+            TelephonyManager.EXTRA_STATE_RINGING -> {
+                Log.i("$TAG → RINGING (number=${if (hasNumber) "present" else "null"})")
+                EventRouter.onCallRinging(number)
+            }
+            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                Log.i("$TAG → OFFHOOK/ACTIVE")
+                EventRouter.onCallActive(number)
+            }
+            TelephonyManager.EXTRA_STATE_IDLE -> {
+                Log.i("$TAG → IDLE/ENDED")
+                EventRouter.onCallIdle(number)
+            }
+            else -> Log.w("$TAG onReceive: unknown state='$state', ignoring")
         }
     }
 }
