@@ -1,7 +1,6 @@
 package com.lightstick.internal.event
 
 import android.content.Context
-import android.service.notification.StatusBarNotification
 import com.lightstick.internal.util.Log
 import java.lang.ref.WeakReference
 
@@ -21,119 +20,31 @@ object EventRouter {
     @JvmStatic
     fun enable() {
         Log.i("$TAG enable()")
-        appContextOrNull()?.let { ctx ->
-            // ✅ 올바른 패키지 경로 (events.monitor)
-            com.lightstick.internal.event.monitors.CalendarMonitor.register(ctx)
-
-            // ✅ runCatching 대신 try/catch 사용 (심볼/타입 추론 문제 회피)
-            try {
-                com.lightstick.internal.event.monitors.CallMonitor.register(ctx)
-            } catch (t: Throwable) {
-                Log.w("$TAG CallMonitor.register() failed: ${t.message}")
-            }
-        } ?: Log.w("$TAG enable() called but appContext is null (was initialize() called?)")
     }
 
     @JvmStatic
     fun disable() {
         Log.i("$TAG disable()")
-        appContextOrNull()?.let { ctx ->
-            com.lightstick.internal.event.monitors.CalendarMonitor.unregister(ctx)
-            try {
-                com.lightstick.internal.event.monitors.CallMonitor.unregister(ctx)
-            } catch (t: Throwable) {
-                Log.w("$TAG CallMonitor.unregister() failed: ${t.message}")
-            }
-        }
     }
 
     // ---- Hooks ---------------------------------------------------------------
 
     @JvmStatic
-    fun onSmsReceived(body: String) {
-        Log.d("$TAG onSmsReceived(body) bodyLen=${body.length}")
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.SMS_RECEIVED,
-                payload = InternalPayload(smsBody = body)
-            )
-        )
-    }
-
-    @JvmStatic
-    fun onSmsReceived(body: String?, from: String?) {
-        Log.d("$TAG onSmsReceived(body, from) bodyLen=${body?.length}, hasFrom=${from != null}")
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.SMS_RECEIVED,
-                payload = InternalPayload(smsBody = body, phoneNumber = from)
-            )
-        )
-    }
-
-    @JvmStatic
-    fun onCallRinging(incomingNumber: String?) {
-        Log.i("$TAG onCallRinging hasNumber=${incomingNumber != null}")
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.CALL_RINGING,
-                payload = InternalPayload(phoneNumber = incomingNumber)
-            )
-        )
-    }
-
-    @JvmStatic
-    fun onCallActive(number: String?) {
-        Log.i("$TAG onCallActive hasNumber=${number != null}")
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.CALL_ACTIVE,
-                payload = InternalPayload(phoneNumber = number)
-            )
-        )
-    }
-
-    @JvmStatic
-    fun onCallIdle(number: String?) {
-        Log.i("$TAG onCallIdle hasNumber=${number != null}")
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.CALL_IDLE,
-                payload = InternalPayload(phoneNumber = number)
-            )
-        )
-    }
-
-    @JvmStatic
-    fun onCalendarStart(title: String?, location: String?) {
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.CALENDAR_START,
-                payload = InternalPayload(calendarTitle = title, calendarLocation = location)
-            )
-        )
-    }
-
-    @JvmStatic
-    fun onCalendarEnd(title: String?, location: String?) {
-        EventBridge.onEvent(
-            InternalEvent(
-                type = EventType.CALENDAR_END,
-                payload = InternalPayload(calendarTitle = title, calendarLocation = location)
-            )
-        )
+    fun onCustomEvent() {
+        Log.d("$TAG onCustomEvent")
+        EventBridge.onEvent(InternalEvent(type = EventType.CUSTOM))
     }
 
     @JvmStatic fun onNotificationListenerConnected() { /* no-op */ }
     @JvmStatic fun onNotificationListenerDisconnected() { /* no-op */ }
 
     @JvmStatic
-    fun onNotificationPosted(@Suppress("UNUSED_PARAMETER") sbn: StatusBarNotification) {
+    fun onNotificationPosted(@Suppress("UNUSED_PARAMETER") sbn: android.service.notification.StatusBarNotification) {
         EventBridge.onEvent(InternalEvent(type = EventType.CUSTOM))
     }
 
     @JvmStatic
-    fun onNotificationRemoved(@Suppress("UNUSED_PARAMETER") sbn: StatusBarNotification) {
+    fun onNotificationRemoved(@Suppress("UNUSED_PARAMETER") sbn: android.service.notification.StatusBarNotification) {
         // no-op
     }
 }

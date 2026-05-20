@@ -2,7 +2,6 @@ package com.lightstick.samples
 
 import com.lightstick.device.Device
 import com.lightstick.events.EventAction
-import com.lightstick.events.EventFilter
 import com.lightstick.events.EventManager
 import com.lightstick.events.EventRule
 import com.lightstick.events.EventTarget.ALL_CONNECTED
@@ -15,13 +14,6 @@ import com.lightstick.types.LSEffectPayload
 
 /**
  * Usage samples for the public Event API.
- *
- * Covers:
- * - Enabling/disabling the event pipeline
- * - Setting/clearing **global** rules
- * - Setting/clearing **device-scoped** rules
- * - Querying rules (global / per-device / snapshot)
- * - Mapping-style samples requested by docs/references
  */
 object EventSamples {
 
@@ -29,7 +21,7 @@ object EventSamples {
     // Lifecycle
     // --------------------------------------------------------------------------------------------
 
-    /** Enable the event pipeline (SMS/Call/Calendar/Notification). */
+    /** Enable the event pipeline. */
     fun sampleEnableEventPipeline() {
         EventManager.enable()
     }
@@ -43,18 +35,12 @@ object EventSamples {
     // Global rules (ALL_CONNECTED)
     // --------------------------------------------------------------------------------------------
 
-    /**
-     * Set global rules (replaces existing). Empty list would clear.
-     * Example: Blink BLUE on SMS containing "meet".
-     */
+    /** Set global rules — example: blink BLUE on custom event. */
     fun sampleSetGlobalRules() {
         val rules = listOf(
             EventRule(
-                id = "sms-blue-blink",
-                trigger = EventTrigger(
-                    type = EventType.SMS_RECEIVED,
-                    filter = EventFilter(smsContains = "meet")
-                ),
+                id = "custom-blue-blink",
+                trigger = EventTrigger(type = EventType.CUSTOM),
                 action = EventAction.SendEffectFrame(
                     bytes20 = LSEffectPayload.Effects
                         .blink(8, Colors.BLUE)
@@ -79,18 +65,12 @@ object EventSamples {
     // Device-scoped rules (THIS_DEVICE)
     // --------------------------------------------------------------------------------------------
 
-    /**
-     * Set device-scoped rules for a specific [device] (replaces existing).
-     * Example: Turn steady WHITE when calendar event (title contains "Daily") starts.
-     */
+    /** Set device-scoped rules for a specific [device]. */
     fun sampleSetDeviceRules(device: Device) {
         val rules = listOf(
             EventRule(
-                id = "calendar-start-white",
-                trigger = EventTrigger(
-                    type = EventType.CALENDAR_START,
-                    filter = EventFilter(calendarTitle = "Daily")
-                ),
+                id = "device-custom-white",
+                trigger = EventTrigger(type = EventType.CUSTOM),
                 action = EventAction.SendEffectFrame(
                     bytes20 = LSEffectPayload.Effects
                         .on(Colors.WHITE)
@@ -119,21 +99,13 @@ object EventSamples {
     fun sampleGetAllRules(): EventManager.Snapshot = EventManager.getAllRules()
 
     // --------------------------------------------------------------------------------------------
-    // Mapping-style samples (names requested)
+    // Mapping-style samples
     // --------------------------------------------------------------------------------------------
 
-    /**
-     * sampleMapGlobalRule:
-     * Pretend “mapping” from app-level description -> public EventRule.
-     * Returns a ready-to-register global rule list.
-     */
     fun sampleMapGlobalRule(): List<EventRule> {
         val rule = EventRule(
-            id = "global-sms-green-strobe",
-            trigger = EventTrigger(
-                type = EventType.SMS_RECEIVED,
-                filter = EventFilter(smsContains = "ok")
-            ),
+            id = "global-custom-green-strobe",
+            trigger = EventTrigger(type = EventType.CUSTOM),
             action = EventAction.SendEffectFrame(
                 bytes20 = LSEffectPayload.Effects
                     .strobe(4, Colors.GREEN)
@@ -144,11 +116,6 @@ object EventSamples {
         return listOf(rule)
     }
 
-    /**
-     * sampleMapDeviceRule:
-     * Pretend “mapping” for a given device -> public EventRule.
-     * Returns (mac, rules) so the caller can feed EventManager.setDeviceRules(mac, rules).
-     */
     fun sampleMapDeviceRule(device: Device): Pair<String, List<EventRule>> {
         val rule = EventRule(
             id = "device-custom-breath",
@@ -163,68 +130,17 @@ object EventSamples {
         return device.mac to listOf(rule)
     }
 
-    /**
-     * sampleMapFromInternalGlobal:
-     * “Mapping from internal” in public space simply means: fetch what engine holds now.
-     */
-    fun sampleMapFromInternalGlobal(): List<EventRule> {
-        return EventManager.getGlobalRules()
-    }
+    fun sampleMapFromInternalGlobal(): List<EventRule> = EventManager.getGlobalRules()
 
-    /**
-     * sampleMapFromInternalDevice:
-     * Same idea for a specific device – fetch what engine holds now.
-     */
-    fun sampleMapFromInternalDevice(device: Device): List<EventRule> {
-        return EventManager.getDeviceRules(device.mac)
-    }
+    fun sampleMapFromInternalDevice(device: Device): List<EventRule> =
+        EventManager.getDeviceRules(device.mac)
 
     // --------------------------------------------------------------------------------------------
     // EventType usage sample
     // --------------------------------------------------------------------------------------------
 
-    /**
-     * sampleEventTypeUsage:
-     * Demonstrates branching on [EventType] to build different rules.
-     */
     fun sampleEventTypeUsage(type: EventType): EventRule {
         return when (type) {
-            EventType.SMS_RECEIVED -> EventRule(
-                id = "sms-red-on",
-                trigger = EventTrigger(type),
-                action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.on(Colors.RED).toByteArray()
-                ),
-                target = ALL_CONNECTED
-            )
-
-            EventType.CALL_RINGING -> EventRule(
-                id = "call-cyan-strobe",
-                trigger = EventTrigger(type),
-                action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.strobe(5, Colors.CYAN).toByteArray()
-                ),
-                target = ALL_CONNECTED
-            )
-
-            EventType.CALENDAR_START -> EventRule(
-                id = "cal-white-on",
-                trigger = EventTrigger(type, EventFilter(calendarTitle = "Standup")),
-                action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.on(Colors.WHITE).toByteArray()
-                ),
-                target = ALL_CONNECTED
-            )
-
-            EventType.CALENDAR_END -> EventRule(
-                id = "cal-end-pink-blink",
-                trigger = EventTrigger(type),
-                action = EventAction.SendEffectFrame(
-                    bytes20 = LSEffectPayload.Effects.blink(10, Colors.PINK).toByteArray()
-                ),
-                target = ALL_CONNECTED
-            )
-
             EventType.CUSTOM -> EventRule(
                 id = "custom-orange-breath",
                 trigger = EventTrigger(type),
@@ -237,15 +153,9 @@ object EventSamples {
     }
 
     // --------------------------------------------------------------------------------------------
-    // Notification bridge (symbol requested)
+    // Notification bridge
     // --------------------------------------------------------------------------------------------
 
-    /**
-     * sampleNotificationListener:
-     * Shows how to provide a NotificationListener subclass that forwards notifications to the SDK.
-     *
-     * Register the nested [MyNotificationListener] in your AndroidManifest.
-     */
     fun sampleNotificationListener() {
         // No-op at runtime; the point is to show the subclass below and manifest wiring.
     }
@@ -268,33 +178,17 @@ object EventSamples {
     // Event DTO construction samples (for KDoc)
     // --------------------------------------------------------------------------------------------
 
-    /** sampleEventFilterUsage: demonstrate EventFilter creation. */
-    fun sampleEventFilterUsage(): EventFilter =
-        EventFilter(
-            smsContains = "meeting",
-            phoneNumber = "+821012345678",
-            calendarTitle = "Project",
-            calendarLocation = "HQ"
-        )
-
-    /** sampleEventTriggerUsage: demonstrate EventTrigger creation. */
     fun sampleEventTriggerUsage(): EventTrigger =
-        EventTrigger(
-            type = EventType.SMS_RECEIVED,
-            filter = EventFilter(smsContains = "urgent")
-        )
+        EventTrigger(type = EventType.CUSTOM)
 
-    /** sampleSendColorAction: build EventAction.SendColorPacket. */
     fun sampleSendColorAction(): EventAction.SendColorPacket =
         EventAction.SendColorPacket(byteArrayOf(255.toByte(), 0, 0, 8))
 
-    /** sampleSendEffectAction: build EventAction.SendEffectFrame with blink BLUE. */
     fun sampleSendEffectAction(): EventAction.SendEffectFrame =
         EventAction.SendEffectFrame(
             bytes20 = LSEffectPayload.Effects.blink(10, Colors.BLUE).toByteArray()
         )
 
-    /** samplePlayFramesAction: build EventAction.PlayFrames example (two frames). */
     fun samplePlayFramesAction(): EventAction.PlayFrames {
         val entries = listOf(
             0L to LSEffectPayload.Effects.on(Colors.WHITE).toByteArray(),
@@ -303,14 +197,12 @@ object EventSamples {
         return EventAction.PlayFrames(entries)
     }
 
-    /** sampleEventActionUsage: showcase all 3 action types. */
     fun sampleEventActionUsage(): List<EventAction> = listOf(
         sampleSendColorAction(),
         sampleSendEffectAction(),
         samplePlayFramesAction()
     )
 
-    /** sampleBuildEventRule: complete EventRule definition example. */
     fun sampleBuildEventRule(): EventRule =
         EventRule(
             id = "demo-rule",
@@ -319,5 +211,4 @@ object EventSamples {
             target = ALL_CONNECTED,
             stopAfterMatch = true
         )
-
 }

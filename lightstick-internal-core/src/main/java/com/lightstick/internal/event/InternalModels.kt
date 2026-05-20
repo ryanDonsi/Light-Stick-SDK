@@ -5,40 +5,13 @@ package com.lightstick.internal.event
  */
 
 enum class EventType {
-    /** Incoming SMS received. */
-    SMS_RECEIVED,
-
-    /** Phone is ringing (incoming call). */
-    CALL_RINGING,
-
-    /** Call is now active (off-hook, in-call). */
-    CALL_ACTIVE,   // ✅ 추가
-
-    /** Call ended or returned to idle state. */
-    CALL_IDLE,     // ✅ 추가
-
-    /** Calendar event started (or becomes active). */
-    CALENDAR_START,
-
-    /** Calendar event ended (or becomes inactive). */
-    CALENDAR_END,
-
     /** App-defined custom event. */
     CUSTOM
 }
 
-/** Optional filters for trigger matching. */
-data class InternalFilter(
-    val smsContains: String? = null,
-    val phoneNumber: String? = null,
-    val calendarTitle: String? = null,
-    val calendarLocation: String? = null
-)
-
 /** Trigger used by internal rules. */
 data class InternalTrigger(
-    val type: EventType,
-    val filter: InternalFilter = InternalFilter()
+    val type: EventType
 )
 
 /** Execution target (all connected devices or specific one). */
@@ -77,16 +50,7 @@ data class InternalRule(
     val stopAfterMatch: Boolean = true
 )
 
-/** Normalized event data payload delivered by EventRouter. */
-data class InternalPayload(
-    val smsBody: String? = null,
-    val phoneNumber: String? = null,
-    val calendarTitle: String? = null,
-    val calendarLocation: String? = null
-)
-
 /** Event envelope delivered to EventBridge. */
 data class InternalEvent(
-    val type: EventType,
-    val payload: InternalPayload = InternalPayload()
+    val type: EventType
 )

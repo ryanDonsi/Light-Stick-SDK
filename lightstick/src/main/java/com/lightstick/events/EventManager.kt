@@ -1,28 +1,16 @@
 package com.lightstick.events
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import com.lightstick.internal.api.Facade
 
 /**
  * Public Event manager facade.
  *
  * Responsibilities:
- * - Enable/disable the internal event pipeline (monitors/receivers/observers)
+ * - Enable/disable the internal event pipeline
  * - Set/clear/get **global** rules (ALL_CONNECTED)
  * - Set/clear/get **device-scoped** rules (THIS_DEVICE)
  * - Snapshot of all rules (global + per-device)
- *
- * Dependency direction:
- * - Public module maps DTOs via [EventMapper] and calls internal engine through
- *   [Facade]'s *Internal* methods.
- * - The internal module does **not** depend on public DTOs.
- *
- * Threading:
- * - Lightweight registry operations. Main thread is OK.
  *
  * @since 1.0.0
  */
@@ -38,47 +26,6 @@ object EventManager {
         val globalRules: List<EventRule>,
         val deviceRules: Map<String, List<EventRule>>
     )
-
-    // --------------------------------------------------------------------------------------------
-    // Permission helpers
-    // --------------------------------------------------------------------------------------------
-
-    /**
-     * Returns the list of runtime permissions that are declared but not yet granted.
-     *
-     * Call this before [enable] and request any returned permissions via
-     * `ActivityCompat.requestPermissions()`. [enable] is safe to call even if some
-     * permissions are missing — ungranted monitors are silently skipped — but the
-     * corresponding event types will not fire until the permissions are granted and
-     * [enable] is called again.
-     *
-     * ```kotlin
-     * val missing = EventManager.missingPermissions(context)
-     * if (missing.isNotEmpty()) {
-     *     ActivityCompat.requestPermissions(activity, missing.toTypedArray(), REQ_CODE)
-     * } else {
-     *     EventManager.enable()
-     * }
-     * ```
-     *
-     * @param context Any context (applicationContext is fine).
-     * @return Permissions that are needed but not yet granted.
-     */
-    @JvmStatic
-    fun missingPermissions(context: Context): List<String> {
-        val needed = listOf(
-            Manifest.permission.READ_PHONE_STATE,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.READ_CALENDAR,
-        )
-        return needed.filter { perm ->
-            ContextCompat.checkSelfPermission(context, perm) != PackageManager.PERMISSION_GRANTED
-        }.also { missing ->
-            if (missing.isNotEmpty()) {
-                Log.w("EventManager", "missingPermissions: ${missing.joinToString()}")
-            }
-        }
-    }
 
     // --------------------------------------------------------------------------------------------
     // Lifecycle
@@ -124,7 +71,6 @@ object EventManager {
      * Replaces all **global** rules with [rules]. Empty list clears them.
      *
      * @param rules Public rules to register globally.
-     * @throws IllegalArgumentException If any rule is structurally invalid.
      * @throws IllegalStateException If the engine is not initialized.
      * @sample com.lightstick.samples.EventSamples.sampleSetGlobalRules
      */
@@ -181,7 +127,6 @@ object EventManager {
      *
      * @param mac Target device MAC.
      * @param rules Device-scoped rules.
-     * @throws IllegalArgumentException If any rule is structurally invalid.
      * @throws IllegalStateException If the engine is not initialized.
      * @sample com.lightstick.samples.EventSamples.sampleSetDeviceRules
      */
