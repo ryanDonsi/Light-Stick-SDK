@@ -745,6 +745,14 @@ object Facade {
         return requireSession(mac).game.sendClear()
     }
 
+    /** Sends a WINNER command (cmdIndex=6) to FF03 to announce the winning wand. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameWinner(mac: String, subIndex: Int, winnerWandId: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendWinner(subIndex, winnerWandId)
+    }
+
     // ============================================================================================
     // OTA
     // ============================================================================================
