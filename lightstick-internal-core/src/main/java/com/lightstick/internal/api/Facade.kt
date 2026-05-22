@@ -430,6 +430,20 @@ object Facade {
     }
 
     /**
+     * Returns the current snapshot of filtered device states (no Flow, synchronous).
+     * Used as initialValue for stateIn to avoid the race where a new StateFlow starts
+     * with emptyMap() even though DIS data is already available.
+     */
+    fun getInternalDeviceStatesSnapshot(): Map<String, InternalDeviceState> {
+        requireInit()
+        return deviceStateManager.deviceStates.value.filter { (mac, state) ->
+            val name = state.deviceInfo?.deviceName
+            val rssi = state.deviceInfo?.rssi
+            isDeviceAllowed(mac, name, rssi)
+        }
+    }
+
+    /**
      * Returns filtered connection states flow.
      */
     fun getInternalConnectionStates(): Flow<Map<String, InternalConnectionState>> {
@@ -441,6 +455,19 @@ object Facade {
                 val rssi = deviceState?.deviceInfo?.rssi
                 isDeviceAllowed(mac, name, rssi)
             }
+        }
+    }
+
+    /**
+     * Returns the current snapshot of filtered connection states (no Flow, synchronous).
+     */
+    fun getInternalConnectionStatesSnapshot(): Map<String, InternalConnectionState> {
+        requireInit()
+        return deviceStateManager.connectionStates.value.filter { (mac, _) ->
+            val deviceState = deviceStateManager.deviceStates.value[mac]
+            val name = deviceState?.deviceInfo?.deviceName
+            val rssi = deviceState?.deviceInfo?.rssi
+            isDeviceAllowed(mac, name, rssi)
         }
     }
 
