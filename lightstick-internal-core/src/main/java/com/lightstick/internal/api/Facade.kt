@@ -15,10 +15,6 @@ import com.lightstick.internal.ble.state.InternalDeviceState
 import com.lightstick.internal.ble.state.InternalDisconnectReason
 import com.lightstick.internal.efx.EfxBinary
 import com.lightstick.internal.efx.MusicIdProvider
-import com.lightstick.internal.event.DeviceEventRegistry
-import com.lightstick.internal.event.EventRouter
-import com.lightstick.internal.event.GlobalEventRegistry
-import com.lightstick.internal.event.InternalRule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,8 +48,6 @@ object Facade {
     private lateinit var appContext: Context
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    @Volatile private var eventInitialized = false
-
     private lateinit var deviceStateManager: DeviceStateManager
 
     private lateinit var globalDeviceFilter: DeviceFilter
@@ -86,8 +80,6 @@ object Facade {
             deviceFilter = deviceFilter
         )
 
-        EventRouter.initialize(appContext)
-        eventInitialized = true
     }
 
     /**
@@ -975,79 +967,6 @@ object Facade {
     @JvmStatic
     fun musicIdFromUri(context: Context, uri: android.net.Uri): Int =
         MusicIdProvider.fromUri(context, uri)
-
-    // ============================================================================================
-    // Events
-    // ============================================================================================
-
-    fun eventEnable() {
-        requireInit()
-        if (!eventInitialized) {
-            EventRouter.initialize(appContext)
-            eventInitialized = true
-        }
-        EventRouter.enable()
-    }
-
-    fun eventDisable() {
-        requireInit()
-        EventRouter.disable()
-    }
-
-    fun eventOnNotificationListenerConnected() {
-        requireInit()
-        EventRouter.onNotificationListenerConnected()
-    }
-
-    fun eventOnNotificationListenerDisconnected() {
-        requireInit()
-        EventRouter.onNotificationListenerDisconnected()
-    }
-
-    fun eventOnNotificationPosted(sbn: android.service.notification.StatusBarNotification) {
-        requireInit()
-        EventRouter.onNotificationPosted(sbn)
-    }
-
-    fun eventOnNotificationRemoved(sbn: android.service.notification.StatusBarNotification) {
-        requireInit()
-        EventRouter.onNotificationRemoved(sbn)
-    }
-
-    fun eventSetGlobalRulesInternal(rules: List<InternalRule>) {
-        requireInit()
-        GlobalEventRegistry.set(rules)
-    }
-
-    fun eventClearGlobalRulesInternal() {
-        requireInit()
-        GlobalEventRegistry.clear()
-    }
-
-    fun eventSetDeviceRulesInternal(mac: String, rules: List<InternalRule>) {
-        requireInit()
-        DeviceEventRegistry.set(mac, rules)
-    }
-
-    fun eventClearDeviceRulesInternal(mac: String) {
-        requireInit()
-        DeviceEventRegistry.clear(mac)
-    }
-
-    fun eventGetGlobalRulesInternal(): List<InternalRule> {
-        requireInit()
-        return GlobalEventRegistry.get()
-    }
-
-    fun eventGetDeviceRulesInternal(mac: String): List<InternalRule> {
-        requireInit()
-        return DeviceEventRegistry.get(mac)
-    }
-
-    fun eventGetAllDeviceRulesInternal(): Map<String, List<InternalRule>> {
-        requireInit()
-        return DeviceEventRegistry.getAll()
-    }
 
     // ============================================================================================
     // Bond

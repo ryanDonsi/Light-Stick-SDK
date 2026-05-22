@@ -7,8 +7,6 @@ import androidx.annotation.RequiresPermission
 import com.lightstick.internal.api.Facade
 import com.lightstick.types.Color
 import com.lightstick.types.LSEffectPayload
-import com.lightstick.events.EventRule
-import com.lightstick.events.EventManager
 import com.lightstick.game.GameLevel
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
@@ -617,47 +615,6 @@ data class Device(
     // ------------------------------------------------------------------------
     // Event API (device-scoped)
     // ------------------------------------------------------------------------
-
-    /**
-     * Registers event rules that apply **only to this device**.
-     *
-     * @param rules List of event rules to register for THIS device.
-     */
-    @MainThread
-    fun registerEventRules(rules: List<EventRule>) {
-        try {
-            EventManager.setDeviceRules(mac, rules)
-        } catch (e: Exception) {
-            android.util.Log.w("Device", "registerEventRules($mac) failed: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Clears all event rules associated with THIS device.
-     */
-    @MainThread
-    fun clearEventRules() {
-        try {
-            EventManager.clearDeviceRules(mac)
-        } catch (e: Exception) {
-            android.util.Log.w("Device", "clearEventRules($mac) failed: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Returns the current device-scoped event rules for THIS device.
-     *
-     * @return List of event rules currently registered (may be empty).
-     */
-    @MainThread
-    fun getEventRules(): List<EventRule> {
-        return try {
-            EventManager.getDeviceRules(mac)
-        } catch (e: Exception) {
-            android.util.Log.w("Device", "getEventRules($mac) failed: ${e.message}", e)
-            emptyList()
-        }
-    }
 
     // ------------------------------------------------------------------------
     // Game Mode
