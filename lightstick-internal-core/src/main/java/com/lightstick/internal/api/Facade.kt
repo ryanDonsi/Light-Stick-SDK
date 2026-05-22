@@ -558,6 +558,11 @@ object Facade {
         if (!isConnected(mac)) return false
         scope.launch {
             val result = requireSession(mac).deviceInfo.readBatteryLevel()
+            result.getOrNull()?.let { newLevel ->
+                deviceStateManager.getDeviceInfo(mac)?.let { existing ->
+                    deviceStateManager.updateDeviceInfo(mac, existing.copy(batteryLevel = newLevel))
+                }
+            }
             onResult(result)
         }
         return true
