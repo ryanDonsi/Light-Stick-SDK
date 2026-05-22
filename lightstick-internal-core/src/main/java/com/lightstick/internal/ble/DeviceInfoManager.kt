@@ -149,6 +149,7 @@ internal class DeviceInfoManager(
         val mac = readMacAddress().getOrNull()
 
         return InternalDeviceInfo(
+            deviceName = dis.modelName,
             modelName = dis.modelName,
             modelNumber = dis.modelNumber,
             firmwareRevision = dis.firmwareRevision,
