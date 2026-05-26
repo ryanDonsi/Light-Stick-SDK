@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
 import android.util.Log
 import com.lightstick.internal.ble.DeviceFilter
@@ -130,6 +131,9 @@ object Facade {
 
     private val sessions: MutableMap<String, Session> = ConcurrentHashMap()
 
+    // DIS 읽기 완료 신호. connect() 호출 시 생성, DIS 완료 시 complete(), 세션 제거 시 삭제.
+    private val disReadyMap = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+
     private val lastSeenName = ConcurrentHashMap<String, String>()
     private val lastSeenRssi = ConcurrentHashMap<String, Int>()
 
@@ -140,6 +144,7 @@ object Facade {
         sessions.remove(mac)?.let { session ->
             session.cleanup()
         }
+        disReadyMap.remove(mac)
         deviceStateManager.removeDevice(mac)
     }
 
@@ -214,7 +219,15 @@ object Facade {
         requireInit()
 
         sessions[mac]?.let {
-            onConnected()
+            val deferred = disReadyMap[mac]
+            if (deferred == null || deferred.isCompleted) {
+                onConnected()
+            } else {
+                scope.launch {
+                    deferred.await()
+                    onConnected()
+                }
+            }
             return
         }
 
@@ -283,6 +296,7 @@ object Facade {
                 val deviceInfo = DeviceInfoManager(gatt)
                 val game = GameManager(gatt)
                 sessions[mac] = Session(gatt, led, deviceInfo, null, game)
+                disReadyMap[mac] = CompletableDeferred()
 
                 deviceStateManager.updateConnectionState(
                     mac,
@@ -306,6 +320,7 @@ object Facade {
                     Log.d("Facade", "DeviceInfo stored: $mac " +
                         "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
 
+                    disReadyMap[mac]?.complete(Unit)
                     onConnected()
                 }
             },
