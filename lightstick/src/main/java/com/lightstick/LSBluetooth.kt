@@ -44,6 +44,35 @@ object LSBluetooth {
 
     private val scope = CoroutineScope(Dispatchers.Default)
 
+    // Cached StateFlows — created once so SharingStarted.Eagerly has time to collect the
+    // current source value before any ViewModel subscribes, avoiding the race where a freshly
+    // created stateIn(initialValue = emptyMap()) is observed before its coroutine runs.
+    // initialValue is seeded from the synchronous snapshot so that calls made *after* DIS
+    // completes also return correct state immediately.
+    private val cachedDeviceStates: StateFlow<Map<String, DeviceState>> by lazy {
+        val snapshot = Facade.getInternalDeviceStatesSnapshot()
+            .mapValues { (_, s) -> TypeMappers.toPublic(s) }
+        Facade.getInternalDeviceStates()
+            .map { internalMap ->
+                internalMap.mapValues { (_, internalState) ->
+                    TypeMappers.toPublic(internalState)
+                }
+            }
+            .stateIn(scope = scope, started = SharingStarted.Eagerly, initialValue = snapshot)
+    }
+
+    private val cachedConnectionStates: StateFlow<Map<String, ConnectionState>> by lazy {
+        val snapshot = Facade.getInternalConnectionStatesSnapshot()
+            .mapValues { (_, s) -> TypeMappers.toPublic(s) }
+        Facade.getInternalConnectionStates()
+            .map { internalMap ->
+                internalMap.mapValues { (_, internalState) ->
+                    TypeMappers.toPublic(internalState)
+                }
+            }
+            .stateIn(scope = scope, started = SharingStarted.Eagerly, initialValue = snapshot)
+    }
+
     // ============================================================================================
     // Initialization
     // ============================================================================================
@@ -286,19 +315,7 @@ object LSBluetooth {
      * @return Hot StateFlow of device states mapped by MAC address.
      */
     @JvmStatic
-    fun observeDeviceStates(): StateFlow<Map<String, DeviceState>> {
-        return Facade.getInternalDeviceStates()
-            .map { internalMap ->
-                internalMap.mapValues { (_, internalState) ->
-                    TypeMappers.toPublic(internalState)
-                }
-            }
-            .stateIn(
-                scope = scope,
-                started = SharingStarted.Eagerly,
-                initialValue = emptyMap()
-            )
-    }
+    fun observeDeviceStates(): StateFlow<Map<String, DeviceState>> = cachedDeviceStates
 
     /**
      * Observes connection states only.
@@ -306,19 +323,7 @@ object LSBluetooth {
      * @return Hot StateFlow of connection states mapped by MAC address.
      */
     @JvmStatic
-    fun observeConnectionStates(): StateFlow<Map<String, ConnectionState>> {
-        return Facade.getInternalConnectionStates()
-            .map { internalMap ->
-                internalMap.mapValues { (_, internalState) ->
-                    TypeMappers.toPublic(internalState)
-                }
-            }
-            .stateIn(
-                scope = scope,
-                started = SharingStarted.Eagerly,
-                initialValue = emptyMap()
-            )
-    }
+    fun observeConnectionStates(): StateFlow<Map<String, ConnectionState>> = cachedConnectionStates
 
     /**
      * Returns cached device info snapshot for a specific device.

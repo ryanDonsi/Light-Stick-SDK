@@ -165,7 +165,7 @@ internal class DeviceStateManager(
     private fun rebuildAndEmitDeviceStates() {
         val unified = connectionStatesMap
             .filter { (mac, _) ->
-                val name = deviceNamesMap[mac]
+                val name = deviceNamesMap[mac] ?: deviceInfoMap[mac]?.modelName
                 val rssi = deviceRssiMap[mac]
                 deviceFilter?.invoke(mac, name, rssi) ?: true
             }

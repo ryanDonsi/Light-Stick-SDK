@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
 import android.util.Log
 import com.lightstick.internal.ble.DeviceFilter
@@ -130,6 +131,9 @@ object Facade {
 
     private val sessions: MutableMap<String, Session> = ConcurrentHashMap()
 
+    // DIS 읽기 완료 신호. connect() 호출 시 생성, DIS 완료 시 complete(), 세션 제거 시 삭제.
+    private val disReadyMap = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+
     private val lastSeenName = ConcurrentHashMap<String, String>()
     private val lastSeenRssi = ConcurrentHashMap<String, Int>()
 
@@ -140,6 +144,7 @@ object Facade {
         sessions.remove(mac)?.let { session ->
             session.cleanup()
         }
+        disReadyMap.remove(mac)
         deviceStateManager.removeDevice(mac)
     }
 
@@ -211,10 +216,30 @@ object Facade {
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connect(mac: String, onConnected: () -> Unit, onFailed: (Throwable) -> Unit) {
+        connectInternal(mac, onConnected, onFailed, skipNameFilter = false)
+    }
+
+    // skipNameFilter: restoreSystemConnectedDevices 복원 경로에서 사용.
+    // 이미 연결된 기기는 BT 캐시에 이름이 없을 수 있으므로 이름 사전 필터를 건너뛰고
+    // DIS 읽기 후 modelName 기반 필터에 위임한다.
+    private fun connectInternal(
+        mac: String,
+        onConnected: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+        skipNameFilter: Boolean
+    ) {
         requireInit()
 
         sessions[mac]?.let {
-            onConnected()
+            val deferred = disReadyMap[mac]
+            if (deferred == null || deferred.isCompleted) {
+                onConnected()
+            } else {
+                scope.launch {
+                    deferred.await()
+                    onConnected()
+                }
+            }
             return
         }
 
@@ -236,7 +261,7 @@ object Facade {
         val deviceName = lastSeenName[mac]
         val deviceRssi = lastSeenRssi[mac]
 
-        if (!isDeviceAllowed(mac, deviceName, deviceRssi)) {
+        if (!skipNameFilter && !isDeviceAllowed(mac, deviceName, deviceRssi)) {
             onFailed(IllegalArgumentException("Device not allowed by filter: $deviceName"))
             return
         }
@@ -283,6 +308,7 @@ object Facade {
                 val deviceInfo = DeviceInfoManager(gatt)
                 val game = GameManager(gatt)
                 sessions[mac] = Session(gatt, led, deviceInfo, null, game)
+                disReadyMap[mac] = CompletableDeferred()
 
                 deviceStateManager.updateConnectionState(
                     mac,
@@ -306,6 +332,7 @@ object Facade {
                     Log.d("Facade", "DeviceInfo stored: $mac " +
                         "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
 
+                    disReadyMap[mac]?.complete(Unit)
                     onConnected()
                 }
             },
@@ -357,15 +384,17 @@ object Facade {
             val mac  = bluetoothDevice.address
             val name = runCatching { bluetoothDevice.name }.getOrNull()
 
-            if (!isDeviceAllowed(mac, name, null)) return@forEach
             if (sessions.containsKey(mac)) return@forEach
 
             if (name != null) lastSeenName[mac] = name
 
-            connect(
-                mac         = mac,
-                onConnected = {},
-                onFailed    = { e -> Log.w("Facade", "Restore failed: $mac - ${e.message}") }
+            // 이름이 없어도 복원 시도: 재설치 후 BT 캐시에 이름이 없을 수 있음.
+            // DIS 읽기 후 modelName 기반으로 상태 필터가 적용됨.
+            connectInternal(
+                mac            = mac,
+                onConnected    = {},
+                onFailed       = { e -> Log.w("Facade", "Restore failed: $mac - ${e.message}") },
+                skipNameFilter = true
             )
         }
     }
@@ -414,10 +443,24 @@ object Facade {
         requireInit()
         return deviceStateManager.deviceStates.map { states ->
             states.filter { (mac, state) ->
-                val name = state.deviceInfo?.deviceName
+                val name = state.deviceInfo?.deviceName ?: state.deviceInfo?.modelName
                 val rssi = state.deviceInfo?.rssi
                 isDeviceAllowed(mac, name, rssi)
             }
+        }
+    }
+
+    /**
+     * Returns the current snapshot of filtered device states (no Flow, synchronous).
+     * Used as initialValue for stateIn to avoid the race where a new StateFlow starts
+     * with emptyMap() even though DIS data is already available.
+     */
+    fun getInternalDeviceStatesSnapshot(): Map<String, InternalDeviceState> {
+        requireInit()
+        return deviceStateManager.deviceStates.value.filter { (mac, state) ->
+            val name = state.deviceInfo?.deviceName ?: state.deviceInfo?.modelName
+            val rssi = state.deviceInfo?.rssi
+            isDeviceAllowed(mac, name, rssi)
         }
     }
 
@@ -429,10 +472,23 @@ object Facade {
         return deviceStateManager.connectionStates.map { states ->
             states.filter { (mac, _) ->
                 val deviceState = deviceStateManager.deviceStates.value[mac]
-                val name = deviceState?.deviceInfo?.deviceName
+                val name = deviceState?.deviceInfo?.deviceName ?: deviceState?.deviceInfo?.modelName
                 val rssi = deviceState?.deviceInfo?.rssi
                 isDeviceAllowed(mac, name, rssi)
             }
+        }
+    }
+
+    /**
+     * Returns the current snapshot of filtered connection states (no Flow, synchronous).
+     */
+    fun getInternalConnectionStatesSnapshot(): Map<String, InternalConnectionState> {
+        requireInit()
+        return deviceStateManager.connectionStates.value.filter { (mac, _) ->
+            val deviceState = deviceStateManager.deviceStates.value[mac]
+            val name = deviceState?.deviceInfo?.deviceName ?: deviceState?.deviceInfo?.modelName
+            val rssi = deviceState?.deviceInfo?.rssi
+            isDeviceAllowed(mac, name, rssi)
         }
     }
 
@@ -450,7 +506,7 @@ object Facade {
         requireInit()
 
         val deviceState = deviceStateManager.deviceStates.value[mac]
-        val name = deviceState?.deviceInfo?.deviceName
+        val name = deviceState?.deviceInfo?.deviceName ?: deviceState?.deviceInfo?.modelName
         val rssi = deviceState?.deviceInfo?.rssi
 
         if (!isDeviceAllowed(mac, name, rssi)) {
@@ -531,6 +587,11 @@ object Facade {
         if (!isConnected(mac)) return false
         scope.launch {
             val result = requireSession(mac).deviceInfo.readBatteryLevel()
+            result.getOrNull()?.let { newLevel ->
+                deviceStateManager.getDeviceInfo(mac)?.let { existing ->
+                    deviceStateManager.updateDeviceInfo(mac, existing.copy(batteryLevel = newLevel))
+                }
+            }
             onResult(result)
         }
         return true
