@@ -386,7 +386,13 @@ object Facade {
 
             if (sessions.containsKey(mac)) return@forEach
 
-            if (name != null) lastSeenName[mac] = name
+            if (name != null) {
+                lastSeenName[mac] = name
+                // deviceNamesMap도 동기화: 이후 rebuildAndEmitDeviceStates() 필터에서 사용됨.
+                // 이 시점에 deviceInfoMap이 비어있어 updateDeviceName 내부의 rebuild는 호출되지
+                // 않지만, 이후 updateConnectionState() 호출 시 올바른 이름으로 필터링된다.
+                deviceStateManager.updateDeviceName(mac, name)
+            }
 
             // 이름이 없어도 복원 시도: 재설치 후 BT 캐시에 이름이 없을 수 있음.
             // DIS 읽기 후 modelName 기반으로 상태 필터가 적용됨.
