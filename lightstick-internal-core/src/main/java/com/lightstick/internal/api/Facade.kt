@@ -216,6 +216,18 @@ object Facade {
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun connect(mac: String, onConnected: () -> Unit, onFailed: (Throwable) -> Unit) {
+        connectInternal(mac, onConnected, onFailed, skipNameFilter = false)
+    }
+
+    // skipNameFilter: restoreSystemConnectedDevices 복원 경로에서 사용.
+    // 이미 연결된 기기는 BT 캐시에 이름이 없을 수 있으므로 이름 사전 필터를 건너뛰고
+    // DIS 읽기 후 modelName 기반 필터에 위임한다.
+    private fun connectInternal(
+        mac: String,
+        onConnected: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+        skipNameFilter: Boolean
+    ) {
         requireInit()
 
         sessions[mac]?.let {
@@ -249,7 +261,7 @@ object Facade {
         val deviceName = lastSeenName[mac]
         val deviceRssi = lastSeenRssi[mac]
 
-        if (!isDeviceAllowed(mac, deviceName, deviceRssi)) {
+        if (!skipNameFilter && !isDeviceAllowed(mac, deviceName, deviceRssi)) {
             onFailed(IllegalArgumentException("Device not allowed by filter: $deviceName"))
             return
         }
@@ -372,15 +384,17 @@ object Facade {
             val mac  = bluetoothDevice.address
             val name = runCatching { bluetoothDevice.name }.getOrNull()
 
-            if (!isDeviceAllowed(mac, name, null)) return@forEach
             if (sessions.containsKey(mac)) return@forEach
 
             if (name != null) lastSeenName[mac] = name
 
-            connect(
-                mac         = mac,
-                onConnected = {},
-                onFailed    = { e -> Log.w("Facade", "Restore failed: $mac - ${e.message}") }
+            // 이름이 없어도 복원 시도: 재설치 후 BT 캐시에 이름이 없을 수 있음.
+            // DIS 읽기 후 modelName 기반으로 상태 필터가 적용됨.
+            connectInternal(
+                mac            = mac,
+                onConnected    = {},
+                onFailed       = { e -> Log.w("Facade", "Restore failed: $mac - ${e.message}") },
+                skipNameFilter = true
             )
         }
     }
