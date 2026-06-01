@@ -232,7 +232,9 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun startMonitor() {
         monitorJob?.cancel()
-        monitorJob = scope.launch {
+        // CmdQueueManager.enqueue는 main thread에서만 호출해야 하므로 Dispatchers.Main 사용
+        // delay()는 main thread에서도 non-blocking으로 동작함
+        monitorJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
                 delay(MONITOR_INTERVAL_MS)
                 dispatchFrames(interpolatedPositionMs())
