@@ -74,6 +74,23 @@ internal class LedControlManager(
         )
     }
 
+    // Timeline frames must NOT coalesce — each frame is a unique ordered event
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun sendTimelineFrame(
+        serviceUuid: java.util.UUID,
+        charUuid: java.util.UUID,
+        data: ByteArray
+    ): Boolean {
+        return gattClient.writeCharacteristic(
+            serviceUuid = serviceUuid,
+            charUuid = charUuid,
+            data = data,
+            writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
+            replaceIfSameKey = false,
+            coalesceKey = null
+        )
+    }
+
     // ============================================================================================
     // 기존 API (하위 호환성)
     // ============================================================================================
@@ -267,11 +284,10 @@ internal class LedControlManager(
             try {
                 val frameWithSync = insertSyncIndex(frame, currentSyncIndex)
 
-                val ok = sendNoResponseCoalesced(
+                val ok = sendTimelineFrame(
                     serviceUuid = UuidConstants.LCS_SERVICE,
                     charUuid = UuidConstants.LCS_PAYLOAD,
-                    data = frameWithSync,
-                    coalesceKey = "LCS:PAYLOAD"
+                    data = frameWithSync
                 )
 
                 if (ok) {
