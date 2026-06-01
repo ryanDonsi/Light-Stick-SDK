@@ -2,6 +2,7 @@ package com.lightstick.internal.ble
 
 import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
@@ -29,6 +30,7 @@ internal class LedControlManager(
         private const val TAG = "LedControlManager"
         private const val EFFECT_INDEX_BYTE_POSITION = 0  // LSEffectPayload의 effectIndex 위치 (0-1번 바이트, u16 Little Endian)
         private const val SYNC_INDEX_BYTE_POSITION = 19  // LSEffectPayload의 syncIndex 위치
+        private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -36,9 +38,12 @@ internal class LedControlManager(
 
     // =========== Timeline 재생 상태 ===========
     @Volatile private var timeline: List<Pair<Long, ByteArray>> = emptyList()
-    @Volatile private var currentPlaybackPositionMs: Long = 0
     @Volatile private var lastProcessedPositionMs: Long = -1
     @Volatile private var lastSentIndex: Int = -1
+
+    // =========== 보간을 위한 기준점 ===========
+    @Volatile private var anchorPositionMs: Long = 0     // 마지막으로 보고된 음악 위치
+    @Volatile private var anchorSystemMs: Long = 0       // 보고 당시 시스템 시각
 
     // =========== Effect 전송 제어 ===========
     @Volatile private var isEffectTransmissionEnabled: Boolean = true
@@ -168,7 +173,8 @@ internal class LedControlManager(
         }
 
         lastSentIndex = -1
-        currentPlaybackPositionMs = 0
+        anchorPositionMs = 0
+        anchorSystemMs = SystemClock.elapsedRealtime()
         lastProcessedPositionMs = -1
         isEffectTransmissionEnabled = true
 
@@ -176,22 +182,23 @@ internal class LedControlManager(
         currentSyncIndex = (currentSyncIndex % 255) + 1
 
         Log.d(TAG, "Timeline loaded: ${timeline.size} frames, effectIndex: 1~${timeline.size}, syncIndex=$currentSyncIndex")
+
+        startMonitor()
     }
 
     /**
      * 현재 음악 재생 위치를 업데이트합니다.
      *
-     * 이 메서드는 주기적으로 호출되어야 하며 (권장: 100ms),
-     * SDK는 내부적으로 각 이펙트를 정확한 타이밍에 전송합니다.
+     * 내부 보간 루프가 10ms 간격으로 실제 프레임 dispatch를 처리하므로,
+     * 이 메서드는 호출 간격(50~200ms)에 관계없이 정밀한 타이밍을 보장합니다.
      *
      * @param currentPositionMs 현재 음악 재생 위치 (밀리초)
      */
     @MainThread
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun updatePlaybackPosition(currentPositionMs: Long) {
         if (timeline.isEmpty()) return
 
-        currentPlaybackPositionMs = currentPositionMs
+        val now = SystemClock.elapsedRealtime()
 
         // ✅ Seek 감지 (뒤로 1초 이상)
         if (currentPositionMs < lastProcessedPositionMs - 1000) {
@@ -205,9 +212,40 @@ internal class LedControlManager(
 
         lastProcessedPositionMs = currentPositionMs
 
+        // 보간 기준점 갱신
+        anchorPositionMs = currentPositionMs
+        anchorSystemMs = now
+    }
+
+    /**
+     * 보간된 현재 재생 위치를 계산합니다.
+     * 마지막 보고 이후 경과한 시스템 시간을 더해 연속적인 위치를 추정합니다.
+     */
+    private fun interpolatedPositionMs(): Long {
+        val elapsed = SystemClock.elapsedRealtime() - anchorSystemMs
+        return anchorPositionMs + elapsed
+    }
+
+    /**
+     * 내부 10ms 루프: 보간된 위치 기준으로 프레임 dispatch
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun startMonitor() {
+        monitorJob?.cancel()
+        monitorJob = scope.launch {
+            while (isActive) {
+                delay(MONITOR_INTERVAL_MS)
+                dispatchFrames(interpolatedPositionMs())
+            }
+        }
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun dispatchFrames(currentPositionMs: Long) {
+        if (timeline.isEmpty()) return
+
         // ✅ OFF 상태면 인덱스만 업데이트, 전송 스킵
         if (!isEffectTransmissionEnabled) {
-            // 타임라인 추적 유지
             while (lastSentIndex + 1 < timeline.size) {
                 val (timestamp, _) = timeline[lastSentIndex + 1]
                 if (timestamp > currentPositionMs) break
@@ -225,7 +263,6 @@ internal class LedControlManager(
             lastSentIndex++
 
             try {
-                // ✅ syncIndex 삽입 (effectIndex는 loadTimeline에서 이미 순차적으로 설정됨)
                 val frameWithSync = insertSyncIndex(frame, currentSyncIndex)
 
                 val ok = sendNoResponseCoalesced(
@@ -290,7 +327,8 @@ internal class LedControlManager(
 
         timeline = emptyList()
         lastSentIndex = -1
-        currentPlaybackPositionMs = 0
+        anchorPositionMs = 0
+        anchorSystemMs = SystemClock.elapsedRealtime()
         lastProcessedPositionMs = -1
     }
 
