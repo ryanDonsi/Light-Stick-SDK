@@ -9,8 +9,6 @@ import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /**
  * LED 제어 및 타임라인 재생을 위한 매니저
@@ -28,7 +26,12 @@ internal class LedControlManager(
 
     companion object {
         private const val TAG = "LedControlManager"
-        private const val EFFECT_INDEX_BYTE_POSITION = 0  // LSEffectPayload의 effectIndex 위치 (0-1번 바이트, u16 Little Endian)
+
+        // LSEffectPayload bytes[0-1] (u16 Little Endian): 동작 모드
+        private const val MODE_BYTE_POSITION = 0
+        const val MODE_EFFECT_PAYLOAD = 1  // 일반 이펙트 페이로드
+        const val MODE_GAME = 5            // 게임 모드
+
         private const val SYNC_INDEX_BYTE_POSITION = 19  // LSEffectPayload의 syncIndex 위치
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
     }
@@ -115,7 +118,7 @@ internal class LedControlManager(
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = updateEffectIndex(bytes20, 1),  // 게임모드 충돌 방지: effectIndex 고정
+            data = setMode(bytes20, MODE_EFFECT_PAYLOAD),
             coalesceKey = "LCS:PAYLOAD"
         )
     }
@@ -142,7 +145,7 @@ internal class LedControlManager(
                     val ok = sendNoResponseCoalesced(
                         serviceUuid = UuidConstants.LCS_SERVICE,
                         charUuid = UuidConstants.LCS_PAYLOAD,
-                        data = frame,
+                        data = setMode(frame, MODE_EFFECT_PAYLOAD),
                         coalesceKey = "LCS:PAYLOAD"
                     )
                     if (!ok) {
@@ -168,7 +171,7 @@ internal class LedControlManager(
      * EFX 타임라인을 로드합니다.
      *
      * 로드와 동시에:
-     * 1. effectIndex를 1부터 순차적으로 재계산 (펌웨어 순차성 보장)
+     * 1. 모든 프레임의 mode를 MODE_EFFECT_PAYLOAD(1)로 설정 (게임모드 충돌 방지)
      * 2. syncIndex가 자동으로 증가 (새로운 재생 세션 시작)
      *
      * @param frames 타임라인 엔트리 리스트 (timestampMs, 20B payload)
@@ -182,11 +185,9 @@ internal class LedControlManager(
 
         val sortedFrames = frames.sortedBy { it.first }
 
-        // ✅ effectIndex를 1부터 순차적으로 재계산 (펌웨어 순차성 보장)
-        timeline = sortedFrames.mapIndexed { index, (timestamp, frame) ->
-            val newEffectIndex = index + 1
-            val updatedFrame = updateEffectIndex(frame, newEffectIndex)
-            timestamp to updatedFrame
+        // 모든 프레임을 MODE_EFFECT_PAYLOAD(1)로 고정 (게임모드=5 충돌 방지)
+        timeline = sortedFrames.map { (timestamp, frame) ->
+            timestamp to setMode(frame, MODE_EFFECT_PAYLOAD)
         }
 
         lastSentIndex = -1
@@ -198,7 +199,7 @@ internal class LedControlManager(
         // ✅ 새 타임라인 로드 시 syncIndex 자동 증가
         currentSyncIndex = (currentSyncIndex % 255) + 1
 
-        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, effectIndex: 1~${timeline.size}, syncIndex=$currentSyncIndex")
+        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, mode=MODE_EFFECT_PAYLOAD, syncIndex=$currentSyncIndex")
 
         startMonitor()
     }
@@ -303,9 +304,9 @@ internal class LedControlManager(
         }
 
         if (transmittedCount > 0) {
-            val effectIndexStart = lastSentIndex - transmittedCount + 1
-            val effectIndexEnd = lastSentIndex
-            Log.d(TAG, "Transmitted $transmittedCount effects at ${currentPositionMs}ms (effectIndex: ${effectIndexStart + 1}~${effectIndexEnd + 1}, syncIndex=$currentSyncIndex)")
+            val rangeStart = lastSentIndex - transmittedCount + 1
+            val rangeEnd = lastSentIndex
+            Log.d(TAG, "Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, syncIndex=$currentSyncIndex)")
         }
     }
 
@@ -363,18 +364,18 @@ internal class LedControlManager(
     // ============================================================================================
 
     /**
-     * LSEffectPayload의 0-1번째 바이트(effectIndex)를 업데이트
+     * LSEffectPayload의 bytes[0-1](mode)를 설정합니다.
+     * MODE_EFFECT_PAYLOAD(1) 또는 MODE_GAME(5)
      *
-     * effectIndex는 Little Endian으로 저장됨 (u16)
+     * mode는 Little Endian u16으로 저장됩니다.
      */
-    private fun updateEffectIndex(frame: ByteArray, effectIndex: Int): ByteArray {
+    private fun setMode(frame: ByteArray, mode: Int): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }
-        require(effectIndex in 0..0xFFFF) { "effectIndex must be 0-65535" }
+        require(mode in 0..0xFFFF) { "mode must be 0-65535" }
 
         return frame.copyOf().apply {
-            // Little Endian: low byte first, high byte second
-            this[0] = (effectIndex and 0xFF).toByte()
-            this[1] = ((effectIndex shr 8) and 0xFF).toByte()
+            this[MODE_BYTE_POSITION] = (mode and 0xFF).toByte()
+            this[MODE_BYTE_POSITION + 1] = ((mode shr 8) and 0xFF).toByte()
         }
     }
 
