@@ -7,7 +7,7 @@ import java.nio.ByteOrder
  * Structured LightStick Effect payload (EFX spec v1.4) that encodes to an exact **20-byte** frame.
  *
  * Byte layout (indices in brackets, little-endian for u16):
- *  [0..1]   effectIndex    (u16)  – Effect identifier or sequencing index
+ *  [0..1]   mode           (u16)  – Operation mode: see [MODE_EFFECT_PAYLOAD], [MODE_GAME]
  *  [2..3]   ledMask        (u16)  – LED bitmask (0x0000 commonly means "all" in firmware)
  *  [4..6]   fgColor RGB    (3xu8) – Foreground color
  *  [7..9]   bgColor RGB    (3xu8) – Background color
@@ -24,7 +24,7 @@ import java.nio.ByteOrder
  * Validation:
  * - Throws [IllegalArgumentException] if any field is outside its valid range.
  *
- * @param effectIndex Unsigned 16-bit index (0–65535), default: 0.
+ * @param mode Operation mode (u16). Use [MODE_EFFECT_PAYLOAD] or [MODE_GAME]. Default: [MODE_EFFECT_PAYLOAD].
  * @param ledMask Unsigned 16-bit LED bitmask, default: 0x0000 (all LEDs).
  * @param color RGB foreground color for this effect, default: WHITE.
  * @param backgroundColor RGB background color for this effect, default: BLACK.
@@ -44,7 +44,7 @@ import java.nio.ByteOrder
  * @sample com.lightstick.samples.EfxSamples.sampleBuildPayload
  */
 data class LSEffectPayload(
-    val effectIndex: Int = 0,
+    val mode: Int = MODE_EFFECT_PAYLOAD,
     val ledMask: Int = 0x0000,
     val color: Color = Colors.WHITE,
     val backgroundColor: Color = Colors.BLACK,
@@ -60,7 +60,7 @@ data class LSEffectPayload(
 ) {
 
     init {
-        require(effectIndex in 0..0xFFFF) { "effectIndex must be within 0..65535" }
+        require(mode in 0..0xFFFF)        { "mode must be within 0..65535" }
         require(ledMask in 0..0xFFFF)     { "ledMask must be within 0..0xFFFF" }
         require(durationMs in 0..0xFFFF)  { "durationMs must be within 0..65535" }
 
@@ -97,8 +97,8 @@ data class LSEffectPayload(
         fun u16le(v: Int) = byteArrayOf(u8(v), u8(v ushr 8))
 
         val out = ByteArray(20)
-        // [0..1] effectIndex
-        u16le(effectIndex).copyInto(out, 0)
+        // [0..1] mode
+        u16le(mode).copyInto(out, 0)
         // [2..3] ledMask
         u16le(ledMask).copyInto(out, 2)
         // [4..6] fgColor RGB
@@ -125,7 +125,7 @@ data class LSEffectPayload(
      * All fields can be customized; those not provided use sensible defaults.
      *
      * Note: Primary parameters (color, period, etc.) are listed first for ease of use,
-     * while optional parameters (effectIndex, ledMask, spf, fade, etc.) follow with defaults.
+     * while optional parameters (mode, ledMask, spf, fade, etc.) follow with defaults.
      */
     object Effects {
 
@@ -139,7 +139,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param effectIndex Effect identifier (default: 0).
+         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
          * @param ledMask LED bitmask (default: 0x0000 = all LEDs).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -155,14 +155,14 @@ data class LSEffectPayload(
             transit: Int = 0,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            effectIndex: Int = 0,
+            mode: Int = MODE_EFFECT_PAYLOAD,
             ledMask: Int = 0x0000,
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
             syncIndex: Int = 0
         ) = LSEffectPayload(
-            effectIndex = effectIndex,
+            mode = mode,
             ledMask = ledMask,
             color = color,
             effectType = EffectType.ON,
@@ -183,7 +183,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param effectIndex Effect identifier (default: 0).
+         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
@@ -196,13 +196,13 @@ data class LSEffectPayload(
         fun off(
             transit: Int = 0,
             randomDelay: Int = 0,
-            effectIndex: Int = 0,
+            mode: Int = MODE_EFFECT_PAYLOAD,
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
             syncIndex: Int = 0,
         ) = LSEffectPayload(
-            effectIndex = effectIndex,
+            mode = mode,
             color = Colors.BLACK,
             effectType = EffectType.OFF,
             period = transit,
@@ -224,7 +224,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param effectIndex Effect identifier (default: 0).
+         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -241,14 +241,14 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            effectIndex: Int = 0,
+            mode: Int = MODE_EFFECT_PAYLOAD,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             syncIndex: Int = 0,
             ledMask: Int = 0x0000
         ) = LSEffectPayload(
-            effectIndex = effectIndex,
+            mode = mode,
             ledMask = ledMask,
             color = color,
             backgroundColor = backgroundColor,
@@ -273,7 +273,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param effectIndex Effect identifier (default: 0).
+         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -290,14 +290,14 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            effectIndex: Int = 0,
+            mode: Int = MODE_EFFECT_PAYLOAD,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             syncIndex: Int = 0,
             ledMask: Int = 0x0000
         ) = LSEffectPayload(
-            effectIndex = effectIndex,
+            mode = mode,
             ledMask = ledMask,
             color = color,
             backgroundColor = backgroundColor,
@@ -322,7 +322,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param effectIndex Effect identifier (default: 0).
+         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -339,14 +339,14 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            effectIndex: Int = 0,
+            mode: Int = MODE_EFFECT_PAYLOAD,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             syncIndex: Int = 0,
             ledMask: Int = 0x0000
         ) = LSEffectPayload(
-            effectIndex = effectIndex,
+            mode = mode,
             ledMask = ledMask,
             color = color,
             backgroundColor = backgroundColor,
@@ -362,6 +362,11 @@ data class LSEffectPayload(
     }
 
     companion object {
+        /** 일반 이펙트 페이로드 모드 */
+        const val MODE_EFFECT_PAYLOAD = 1
+
+        /** 게임 모드 */
+        const val MODE_GAME = 5
 
         /**
          * Reconstructs a payload from a **20-byte** serialized frame.
@@ -381,7 +386,7 @@ data class LSEffectPayload(
             fun u16(): Int = bb.short.toInt() and 0xFFFF
             fun u8(): Int = bb.get().toInt() and 0xFF
 
-            val effectIndex = u16()
+            val mode = u16()
             val ledMask = u16()
             val fgR = u8(); val fgG = u8(); val fgB = u8()
             val bgR = u8(); val bgG = u8(); val bgB = u8()
@@ -396,7 +401,7 @@ data class LSEffectPayload(
             val syncIndex = u8()
 
             return LSEffectPayload(
-                effectIndex = effectIndex,
+                mode = mode,
                 ledMask = ledMask,
                 color = Color(fgR, fgG, fgB),
                 backgroundColor = Color(bgR, bgG, bgB),

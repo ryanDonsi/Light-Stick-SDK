@@ -280,7 +280,7 @@ data class Device(
      * Loads an EFX timeline for music-synchronized playback.
      *
      * The SDK automatically:
-     * - Recalculates effectIndex to be sequential (1, 2, 3, ...)
+     * - Sets mode to MODE_EFFECT_PAYLOAD(1) for all frames
      * - Increments syncIndex for new playback session
      * - Manages timeline state internally
      *
