@@ -552,11 +552,10 @@ internal class GattClient(private val context: Context) : AutoCloseable {
         ) {
             val address = gatt.device.address
             val charShort = characteristic.uuid.toString().takeLast(8)
-            val hexBytes = characteristic.value?.joinToString(",") { "%02X".format(it) } ?: "null"
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d("[GattClient] onCharacteristicWrite OK: $address char=$charShort bytes=$hexBytes")
+                Log.d("[GattClient] onCharacteristicWrite OK: $address char=$charShort")
             } else {
-                Log.w("[GattClient] onCharacteristicWrite FAIL: $address char=$charShort status=$status(0x${status.toString(16)}) bytes=$hexBytes")
+                Log.w("[GattClient] onCharacteristicWrite FAIL: $address char=$charShort status=$status(0x${status.toString(16)})")
             }
             // OTA 전용 ack 콜백 (writeCharacteristicAndWait 사용 시)
             pendingWriteAck.remove(address)?.invoke(
