@@ -115,7 +115,7 @@ internal class LedControlManager(
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = bytes20,
+            data = updateEffectIndex(bytes20, 1),  // 게임모드 충돌 방지: effectIndex 고정
             coalesceKey = "LCS:PAYLOAD"
         )
     }
