@@ -29,6 +29,11 @@ object MusicId {
      * The file’s binary contents are read and hashed; the first 4 bytes
      * of the resulting SHA-256 digest are used to produce a 32-bit ID.
      *
+     * For files up to 20 MB the entire content is hashed, so IDs of
+     * existing `.efx` files are unchanged. For files larger than 20 MB
+     * only the first 4 MB are read and hashed, which keeps memory usage
+     * bounded and avoids [OutOfMemoryError] on large tracks.
+     *
      * @param file The source [File] containing the music data.
      * @return A stable 32-bit Music ID represented as an [Int].
      * @throws java.io.IOException If the file cannot be read.
