@@ -293,6 +293,9 @@ internal class GattClient(private val context: Context) : AutoCloseable {
         chr.writeType = writeType
 
         val key = coalesceKey ?: "$serviceUuid/$charUuid"
+        val charShort = charUuid.toString().takeLast(8)
+        Log.d("[GattClient] writeCharacteristic enqueue: $address char=$charShort key=$key bytes=${data.joinToString(",") { "%02X".format(it) }}")
+
         queueManager.enqueue(
             address = address,
             operation = "write",
@@ -300,12 +303,16 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             coalesceKey = key
         ) {
             chr.value = data
+            val hexBytes = data.joinToString(",") { "%02X".format(it) }
+            Log.d("[GattClient] writeCharacteristic START: $address char=$charShort bytes=$hexBytes")
             try {
                 val success = g.writeCharacteristic(chr)
                 if (!success) {
+                    Log.w("[GattClient] writeCharacteristic FAILED (returned false): $address char=$charShort bytes=$hexBytes")
                     queueManager.signalComplete(address)
                 }
             } catch (e: Throwable) {
+                Log.w("[GattClient] writeCharacteristic EXCEPTION: $address char=$charShort ${e.message}")
                 queueManager.signalComplete(address)
             }
         }
@@ -544,9 +551,11 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             status: Int
         ) {
             val address = gatt.device.address
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.w("[GattClient] onCharacteristicWrite 실패: $address " +
-                    "char=${characteristic.uuid.toString().takeLast(8)} status=$status(0x${status.toString(16)})")
+            val charShort = characteristic.uuid.toString().takeLast(8)
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d("[GattClient] onCharacteristicWrite OK: $address char=$charShort")
+            } else {
+                Log.w("[GattClient] onCharacteristicWrite FAIL: $address char=$charShort status=$status(0x${status.toString(16)})")
             }
             // OTA 전용 ack 콜백 (writeCharacteristicAndWait 사용 시)
             pendingWriteAck.remove(address)?.invoke(

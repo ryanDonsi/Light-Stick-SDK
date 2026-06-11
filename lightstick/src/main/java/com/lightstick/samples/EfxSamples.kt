@@ -377,7 +377,7 @@ object EfxSamples {
     @JvmStatic
     fun sampleBuildPayload(): LSEffectPayload {
         val payload = LSEffectPayload(
-            effectIndex = 0,
+            mode = LSEffectPayload.MODE_EFFECT_PAYLOAD,
             ledMask = 0x00FF,           // First 8 LEDs
             color = Colors.RED,
             backgroundColor = Colors.BLUE,
@@ -458,7 +458,7 @@ object EfxSamples {
             transit = 30,
             randomColor = 0,
             randomDelay = 0,
-            effectIndex = 1,
+            mode = LSEffectPayload.MODE_EFFECT_PAYLOAD,
             ledMask = 0x00FF,      // First 8 LEDs only
             spf = 100,
             fade = 80,
