@@ -91,6 +91,43 @@ class LightStickSDKTest {
     // ===========================================================================================
 
     @Test
+    fun testToByteArrayAlwaysWritesEffectIndexZero() {
+        // effectIndex는 항상 0x0000 고정 — FF03 게임모드 페이로드(0x0005)와 구분되는 discriminator.
+        val payload = LSEffectPayload.Effects.on(Colors.RED)
+        val bytes = payload.toByteArray()
+        assertEquals(0, bytes[0].toInt())
+        assertEquals(0, bytes[1].toInt())
+    }
+
+    @Test
+    fun testFromByteArrayRejectsGameModeEffectIndex() {
+        // effectIndex=0x0005는 게임모드(FF03) 페이로드 — LSEffectPayload로 디코딩하면 안 됨.
+        val bytes = ByteArray(20)
+        bytes[0] = 0x05
+        bytes[1] = 0x00
+        assertThrows(IllegalArgumentException::class.java) {
+            LSEffectPayload.fromByteArray(bytes)
+        }
+    }
+
+    @Test
+    fun testFromByteArrayRejectsUnknownEffectIndex() {
+        val bytes = ByteArray(20)
+        bytes[0] = 0x01
+        bytes[1] = 0x00
+        assertThrows(IllegalArgumentException::class.java) {
+            LSEffectPayload.fromByteArray(bytes)
+        }
+    }
+
+    @Test
+    fun testRoundTripPreservesEffectIndexZero() {
+        val original = LSEffectPayload.Effects.blink(period = 5, color = Colors.BLUE)
+        val decoded = LSEffectPayload.fromByteArray(original.toByteArray())
+        assertEquals(original, decoded)
+    }
+
+    @Test
     fun testBlinkEffect() {
         // Blink 이펙트 생성 및 검증
         val blinkPayload = LSEffectPayload.Effects.blink(

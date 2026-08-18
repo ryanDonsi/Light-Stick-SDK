@@ -282,7 +282,8 @@ data class Device(
      * Loads an EFX timeline for music-synchronized playback.
      *
      * The SDK automatically:
-     * - Recalculates effectIndex to be sequential (1, 2, 3, ...)
+     * - Pins every frame's msgType to MUSIC, so a frame accidentally built as Game/Group
+     *   never collides with those message types during playback
      * - Increments syncIndex for new playback session
      * - Manages timeline state internally
      *

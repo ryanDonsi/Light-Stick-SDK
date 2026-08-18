@@ -5,10 +5,11 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Structured LightStick Effect payload (protocol v2.2) that encodes to an exact **20-byte** frame.
+ * Structured LightStick Effect payload (protocol v2.2, `LE_BLE_PATLOAD_T`) that encodes to an
+ * exact **20-byte** frame written to FF02.
  *
  * Byte layout (indices in brackets, little-endian for u16):
- *  [0..1]   effectIndex    (u16)  – Reserved, always 0 unless a future protocol revision defines it.
+ *  [0..1]   effectIndex    (u16)  – Fixed `0x0000`. See "Payload discrimination" below.
  *  [2]      msgType        (u8)   – See [MsgType]. Default [MsgType.MUSIC].
  *  [3]      groupId        (u8)   – 0 = unassigned/all, 1..20 = group (see [com.lightstick.group.GroupPalette]).
  *  [4..6]   fgColor RGB    (3xu8) – Foreground color
@@ -27,10 +28,24 @@ import java.nio.ByteOrder
  * `mode`(u16)/`ledMask`(u16) fields — firmware no longer reads `ledMask`; per-LED targeting
  * is not part of the current protocol. Offsets 4-19 are unchanged from v1.4.
  *
+ * ### Payload discrimination (shared with the Game Mode protocol)
+ *
+ * The relay/lightstick firmware share one physical 20-byte buffer between two unrelated
+ * features and reinterpret it in two steps, `effectIndex` first:
+ * - `effectIndex == 0x0005` → a Game Mode 1-4 command (`LE_GAME_PATLOAD_T`, offsets 2-19 mean
+ *   something completely different — subIndex/cmdIndex/level/option/etc.). Sent to **FF03**;
+ *   see `GameManager.EFFECT_INDEX_GAME`. Never construct this via [LSEffectPayload].
+ * - `effectIndex == 0x0000` → this class (`LE_BLE_PATLOAD_T`), sent to **FF02**, further split
+ *   by [msgType] into Music/Game/GroupSetup/GroupControl.
+ *
+ * Because of this, `effectIndex` is **not** a caller-configurable field: [toByteArray] always
+ * writes `0x0000`, and [fromByteArray] throws if the source bytes carry `0x0005` — those bytes
+ * are a Game Mode command, not a valid [LSEffectPayload] frame, and decoding them here would
+ * silently misread every other field.
+ *
  * Validation:
  * - Throws [IllegalArgumentException] if any field is outside its valid range.
  *
- * @param effectIndex Reserved u16 field, default: 0.
  * @param msgType Message type (u8); see [MsgType]. Default: [MsgType.MUSIC].
  * @param groupId Target group: 0 = unassigned/all, 1..20 = a single group. Default: 0.
  * @param color RGB foreground color for this effect, default: WHITE.
@@ -51,7 +66,6 @@ import java.nio.ByteOrder
  * @sample com.lightstick.samples.EfxSamples.sampleBuildPayload
  */
 data class LSEffectPayload(
-    val effectIndex: Int = 0,
     val msgType: MsgType = MsgType.MUSIC,
     val groupId: Int = 0,
     val color: Color = Colors.WHITE,
@@ -68,7 +82,6 @@ data class LSEffectPayload(
 ) {
 
     init {
-        require(effectIndex in 0..0xFFFF) { "effectIndex must be within 0..65535" }
         require(groupId in 0..20)         { "groupId must be within 0..20" }
         require(durationMs in 0..0xFFFF)  { "durationMs must be within 0..65535" }
 
@@ -105,8 +118,8 @@ data class LSEffectPayload(
         fun u16le(v: Int) = byteArrayOf(u8(v), u8(v ushr 8))
 
         val out = ByteArray(20)
-        // [0..1] effectIndex
-        u16le(effectIndex).copyInto(out, 0)
+        // [0..1] effectIndex — fixed 0x0000 (0x0005 marks a Game Mode FF03 payload instead)
+        u16le(EFFECT_INDEX_LED_GROUP).copyInto(out, 0)
         // [2] msgType
         out[2] = u8(msgType.code)
         // [3] groupId
@@ -484,13 +497,22 @@ data class LSEffectPayload(
 
     companion object {
 
+        /** Fixed `effectIndex` value marking this 20-byte frame as `LE_BLE_PATLOAD_T` (FF02). */
+        private const val EFFECT_INDEX_LED_GROUP = 0x0000
+
+        /** `effectIndex` value that instead marks a Game Mode 1-4 command (`LE_GAME_PATLOAD_T`, FF03). */
+        private const val EFFECT_INDEX_GAME = 0x0005
+
         /**
          * Reconstructs a payload from a **20-byte** serialized frame.
          * Mirrors [toByteArray] layout exactly.
          *
          * @param bytes A 20-byte array containing the serialized payload.
          * @return A deserialized [LSEffectPayload] instance.
-         * @throws IllegalArgumentException If [bytes] length is not exactly 20.
+         * @throws IllegalArgumentException If [bytes] length is not exactly 20, or if byte[0-1]
+         *         (effectIndex) isn't `0x0000` — `0x0005` means [bytes] is a Game Mode FF03
+         *         command (`LE_GAME_PATLOAD_T`), not a valid [LSEffectPayload] frame; decoding
+         *         it here would silently misread every other field.
          *
          * @sample com.lightstick.samples.EfxSamples.sampleDecodePayload
          */
@@ -503,6 +525,13 @@ data class LSEffectPayload(
             fun u8(): Int = bb.get().toInt() and 0xFF
 
             val effectIndex = u16()
+            require(effectIndex == EFFECT_INDEX_LED_GROUP) {
+                if (effectIndex == EFFECT_INDEX_GAME) {
+                    "bytes is a Game Mode FF03 command (effectIndex=0x0005), not an LSEffectPayload frame"
+                } else {
+                    "effectIndex must be 0x0000 for LSEffectPayload (got 0x%04X)".format(effectIndex)
+                }
+            }
             val msgType = MsgType.fromCode(u8())
             val groupId = u8()
             val fgR = u8(); val fgG = u8(); val fgB = u8()
@@ -518,7 +547,6 @@ data class LSEffectPayload(
             val syncIndex = u8()
 
             return LSEffectPayload(
-                effectIndex = effectIndex,
                 msgType = msgType,
                 groupId = groupId,
                 color = Color(fgR, fgG, fgB),
