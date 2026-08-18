@@ -117,6 +117,35 @@ data class DeviceFilter internal constructor(
             )
         }
 
+        /**
+         * Matches Glowsync relay ("RL") advertising names: `GlowSyncXXXX RL`, where `XXXX`
+         * is a 4-digit hex suffix. This is the device type the SDK connects to and writes
+         * the 20-byte LED/group payload to.
+         *
+         * Equivalent to `byName("^GlowSync[0-9A-Fa-f]{4} RL$", MatchMode.REGEX)`.
+         *
+         * @see byName
+         */
+        @JvmStatic
+        fun glowSyncRelay(): DeviceFilter =
+            byName("^GlowSync[0-9A-Fa-f]{4} RL$", MatchMode.REGEX)
+
+        /**
+         * Matches both Glowsync relay ("RL") and master-lightstick ("GL") advertising names:
+         * `GlowSyncXXXX RL` or `GlowSyncXXXX GL`.
+         *
+         * Direct app-to-master-lightstick pairing (GL) is currently out of scope for this
+         * SDK's connection flow — use [glowSyncRelay] unless you have your own handling for
+         * GL devices.
+         *
+         * Equivalent to `byName("^GlowSync[0-9A-Fa-f]{4} (RL|GL)$", MatchMode.REGEX)`.
+         *
+         * @see byName
+         */
+        @JvmStatic
+        fun glowSyncDevice(): DeviceFilter =
+            byName("^GlowSync[0-9A-Fa-f]{4} (RL|GL)$", MatchMode.REGEX)
+
         // ============================================================================================
         // MAC Address-based Filters
         // ============================================================================================

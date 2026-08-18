@@ -1,0 +1,222 @@
+package com.lightstick.test
+
+import com.lightstick.group.GroupMsgType
+import com.lightstick.group.GroupPalette
+import com.lightstick.group.GroupPayload
+import com.lightstick.types.Color
+import com.lightstick.types.Colors
+import com.lightstick.types.EffectType
+import org.junit.Assert.*
+import org.junit.Test
+
+/**
+ * Group protocol (Glowsync group mapping spec v2.2) unit tests — no BLE connection needed.
+ */
+class GroupProtocolTest {
+
+    // ===========================================================================================
+    // GroupPalette
+    // ===========================================================================================
+
+    @Test
+    fun testPaletteSize() {
+        assertEquals(20, GroupPalette.PALETTE.size)
+    }
+
+    @Test
+    fun testPaletteKnownValues() {
+        // Spot-check against the corrected v2.2 table (spec §4).
+        assertEquals(Color(255, 0, 0), GroupPalette.colorFor(1))
+        assertEquals(Color(0, 255, 74), GroupPalette.colorFor(2))
+        assertEquals(Color(149, 0, 255), GroupPalette.colorFor(3))
+        assertEquals(Color(255, 223, 0), GroupPalette.colorFor(4))
+        assertEquals(Color(116, 255, 0), GroupPalette.colorFor(20))
+    }
+
+    @Test
+    fun testPaletteOutOfRangeThrows() {
+        assertThrows(IllegalArgumentException::class.java) { GroupPalette.colorFor(0) }
+        assertThrows(IllegalArgumentException::class.java) { GroupPalette.colorFor(21) }
+    }
+
+    @Test
+    fun testPaletteHasNoDuplicateColors() {
+        // Golden-angle spacing should keep all 20 groups visually distinct.
+        assertEquals(GroupPalette.PALETTE.size, GroupPalette.PALETTE.toSet().size)
+    }
+
+    // ===========================================================================================
+    // GroupMsgType
+    // ===========================================================================================
+
+    @Test
+    fun testGroupMsgTypeCodes() {
+        assertEquals(0, GroupMsgType.MUSIC.code)
+        assertEquals(1, GroupMsgType.GAME.code)
+        assertEquals(2, GroupMsgType.GROUP_SETUP.code)
+        assertEquals(3, GroupMsgType.GROUP_CONTROL.code)
+    }
+
+    @Test
+    fun testGroupMsgTypeFromCode() {
+        assertEquals(GroupMsgType.GROUP_SETUP, GroupMsgType.fromCode(2))
+        assertEquals(GroupMsgType.GROUP_CONTROL, GroupMsgType.fromCode(3))
+        assertEquals(GroupMsgType.MUSIC, GroupMsgType.fromCode(99)) // unknown -> MUSIC
+    }
+
+    // ===========================================================================================
+    // GroupPayload.setup
+    // ===========================================================================================
+
+    @Test
+    fun testSetupPayloadFields() {
+        val payload = GroupPayload.setup(groupId = 3)
+
+        assertEquals(GroupMsgType.GROUP_SETUP, payload.msgType)
+        assertEquals(3, payload.groupId)
+        assertEquals(GroupPalette.colorFor(3), payload.fgColor)
+        assertEquals(Colors.BLACK, payload.bgColor)
+        assertEquals(EffectType.BLINK, payload.effectType)
+        assertEquals(6, payload.period)
+        assertEquals(100, payload.spf)
+    }
+
+    @Test
+    fun testSetupPayloadBytes() {
+        val bytes = GroupPayload.setup(groupId = 5).toByteArray()
+
+        assertEquals(20, bytes.size)
+        assertEquals(0, bytes[0].toInt()); assertEquals(0, bytes[1].toInt()) // effectIndex = 0
+        assertEquals(2, bytes[2].toInt())   // msgType = GroupSetup
+        assertEquals(5, bytes[3].toInt())   // groupId
+        val fg = GroupPalette.colorFor(5)
+        assertEquals(fg.r, bytes[4].toInt() and 0xFF)
+        assertEquals(fg.g, bytes[5].toInt() and 0xFF)
+        assertEquals(fg.b, bytes[6].toInt() and 0xFF)
+        assertEquals(3, bytes[10].toInt())  // effectType = BLINK
+        assertEquals(6, bytes[13].toInt())  // period
+        assertEquals(100, bytes[14].toInt() and 0xFF) // spf
+        assertEquals(0, bytes[15].toInt())  // randomColor fixed 0
+        assertEquals(1, bytes[16].toInt())  // randomDelay fixed 1
+        assertEquals(0, bytes[17].toInt())  // fadeValue fixed 0
+        assertEquals(0, bytes[18].toInt())  // broadcasting fixed 0
+    }
+
+    @Test
+    fun testSetupRejectsGroupZeroAndOutOfRange() {
+        assertThrows(IllegalArgumentException::class.java) { GroupPayload.setup(0) }
+        assertThrows(IllegalArgumentException::class.java) { GroupPayload.setup(21) }
+    }
+
+    // ===========================================================================================
+    // GroupPayload.control
+    // ===========================================================================================
+
+    @Test
+    fun testControlDefaultsToGroupPaletteColor() {
+        val payload = GroupPayload.control(groupId = 7, effectType = EffectType.ON)
+        assertEquals(GroupPalette.colorFor(7), payload.fgColor)
+    }
+
+    @Test
+    fun testControlAllGroupsDefaultsToWhite() {
+        val payload = GroupPayload.control(groupId = 0, effectType = EffectType.OFF)
+        assertEquals(Colors.WHITE, payload.fgColor)
+    }
+
+    @Test
+    fun testControlExplicitColorOverridesDefault() {
+        val payload = GroupPayload.control(groupId = 1, effectType = EffectType.ON, color = Colors.CYAN)
+        assertEquals(Colors.CYAN, payload.fgColor)
+    }
+
+    @Test
+    fun testControlMsgTypeAndByteLayout() {
+        val bytes = GroupPayload.control(groupId = 0, effectType = EffectType.BLINK).toByteArray()
+        assertEquals(20, bytes.size)
+        assertEquals(3, bytes[2].toInt()) // msgType = GroupControl
+        assertEquals(0, bytes[3].toInt()) // groupId = all
+        assertEquals(3, bytes[10].toInt()) // effectType = BLINK
+    }
+
+    @Test
+    fun testControlRejectsOutOfRangeGroupId() {
+        assertThrows(IllegalArgumentException::class.java) {
+            GroupPayload.control(groupId = 21, effectType = EffectType.ON)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            GroupPayload.control(groupId = -1, effectType = EffectType.ON)
+        }
+    }
+
+    // ===========================================================================================
+    // defaultPeriodSpf timing table (spec §3.3)
+    // ===========================================================================================
+
+    @Test
+    fun testDefaultPeriodSpfTable() {
+        assertEquals(0 to 100, GroupPayload.defaultPeriodSpf(EffectType.OFF))
+        assertEquals(0 to 100, GroupPayload.defaultPeriodSpf(EffectType.ON))
+        assertEquals(10 to 20, GroupPayload.defaultPeriodSpf(EffectType.STROBE))
+        assertEquals(6 to 100, GroupPayload.defaultPeriodSpf(EffectType.BLINK))
+        assertEquals(20 to 100, GroupPayload.defaultPeriodSpf(EffectType.BREATH))
+    }
+
+    @Test
+    fun testControlUsesDefaultTimingWhenNotProvided() {
+        val strobe = GroupPayload.control(groupId = 1, effectType = EffectType.STROBE)
+        assertEquals(10, strobe.period)
+        assertEquals(20, strobe.spf)
+    }
+
+    @Test
+    fun testControlHonorsExplicitTimingOverride() {
+        val strobe = GroupPayload.control(groupId = 1, effectType = EffectType.STROBE, period = 99, spf = 50)
+        assertEquals(99, strobe.period)
+        assertEquals(50, strobe.spf)
+    }
+
+    // ===========================================================================================
+    // Round-trip
+    // ===========================================================================================
+
+    @Test
+    fun testRoundTripSetup() {
+        val original = GroupPayload.setup(groupId = 12)
+        val decoded = GroupPayload.fromByteArray(original.toByteArray())
+
+        assertEquals(original.msgType, decoded.msgType)
+        assertEquals(original.groupId, decoded.groupId)
+        assertEquals(original.fgColor, decoded.fgColor)
+        assertEquals(original.bgColor, decoded.bgColor)
+        assertEquals(original.effectType, decoded.effectType)
+        assertEquals(original.period, decoded.period)
+        assertEquals(original.spf, decoded.spf)
+    }
+
+    @Test
+    fun testRoundTripControl() {
+        val original = GroupPayload.control(
+            groupId = 0,
+            effectType = EffectType.BREATH,
+            color = Colors.PINK,
+            backgroundColor = Colors.BLUE,
+            durationMs = 4000
+        )
+        val decoded = GroupPayload.fromByteArray(original.toByteArray())
+
+        assertEquals(original.msgType, decoded.msgType)
+        assertEquals(original.groupId, decoded.groupId)
+        assertEquals(original.fgColor, decoded.fgColor)
+        assertEquals(original.bgColor, decoded.bgColor)
+        assertEquals(original.effectType, decoded.effectType)
+        assertEquals(original.durationMs, decoded.durationMs)
+    }
+
+    @Test
+    fun testInvalidByteLengthThrows() {
+        assertThrows(IllegalArgumentException::class.java) {
+            GroupPayload.fromByteArray(ByteArray(19))
+        }
+    }
+}
