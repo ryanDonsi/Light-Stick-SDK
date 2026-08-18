@@ -492,6 +492,13 @@ data class LSEffectPayload(
          * how simultaneous multi-group control (e.g. group 1 + group 3 together) differs from
          * a sequential "wave" of separate single-group messages.
          *
+         * This is the low-level primitive for callers who already have a raw mask (e.g. their
+         * own group-membership bitset). For a single group or a list of ids, prefer [control]
+         * or [controlGroups] — deliberately **not** overloads of this function: a bare `Long`
+         * mask and an `Int` group id look alike at a call site but mean very different things
+         * (`5` = group 5, `5L` = mask `0b101` = groups 1+3), so they get distinct names instead
+         * of relying on the reader to notice an `L` suffix.
+         *
          * @param groupMask Target groups; see [maskFor], [MASK_ALL_SINGLE], [MASK_ALL_GROUPS].
          * @param effectType Effect to play (OFF/ON/STROBE/BLINK/BREATH).
          * @param color Foreground color (required — with an arbitrary/combined mask there's no
@@ -502,7 +509,7 @@ data class LSEffectPayload(
          */
         @JvmStatic
         @JvmOverloads
-        fun control(
+        fun controlMask(
             groupMask: Long,
             effectType: EffectType,
             color: Color,
@@ -527,7 +534,7 @@ data class LSEffectPayload(
         }
 
         /**
-         * Convenience overload of [control] for a single group.
+         * Builds a control command targeting a single group.
          *
          * @param groupId Target group (1..32).
          * @param color Foreground color. Defaults to [GroupPalette.colorFor] for groups 1..20;
@@ -553,13 +560,13 @@ data class LSEffectPayload(
                         "${GroupPalette.MIN_GROUP_ID}..${GroupPalette.MAX_GROUP_ID})"
                 )
             }
-            return control(maskFor(groupId), effectType, fg, backgroundColor, period, spf)
+            return controlMask(maskFor(groupId), effectType, fg, backgroundColor, period, spf)
         }
 
         /**
-         * Convenience overload of [control] targeting an arbitrary combination of groups at
-         * once (e.g. `controlGroups(setOf(1, 3), ...)`), OR-ing their bits into one `groupMask`
-         * so they all react to the same packet simultaneously.
+         * Builds a control command targeting an arbitrary combination of groups at once (e.g.
+         * `controlGroups(setOf(1, 3), ...)`), OR-ing their bits into one `groupMask` so they
+         * all react to the same packet simultaneously.
          *
          * @param groupIds Groups to target together (each 1..32, non-empty).
          * @param color Foreground color (required — no single palette color applies to a
@@ -574,11 +581,11 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             period: Int? = null,
             spf: Int? = null
-        ): LSEffectPayload = control(maskFor(groupIds), effectType, color, backgroundColor, period, spf)
+        ): LSEffectPayload = controlMask(maskFor(groupIds), effectType, color, backgroundColor, period, spf)
 
         /**
-         * Convenience overload of [control] for [MASK_ALL_SINGLE] — every connected lightstick
-         * reacts regardless of group assignment (including lightsticks never assigned a group).
+         * Builds a control command for [MASK_ALL_SINGLE] — every connected lightstick reacts
+         * regardless of group assignment (including lightsticks never assigned a group).
          */
         @JvmStatic
         @JvmOverloads
@@ -588,12 +595,12 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             period: Int? = null,
             spf: Int? = null
-        ): LSEffectPayload = control(MASK_ALL_SINGLE, effectType, color, backgroundColor, period, spf)
+        ): LSEffectPayload = controlMask(MASK_ALL_SINGLE, effectType, color, backgroundColor, period, spf)
 
         /**
-         * Convenience overload of [control] for [MASK_ALL_GROUPS] — every *group-assigned*
-         * lightstick reacts (a lightstick never assigned to any group won't match any bit, so
-         * it does **not** react — unlike [controlAllSingle]).
+         * Builds a control command for [MASK_ALL_GROUPS] — every *group-assigned* lightstick
+         * reacts (a lightstick never assigned to any group won't match any bit, so it does
+         * **not** react — unlike [controlAllSingle]).
          */
         @JvmStatic
         @JvmOverloads
@@ -603,7 +610,7 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             period: Int? = null,
             spf: Int? = null
-        ): LSEffectPayload = control(MASK_ALL_GROUPS, effectType, color, backgroundColor, period, spf)
+        ): LSEffectPayload = controlMask(MASK_ALL_GROUPS, effectType, color, backgroundColor, period, spf)
     }
 
     companion object {
