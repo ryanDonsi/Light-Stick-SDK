@@ -809,17 +809,17 @@ object Facade {
     }
 
     // ============================================================================================
-    // Group Control (Glowsync group mapping spec v2.0)
+    // Group Setting (Glowsync group mapping spec v2.0)
     // ============================================================================================
 
     /**
-     * Writes a raw 20-byte Group protocol frame (LSEffectPayload.toByteArray()) to FF02.
-     *
-     * Sequencing multiple sends into a "wave" (파도타기) — timing, repeat, reset — is the
-     * caller's (app's) responsibility; this only ever sends one frame per call.
+     * Writes a raw 20-byte GroupSetup frame (LSEffectPayload.toByteArray(), msgType=GROUP_SETUP)
+     * to FF02, bypassing [LedControlManager]'s msgType rewrite and coalescing. Group *control*
+     * frames (msgType=EFFECT + groupMask) are ordinary effect payloads and go through
+     * [sendEffectTo] instead — this method exists only for `Device.sendGroupSetting`.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendGroupPayloadTo(mac: String, bytes20: ByteArray): Boolean {
+    fun sendGroupSettingTo(mac: String, bytes20: ByteArray): Boolean {
         requireInit()
         require(bytes20.size == 20) { "Group payload must be 20 bytes" }
         if (!isConnected(mac)) return false

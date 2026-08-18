@@ -28,10 +28,10 @@ internal class LedControlManager(
         private const val TAG = "LedControlManager"
 
         // LSEffectPayload byte[0] (protocol v2.0): msgType, the sole message-type discriminator.
-        // Effect/timeline sends through this manager are always "Effect" — group messages
-        // bypass this class entirely (see GroupControlManager) so a GroupSetup frame's msgType
-        // (GROUP_SETUP) survives unmodified, and group-targeted control frames (msgType=EFFECT
-        // + groupMask) skip this manager's stopTimeline()/effectIndex auto-management.
+        // Effect/timeline sends through this manager are always "Effect" — this includes
+        // group-targeted control (msgType=EFFECT + groupMask), which is an ordinary effect
+        // payload. Only GroupSetup frames bypass this class entirely (see GroupControlManager),
+        // since a GroupSetup frame's msgType (GROUP_SETUP) must survive unmodified.
         private const val MSG_TYPE_BYTE_POSITION = 0
         const val MSG_TYPE_EFFECT = 0
 

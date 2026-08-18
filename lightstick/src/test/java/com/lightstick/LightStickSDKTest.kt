@@ -139,7 +139,7 @@ class LightStickSDKTest {
         val bytes = blinkPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (BLINK = 3)
-        assertEquals(3, bytes[8].toInt())
+        assertEquals(3, bytes[11].toInt())
     }
 
     @Test
@@ -153,7 +153,7 @@ class LightStickSDKTest {
         val bytes = strobePayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (STROBE = 2)
-        assertEquals(2, bytes[8].toInt())
+        assertEquals(2, bytes[11].toInt())
     }
 
     @Test
@@ -167,7 +167,7 @@ class LightStickSDKTest {
         val bytes = breathPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (BREATH = 4)
-        assertEquals(4, bytes[8].toInt())
+        assertEquals(4, bytes[11].toInt())
     }
 
     @Test
@@ -178,7 +178,7 @@ class LightStickSDKTest {
         val bytes = onPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (ON = 1)
-        assertEquals(1, bytes[8].toInt())
+        assertEquals(1, bytes[11].toInt())
     }
 
     @Test
@@ -189,7 +189,7 @@ class LightStickSDKTest {
         val bytes = offPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (OFF = 0)
-        assertEquals(0, bytes[8].toInt())
+        assertEquals(0, bytes[11].toInt())
     }
 
     // ===========================================================================================

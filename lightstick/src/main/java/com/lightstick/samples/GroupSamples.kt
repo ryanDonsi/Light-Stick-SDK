@@ -6,19 +6,17 @@ import com.lightstick.types.LSEffectPayload
 
 /**
  * Group protocol (Glowsync group mapping spec v2.0) usage samples.
+ *
+ * GroupSetup ("join group N") is sent via `Device.sendGroupSetting(groupId)` — see that
+ * method's KDoc, since it needs a connected [com.lightstick.device.Device] to demonstrate.
+ * The samples below cover group *control*, which is just an [LSEffectPayload] with a
+ * `groupMask`, sent via the same `Device.sendEffect` as any other effect.
  */
 object GroupSamples {
 
-    fun sampleGroupSetup() {
-        // Broadcast "join group 3" — unassigned lightsticks blink group 3's palette color.
-        val setup = LSEffectPayload.Group.setup(groupId = 3)
-        println(setup.color) // GroupPalette.colorFor(3) == Color(149, 0, 255)
-        setup.toByteArray()
-    }
-
     fun sampleGroupControl() {
         // Play BLINK on group 3 only.
-        val single = LSEffectPayload.Group.control(
+        val single = LSEffectPayload(
             groupMask = LSEffectPayload.Group.GRP3,
             effectType = EffectType.BLINK,
             color = com.lightstick.types.Colors.WHITE
@@ -26,18 +24,15 @@ object GroupSamples {
 
         // Play BLINK on group 1 + group 3 together — one packet, both react at once
         // (unlike a sequential wave of separate single-group messages).
-        val combo = LSEffectPayload.Group.control(
+        val combo = LSEffectPayload(
             groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
             effectType = EffectType.BLINK,
             color = com.lightstick.types.Colors.WHITE
         )
 
         // Turn everything off — every connected lightstick, regardless of group assignment.
-        val allOff = LSEffectPayload.Group.control(
-            groupMask = LSEffectPayload.Group.ALL_SINGLE,
-            effectType = EffectType.OFF,
-            color = com.lightstick.types.Colors.WHITE
-        )
+        // groupMask defaults to ALL_SINGLE, so it can be omitted entirely.
+        val allOff = LSEffectPayload(effectType = EffectType.OFF, color = com.lightstick.types.Colors.WHITE)
 
         single.toByteArray()
         combo.toByteArray()

@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.group.GroupPalette
 import com.lightstick.internal.api.Facade
 import com.lightstick.types.Color
 import com.lightstick.types.Colors
@@ -237,12 +238,33 @@ data class Device(
     }
 
     /**
-     * Sends a 20-byte effect payload to THIS device.
+     * Sends a 20-byte effect payload to THIS device — including group-targeted control.
+     * There is no separate group-control method: a group (or "everyone") target is just
+     * [LSEffectPayload.groupMask] on an ordinary payload — see [LSEffectPayload.Group] for the
+     * `GRP1`..`GRP32` / `ALL_SINGLE` / `ALL_GROUPS` mask constants.
      *
      * @param payload 20-byte structured effect payload.
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected or an error prevented enqueuing.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // Group 1 + group 3 together, in one simultaneous packet.
+     * device.sendEffect(
+     *     LSEffectPayload(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, EffectType.ON, Colors.WHITE)
+     * )
+     *
+     * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — send once
+     * // per group, spaced by your own visual-pacing interval (recommended 200-1000ms).
+     * for (groupId in 1..groupCount) {
+     *     device.sendEffect(LSEffectPayload(1L shl (groupId - 1), EffectType.BLINK, Colors.WHITE))
+     *     delay(waveIntervalMs)
+     * }
+     *
+     * // Every connected lightstick, regardless of group assignment (groupMask omitted -> ALL_SINGLE).
+     * device.sendEffect(LSEffectPayload(effectType = EffectType.OFF, color = Colors.WHITE))
+     * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffect(payload: LSEffectPayload): Boolean {
@@ -768,55 +790,60 @@ data class Device(
     }
 
     // ------------------------------------------------------------------------
-    // Group Control (Glowsync group mapping spec v2.0)
+    // Group Setting (Glowsync group mapping spec v2.0)
     // ------------------------------------------------------------------------
 
     /**
-     * Sends a group-shaped [LSEffectPayload] — built via [LSEffectPayload.Group] — straight to
-     * THIS device's relay, bypassing [sendEffect]'s timeline-stop / msgType-forcing behavior.
-     * That bypass is required for [MsgType.GROUP_SETUP] frames, whose msgType must survive
-     * unmodified ([sendEffect] would stamp it back to [MsgType.EFFECT]), and keeps group-targeted
-     * control frames independent of timeline/effectIndex bookkeeping.
+     * Broadcasts the **GroupSetup** ([MsgType.GROUP_SETUP]) "join group [groupId]" beacon while
+     * the organizer holds the group screen open.
      *
-     * This mirrors [sendEffect] taking a plain [LSEffectPayload.Effects]-built payload: there's
-     * no separate `sendGroupSetup`/`sendGroupControl` wrapper per [LSEffectPayload.Group]
-     * factory — build the payload there, send it here.
+     * This bypasses [sendEffect]'s timeline-stop / msgType-forcing behavior — required because
+     * a GroupSetup frame's msgType must survive unmodified, which [sendEffect] would otherwise
+     * stamp back to [MsgType.EFFECT]. Group *control* has no such requirement (it's an ordinary
+     * [MsgType.EFFECT] frame with `groupMask` set) so it needs no separate method — just call
+     * [sendEffect] like any other effect.
      *
+     * Unassigned lightsticks blink [GroupPalette.colorFor] while this is being broadcast;
+     * pressing the lightstick's button locks it to this group. There is no explicit "stop"
+     * message — call this again with the next [groupId] when the organizer moves on.
+     *
+     * @param groupId Group to advertise (1..20 — see [GroupPalette] for the palette's current
+     *        range).
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected.
+     * @throws IllegalArgumentException If [groupId] is outside 1..20.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      *
      * @sample
      * ```kotlin
-     * // Join group N (organizer holds this screen open; see LSEffectPayload.Group.setup).
-     * device.sendGroupPayload(LSEffectPayload.Group.setup(groupId = n))
-     *
-     * // Group 1 + group 3 together, in one simultaneous packet — combine GRP* constants with `or`.
-     * device.sendGroupPayload(
-     *     LSEffectPayload.Group.control(
-     *         LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, EffectType.ON, Colors.WHITE
-     *     )
-     * )
-     *
-     * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — send once
-     * // per group, spaced by your own visual-pacing interval (recommended 200-1000ms; values
-     * // much below that read as all groups lighting up at once).
+     * // Organizer holds "join group N" open; app advances to the next group when ready.
      * for (groupId in 1..groupCount) {
-     *     device.sendGroupPayload(LSEffectPayload.Group.control(1L shl (groupId - 1), EffectType.BLINK, Colors.WHITE))
-     *     delay(waveIntervalMs)
+     *     device.sendGroupSetting(groupId)
+     *     delay(setupWindowMs)
      * }
-     *
-     * // Every connected lightstick, regardless of group assignment.
-     * device.sendGroupPayload(
-     *     LSEffectPayload.Group.control(LSEffectPayload.Group.ALL_SINGLE, EffectType.OFF, Colors.WHITE)
-     * )
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendGroupPayload(payload: LSEffectPayload): Boolean {
+    fun sendGroupSetting(groupId: Int): Boolean {
+        require(groupId in GroupPalette.MIN_GROUP_ID..GroupPalette.MAX_GROUP_ID) {
+            "groupId must be within ${GroupPalette.MIN_GROUP_ID}..${GroupPalette.MAX_GROUP_ID} for GroupSetup"
+        }
+        val payload = LSEffectPayload(
+            groupMask = 1L shl (groupId - 1),
+            effectType = EffectType.BLINK,
+            color = GroupPalette.colorFor(groupId),
+            backgroundColor = Colors.BLACK,
+            msgType = MsgType.GROUP_SETUP,
+            period = 6,
+            spf = 100,
+            randomColor = 0,
+            randomDelay = 1,
+            fade = 0,
+            broadcasting = 0
+        )
         return try {
             if (!isConnected()) return false
-            Facade.sendGroupPayloadTo(mac, payload.toByteArray())
+            Facade.sendGroupSettingTo(mac, payload.toByteArray())
         } catch (_: Throwable) {
             false
         }

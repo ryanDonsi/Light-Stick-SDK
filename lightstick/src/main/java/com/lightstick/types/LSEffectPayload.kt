@@ -1,6 +1,5 @@
 package com.lightstick.types
 
-import com.lightstick.group.GroupPalette
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -27,20 +26,28 @@ import java.nio.ByteOrder
  *  [18..19] effectIndex    (u16)  – Pure dedup/sequence number. Uninvolved in message-type
  *                                   discrimination.
  *
- * As of this protocol revision, `groupMask` (a 32-bit bitmask) replaces the earlier single-byte
- * `groupId` — and with it, the dedicated `GROUP_CONTROL` msgType is gone: group targeting is now
- * expressed by [MsgType.EFFECT] plus a non-zero mask. The 3 extra bytes this costs come out of
- * `durationMs`, which is removed (firmware never consumed it) and the old reserved byte.
+ * `groupMask` (a 32-bit bitmask) is what makes a payload group-targeted — there is no separate
+ * "GroupControl" msgType. Single-device and group control are the exact same call shape, just a
+ * different `groupMask`: pass one or more of [Group]'s `GRP1`..`GRP32` constants OR'd together
+ * (or [Group.ALL_SINGLE] / [Group.ALL_GROUPS]) as the first constructor argument. `groupMask`
+ * leads the constructor (default [Group.ALL_SINGLE], so it can be omitted for an ordinary
+ * single-device effect) precisely so that group and non-group control read as one API:
+ * ```kotlin
+ * device.sendEffect(LSEffectPayload(Group.GRP1 or Group.GRP3, EffectType.ON, Colors.WHITE))
+ * device.sendEffect(LSEffectPayload(effectType = EffectType.OFF, color = Colors.WHITE))
+ * ```
  *
  * Validation:
  * - Throws [IllegalArgumentException] if any field is outside its valid range.
  *
- * @param msgType Message type (u8); see [MsgType]. Default: [MsgType.EFFECT].
- * @param groupMask 32-bit group bitmask (0..0xFFFFFFFF); see [Group] for building one from
- *        group IDs. Default: 0 (single/all, ignoring group membership).
+ * @param groupMask 32-bit group bitmask (0..0xFFFFFFFF); see [Group] for the `GRP1`..`GRP32` /
+ *        `ALL_SINGLE` / `ALL_GROUPS` constants. Default: [Group.ALL_SINGLE] (ignore group
+ *        membership).
+ * @param effectType Logical effect type; serialized as [EffectType.code], default: ON.
  * @param color RGB foreground color for this effect, default: WHITE.
  * @param backgroundColor RGB background color for this effect, default: BLACK.
- * @param effectType Logical effect type; serialized as [EffectType.code], default: ON.
+ * @param msgType Message type (u8); see [MsgType]. Default: [MsgType.EFFECT]. Only
+ *        [Device.sendGroupSetting] needs a non-default value here.
  * @param period Unsigned byte (0–255), firmware-specific, default: 10.
  * @param spf Unsigned byte (0–255), samples per frame or device-specific timing, default: 100.
  * @param randomColor Random color flag (0=disabled, 1=enabled), default: 0.
@@ -55,11 +62,11 @@ import java.nio.ByteOrder
  * @sample com.lightstick.samples.EfxSamples.sampleBuildPayload
  */
 data class LSEffectPayload(
-    val msgType: MsgType = MsgType.EFFECT,
-    val groupMask: Long = 0L,
+    val groupMask: Long = Group.ALL_SINGLE,
+    val effectType: EffectType = EffectType.ON,
     val color: Color = Colors.WHITE,
     val backgroundColor: Color = Colors.BLACK,
-    val effectType: EffectType = EffectType.ON,
+    val msgType: MsgType = MsgType.EFFECT,
     val period: Int = 10,
     val spf: Int = 100,
     val randomColor: Int = 0,
@@ -153,7 +160,7 @@ data class LSEffectPayload(
          *
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
-         * @param groupMask Group bitmask; 0=single/all (default). See [Group].
+         * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
@@ -169,7 +176,7 @@ data class LSEffectPayload(
             randomColor: Int = 0,
             randomDelay: Int = 0,
             msgType: MsgType = MsgType.EFFECT,
-            groupMask: Long = 0L,
+            groupMask: Long = Group.ALL_SINGLE,
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
@@ -197,7 +204,7 @@ data class LSEffectPayload(
          *
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
-         * @param groupMask Group bitmask; 0=single/all (default). See [Group].
+         * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
@@ -211,7 +218,7 @@ data class LSEffectPayload(
             transit: Int = 0,
             randomDelay: Int = 0,
             msgType: MsgType = MsgType.EFFECT,
-            groupMask: Long = 0L,
+            groupMask: Long = Group.ALL_SINGLE,
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
@@ -241,7 +248,7 @@ data class LSEffectPayload(
          *
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
-         * @param groupMask Group bitmask; 0=single/all (default). See [Group].
+         * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -262,7 +269,7 @@ data class LSEffectPayload(
             spf: Int = 100,
             fade: Int = 100,
             effectIndex: Int = 0,
-            groupMask: Long = 0L
+            groupMask: Long = Group.ALL_SINGLE
         ) = LSEffectPayload(
             msgType = msgType,
             groupMask = groupMask,
@@ -290,7 +297,7 @@ data class LSEffectPayload(
          *
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
-         * @param groupMask Group bitmask; 0=single/all (default). See [Group].
+         * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -311,7 +318,7 @@ data class LSEffectPayload(
             spf: Int = 100,
             fade: Int = 100,
             effectIndex: Int = 0,
-            groupMask: Long = 0L
+            groupMask: Long = Group.ALL_SINGLE
         ) = LSEffectPayload(
             msgType = msgType,
             groupMask = groupMask,
@@ -339,7 +346,7 @@ data class LSEffectPayload(
          *
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
-         * @param groupMask Group bitmask; 0=single/all (default). See [Group].
+         * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -360,7 +367,7 @@ data class LSEffectPayload(
             spf: Int = 100,
             fade: Int = 100,
             effectIndex: Int = 0,
-            groupMask: Long = 0L
+            groupMask: Long = Group.ALL_SINGLE
         ) = LSEffectPayload(
             msgType = msgType,
             groupMask = groupMask,
@@ -378,19 +385,18 @@ data class LSEffectPayload(
     }
 
     /**
-     * Factories for the Glowsync group mapping protocol: GroupSetup (msgType=2) and
-     * group-targeted control (msgType=0/EFFECT + `groupMask`), built on the same 20-byte
-     * [LSEffectPayload] frame.
+     * Group targeting bitmask constants (Glowsync group mapping spec v2.0).
      *
-     * There is no separate "GroupControl" msgType — targeting is expressed entirely by
-     * `groupMask` (offset 1-4): a 32-bit bitmask where bit(N-1) selects group N (1..32). Combine
-     * groups with plain `or`, e.g. `GRP1 or GRP3` — every targeted lightstick reacts to the same
-     * 802.15.4 packet at once, unlike a sequential "wave" of separate messages. [ALL_SINGLE]
-     * means single/all (ignore group membership entirely); [ALL_GROUPS] means every
-     * group-assigned lightstick.
+     * `groupMask` (offset 1-4 of the 20-byte frame — see the [LSEffectPayload] class doc) is a
+     * 32-bit bitmask where bit(N-1) selects group N (1..32); combine groups with plain `or`
+     * (e.g. `GRP1 or GRP3`) so every targeted lightstick reacts to the same 802.15.4 packet at
+     * once — unlike a sequential "wave" of separate messages, which is the caller's (app's)
+     * responsibility to sequence. [ALL_SINGLE] means single/all (ignore group membership
+     * entirely); [ALL_GROUPS] means every group-assigned lightstick.
      *
-     * `control` reuses [randomColor]=0, [randomDelay]=1, [fade]=0 and [broadcasting]=0 — fixed
-     * values the group feature doesn't use.
+     * There is no separate "GroupControl" msgType or method — group control is an ordinary
+     * [LSEffectPayload] (default [MsgType.EFFECT]) with one of these constants as `groupMask`,
+     * sent via [Device.sendEffect] exactly like a non-group effect.
      *
      * @sample com.lightstick.samples.GroupSamples.sampleGroupControl
      */
@@ -434,88 +440,6 @@ data class LSEffectPayload(
 
         /** Mask value meaning "every group" — all 32 bits set (spec: `0xFFFFFFFF`). */
         const val ALL_GROUPS: Long = 0xFFFFFFFFL
-
-        /**
-         * Builds a **GroupSetup** (msgType=2) broadcast: the "join group [groupId]" beacon
-         * sent while the organizer holds the group screen open.
-         *
-         * Unassigned lightsticks blink [GroupPalette.colorFor] while this is being broadcast;
-         * pressing the lightstick's button locks it to this group. There is no explicit
-         * "stop" message — the caller decides when to move on to the next group's setup.
-         *
-         * @param groupId Group to advertise (1..20 — see [GroupPalette] for the palette's
-         *        current range; groups 21..32 are addressable on the wire via `GRP21`..`GRP32`
-         *        but have no built-in palette color yet).
-         * @throws IllegalArgumentException If [groupId] is outside 1..20.
-         */
-        @JvmStatic
-        fun setup(groupId: Int): LSEffectPayload {
-            require(groupId in GroupPalette.MIN_GROUP_ID..GroupPalette.MAX_GROUP_ID) {
-                "groupId must be within ${GroupPalette.MIN_GROUP_ID}..${GroupPalette.MAX_GROUP_ID} for GroupSetup"
-            }
-            return LSEffectPayload(
-                msgType = MsgType.GROUP_SETUP,
-                groupMask = 1L shl (groupId - 1),
-                color = GroupPalette.colorFor(groupId),
-                backgroundColor = Colors.BLACK,
-                effectType = EffectType.BLINK,
-                period = 6,
-                spf = 100,
-                randomColor = 0,
-                randomDelay = 1,
-                fade = 0,
-                broadcasting = 0
-            )
-        }
-
-        /**
-         * Builds a group-targeted control command (msgType=[MsgType.EFFECT] + `groupMask`) that
-         * plays [effectType] on every group selected by [groupMask].
-         *
-         * Every group whose bit is set reacts to the same 802.15.4 packet at once. Combine
-         * groups with `or`, e.g. `control(GRP1 or GRP3, EffectType.ON, Colors.WHITE)`; use
-         * [ALL_SINGLE] or [ALL_GROUPS] to target everyone.
-         *
-         * @param groupMask Target groups — one or more `GRP*` constants OR'd together, or
-         *        [ALL_SINGLE] / [ALL_GROUPS].
-         * @param effectType Effect to play (OFF/ON/STROBE/BLINK/BREATH).
-         * @param color Foreground color.
-         * @param backgroundColor Background color for BLINK/BREATH (default: black).
-         * @param period Optional timing override; defaults come from [effectType] (BLINK=6,
-         *        STROBE=10, BREATH=20, ON/OFF=0).
-         * @param spf Optional timing override; defaults come from [effectType] (STROBE=20,
-         *        others=100).
-         */
-        @JvmStatic
-        @JvmOverloads
-        fun control(
-            groupMask: Long,
-            effectType: EffectType,
-            color: Color,
-            backgroundColor: Color = Colors.BLACK,
-            period: Int? = null,
-            spf: Int? = null
-        ): LSEffectPayload {
-            val (defaultPeriod, defaultSpf) = when (effectType) {
-                EffectType.OFF, EffectType.ON -> 0 to 100
-                EffectType.STROBE -> 10 to 20
-                EffectType.BLINK -> 6 to 100
-                EffectType.BREATH -> 20 to 100
-            }
-            return LSEffectPayload(
-                msgType = MsgType.EFFECT,
-                groupMask = groupMask,
-                color = color,
-                backgroundColor = backgroundColor,
-                effectType = effectType,
-                period = period ?: defaultPeriod,
-                spf = spf ?: defaultSpf,
-                randomColor = 0,
-                randomDelay = 1,
-                fade = 0,
-                broadcasting = 0
-            )
-        }
     }
 
     companion object {
