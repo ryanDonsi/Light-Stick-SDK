@@ -775,7 +775,7 @@ data class Device(
      * straight to THIS device's relay, bypassing [sendEffect]'s timeline-stop / msgType-forcing
      * behavior — required for GroupSetup/GroupControl, whose msgType must survive unmodified.
      *
-     * Most callers should use [sendGroupSetup] or [sendGroupControlWave] instead;
+     * Most callers should use [sendGroupSetup] or [sendGroupControl] instead;
      * this exists for one-off GroupControl sends (single group, single effect) built
      * with [LSEffectPayload.Group.control] directly.
      *
@@ -814,6 +814,17 @@ data class Device(
      *        for the all-groups broadcast) — see [LSEffectPayload.Group.control].
      * @return `true` if the command was enqueued; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — call this
+     * // once per group, spaced by your own visual-pacing interval (spec §7 FAQ recommends
+     * // 200-1000ms; values much below that read as all groups lighting up at once).
+     * for (groupId in 1..groupCount) {
+     *     device.sendGroupControl(groupId, EffectType.BLINK)
+     *     delay(waveIntervalMs)
+     * }
+     * ```
      */
     @JvmOverloads
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -828,90 +839,6 @@ data class Device(
     ): Boolean = sendGroupPayload(
         LSEffectPayload.Group.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
     )
-
-    /**
-     * Starts a "wave" (파도타기): sends GroupControl for groups 1..[groupCount] in order,
-     * [intervalMs] apart, targeting THIS device's relay.
-     *
-     * [intervalMs] is a **visual pacing** parameter, not a BLE reliability knob — per spec
-     * §7 FAQ, values below ~200ms tend to look like all groups lighting up at once rather
-     * than a wave; the reference app defaults to 500ms. BLE write completion is handled
-     * internally within each interval tick, so there's no need to separately budget for it.
-     *
-     * If [repeat] is true, after group [groupCount] a full OFF ([LSEffectPayload.Group.control]
-     * with groupId=0) is sent, then the wave restarts from group 1 — always forward (1→N), never
-     * reversed — and continues until [stopGroupControlWave] is called. Starting a new wave
-     * (or calling this again) cancels any wave already running.
-     *
-     * @param color Foreground color applied to every group in the wave; defaults to each
-     *        group's own palette color (`null` — see [LSEffectPayload.Group.control]).
-     * @param onGroupSent Invoked with the 1-based group id right after each send.
-     * @return `true` if the wave was started; `false` if not connected.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     * @throws IllegalArgumentException If [groupCount] is outside 2..20.
-     */
-    @JvmOverloads
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendGroupControlWave(
-        groupCount: Int,
-        effectType: EffectType,
-        color: Color? = null,
-        backgroundColor: Color = Colors.BLACK,
-        intervalMs: Long = 500L,
-        repeat: Boolean = false,
-        durationMs: Int = 0,
-        period: Int? = null,
-        spf: Int? = null,
-        onGroupSent: ((Int) -> Unit)? = null
-    ): Boolean {
-        require(groupCount in 2..20) { "groupCount must be within 2..20 (got $groupCount)" }
-        return try {
-            if (!isConnected()) return false
-            val payloads = (1..groupCount).map { groupId ->
-                LSEffectPayload.Group.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
-                    .toByteArray()
-            }
-            val resetPayload = LSEffectPayload.Group.control(0, EffectType.OFF).toByteArray()
-            Facade.startGroupControlWave(mac, payloads, intervalMs, repeat, resetPayload, onGroupSent)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Stops an in-progress [sendGroupControlWave] (and its repeat, if any).
-     *
-     * Matches the reference app's UX: the wave toggle doubles as the stop switch, there is
-     * no separate stop button (spec §5.2).
-     *
-     * @return `true` if the stop request was submitted; `false` if not connected.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun stopGroupControlWave(): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.stopGroupControlWave(mac)
-            true
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Returns `true` if a [sendGroupControlWave] is currently running for THIS device.
-     *
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun isGroupControlWaveRunning(): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.isGroupControlWaveRunning(mac)
-        } catch (_: Throwable) {
-            false
-        }
-    }
 
     // ------------------------------------------------------------------------
     // Helpers

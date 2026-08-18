@@ -125,7 +125,6 @@ object Facade {
         fun cleanup() {
             runCatching { ota?.abort() }
             runCatching { game.unsubscribeResults() }
-            runCatching { group.close() }
             runCatching { led.close() }
             runCatching { gatt.close() }
         }
@@ -813,43 +812,18 @@ object Facade {
     // Group Control (Glowsync group mapping spec v2.2)
     // ============================================================================================
 
-    /** Writes a raw 20-byte Group protocol frame (LSEffectPayload.toByteArray()) to FF02. */
+    /**
+     * Writes a raw 20-byte Group protocol frame (LSEffectPayload.toByteArray()) to FF02.
+     *
+     * Sequencing multiple sends into a "wave" (파도타기) — timing, repeat, reset — is the
+     * caller's (app's) responsibility; this only ever sends one frame per call.
+     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendGroupPayloadTo(mac: String, bytes20: ByteArray): Boolean {
         requireInit()
         require(bytes20.size == 20) { "Group payload must be 20 bytes" }
         if (!isConnected(mac)) return false
         return requireSession(mac).group.sendPayload(bytes20)
-    }
-
-    /** Starts (or restarts) sequential group-control sending — see [GroupControlManager.startWave]. */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun startGroupControlWave(
-        mac: String,
-        payloads: List<ByteArray>,
-        intervalMs: Long,
-        repeat: Boolean,
-        resetPayload: ByteArray,
-        onGroupSent: ((Int) -> Unit)?
-    ): Boolean {
-        requireInit()
-        if (!isConnected(mac)) return false
-        requireSession(mac).group.startWave(payloads, intervalMs, repeat, resetPayload, onGroupSent)
-        return true
-    }
-
-    /** Stops an in-progress group-control wave (and any pending repeat). */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun stopGroupControlWave(mac: String) {
-        requireInit()
-        sessions[mac]?.group?.stopWave()
-    }
-
-    /** Returns true if a group-control wave is currently running for [mac]. */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun isGroupControlWaveRunning(mac: String): Boolean {
-        requireInit()
-        return sessions[mac]?.group?.isWaveRunning() ?: false
     }
 
     // ============================================================================================
