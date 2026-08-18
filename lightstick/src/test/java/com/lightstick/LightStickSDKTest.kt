@@ -95,7 +95,7 @@ class LightStickSDKTest {
         // protocol v3: msgType(offset 0)이 유일한 메시지 종류 판별자.
         val payload = LSEffectPayload.Effects.on(Colors.RED)
         val bytes = payload.toByteArray()
-        assertEquals(0, bytes[0].toInt()) // MsgType.MUSIC
+        assertEquals(0, bytes[0].toInt()) // MsgType.EFFECT
     }
 
     @Test

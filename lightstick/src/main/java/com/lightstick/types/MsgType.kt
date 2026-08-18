@@ -10,11 +10,11 @@ package com.lightstick.types
  * in message-type discrimination).
  *
  * There is no longer a separate "GroupControl" msgType: targeting one group, an arbitrary
- * combination of groups, or every connected lightstick is now expressed by [MUSIC] plus the
+ * combination of groups, or every connected lightstick is now expressed by [EFFECT] plus the
  * `groupMask` field (offset 1-4) — see [LSEffectPayload.Group.control].
  *
  * `GAME_MODE` messages (Game Mode 1-4) use a different field layout for offsets 1-17 than
- * [MUSIC]/[GROUP_SETUP] do — see the shared protocol doc's "레이아웃 B" — so [LSEffectPayload]
+ * [EFFECT]/[GROUP_SETUP] do — see the shared protocol doc's "레이아웃 B" — so [LSEffectPayload]
  * (which implements layout A) rejects frames carrying this value; build GameMode payloads
  * through the FF03 game command path instead.
  *
@@ -24,10 +24,10 @@ package com.lightstick.types
 enum class MsgType(val code: Int) {
     /**
      * Single or group-targeted effect payload (timeline / one-off effect sends, including
-     * group control via `groupMask`). Covers what used to be split across `MUSIC` and the
-     * now-removed `GROUP_CONTROL`.
+     * group control via `groupMask`). Not limited to music-synced playback — covers what used
+     * to be split across `MUSIC` and the now-removed `GROUP_CONTROL`.
      */
-    MUSIC(0),
+    EFFECT(0),
 
     /** Game Mode 1-4 command/result — uses a different field layout (see class doc). */
     GAME_MODE(1),
@@ -39,10 +39,10 @@ enum class MsgType(val code: Int) {
         /**
          * Resolves a [MsgType] by its wire [code].
          *
-         * @return The corresponding [MsgType], or [MUSIC] if unknown.
+         * @return The corresponding [MsgType], or [EFFECT] if unknown.
          */
         @JvmStatic
         fun fromCode(code: Int): MsgType =
-            entries.firstOrNull { it.code == code } ?: MUSIC
+            entries.firstOrNull { it.code == code } ?: EFFECT
     }
 }

@@ -377,7 +377,7 @@ object EfxSamples {
     @JvmStatic
     fun sampleBuildPayload(): LSEffectPayload {
         val payload = LSEffectPayload(
-            msgType = com.lightstick.types.MsgType.MUSIC,
+            msgType = com.lightstick.types.MsgType.EFFECT,
             groupMask = 0L,             // 0 = single/all (ignore group membership)
             color = Colors.RED,
             backgroundColor = Colors.BLUE,
@@ -457,7 +457,7 @@ object EfxSamples {
             transit = 30,
             randomColor = 0,
             randomDelay = 0,
-            msgType = com.lightstick.types.MsgType.MUSIC,
+            msgType = com.lightstick.types.MsgType.EFFECT,
             groupMask = 0L,         // 0 = single/all (ignore group membership)
             spf = 100,
             fade = 80,

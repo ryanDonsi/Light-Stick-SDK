@@ -51,7 +51,7 @@ class GroupProtocolTest {
 
     @Test
     fun testMsgTypeCodes() {
-        assertEquals(0, MsgType.MUSIC.code)
+        assertEquals(0, MsgType.EFFECT.code)
         assertEquals(1, MsgType.GAME_MODE.code)
         assertEquals(2, MsgType.GROUP_SETUP.code)
     }
@@ -59,7 +59,7 @@ class GroupProtocolTest {
     @Test
     fun testMsgTypeFromCode() {
         assertEquals(MsgType.GROUP_SETUP, MsgType.fromCode(2))
-        assertEquals(MsgType.MUSIC, MsgType.fromCode(99)) // unknown -> MUSIC
+        assertEquals(MsgType.EFFECT, MsgType.fromCode(99)) // unknown -> EFFECT
     }
 
     // ===========================================================================================
@@ -143,7 +143,7 @@ class GroupProtocolTest {
         )
         assertEquals(Colors.CYAN, payload.color)
         assertEquals(LSEffectPayload.Group.GRP7, payload.groupMask)
-        assertEquals(MsgType.MUSIC, payload.msgType)
+        assertEquals(MsgType.EFFECT, payload.msgType)
     }
 
     @Test
@@ -154,7 +154,7 @@ class GroupProtocolTest {
             color = Colors.WHITE
         )
         assertEquals(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, payload.groupMask)
-        assertEquals(MsgType.MUSIC, payload.msgType)
+        assertEquals(MsgType.EFFECT, payload.msgType)
     }
 
     @Test
@@ -165,7 +165,7 @@ class GroupProtocolTest {
             color = Colors.WHITE
         )
         assertEquals(LSEffectPayload.Group.ALL_SINGLE, payload.groupMask)
-        assertEquals(MsgType.MUSIC, payload.msgType)
+        assertEquals(MsgType.EFFECT, payload.msgType)
     }
 
     @Test
@@ -186,7 +186,7 @@ class GroupProtocolTest {
             color = Colors.WHITE
         ).toByteArray()
         assertEquals(20, bytes.size)
-        assertEquals(0, bytes[0].toInt()) // msgType = MUSIC (no more dedicated GroupControl msgType)
+        assertEquals(0, bytes[0].toInt()) // msgType = EFFECT (no more dedicated GroupControl msgType)
         assertEquals(0, bytes[1].toInt()); assertEquals(0, bytes[2].toInt())
         assertEquals(0, bytes[3].toInt()); assertEquals(0, bytes[4].toInt()) // groupMask = 0 (all/single)
         assertEquals(3, bytes[11].toInt()) // effectType = BLINK

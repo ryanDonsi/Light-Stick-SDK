@@ -283,7 +283,7 @@ data class Device(
      * Loads an EFX timeline for music-synchronized playback.
      *
      * The SDK automatically:
-     * - Pins every frame's msgType to MUSIC, so a frame accidentally built as Game/Group
+     * - Pins every frame's msgType to EFFECT, so a frame accidentally built as Game/Group
      *   never collides with those message types during playback
      * - Increments effectIndex for new playback session
      * - Manages timeline state internally
@@ -775,7 +775,7 @@ data class Device(
      * Sends a group-shaped [LSEffectPayload] — built via [LSEffectPayload.Group] — straight to
      * THIS device's relay, bypassing [sendEffect]'s timeline-stop / msgType-forcing behavior.
      * That bypass is required for [MsgType.GROUP_SETUP] frames, whose msgType must survive
-     * unmodified ([sendEffect] would stamp it back to [MsgType.MUSIC]), and keeps group-targeted
+     * unmodified ([sendEffect] would stamp it back to [MsgType.EFFECT]), and keeps group-targeted
      * control frames independent of timeline/effectIndex bookkeeping.
      *
      * This mirrors [sendEffect] taking a plain [LSEffectPayload.Effects]-built payload: there's

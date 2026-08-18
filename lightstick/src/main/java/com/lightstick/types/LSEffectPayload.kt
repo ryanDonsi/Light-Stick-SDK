@@ -9,9 +9,9 @@ import java.nio.ByteOrder
  * exact **20-byte** frame written to FF02.
  *
  * Byte layout (indices in brackets, little-endian for multi-byte fields). Shared by
- * [MsgType.MUSIC] and [MsgType.GROUP_SETUP] — [MsgType.GAME_MODE] uses a different layout
+ * [MsgType.EFFECT] and [MsgType.GROUP_SETUP] — [MsgType.GAME_MODE] uses a different layout
  * entirely (see [MsgType]) and is rejected by [fromByteArray]:
- *  [0]      msgType        (u8)   – Sole message-type discriminator. Default [MsgType.MUSIC].
+ *  [0]      msgType        (u8)   – Sole message-type discriminator. Default [MsgType.EFFECT].
  *  [1..4]   groupMask      (u32)  – 0 = single/all (ignore group membership), 0xFFFFFFFF =
  *                                   every group, bit(N-1)=1 targets group N (N=1..32,
  *                                   combinable — see [Group]).
@@ -29,13 +29,13 @@ import java.nio.ByteOrder
  *
  * As of this protocol revision, `groupMask` (a 32-bit bitmask) replaces the earlier single-byte
  * `groupId` — and with it, the dedicated `GROUP_CONTROL` msgType is gone: group targeting is now
- * expressed by [MsgType.MUSIC] plus a non-zero mask. The 3 extra bytes this costs come out of
+ * expressed by [MsgType.EFFECT] plus a non-zero mask. The 3 extra bytes this costs come out of
  * `durationMs`, which is removed (firmware never consumed it) and the old reserved byte.
  *
  * Validation:
  * - Throws [IllegalArgumentException] if any field is outside its valid range.
  *
- * @param msgType Message type (u8); see [MsgType]. Default: [MsgType.MUSIC].
+ * @param msgType Message type (u8); see [MsgType]. Default: [MsgType.EFFECT].
  * @param groupMask 32-bit group bitmask (0..0xFFFFFFFF); see [Group] for building one from
  *        group IDs. Default: 0 (single/all, ignoring group membership).
  * @param color RGB foreground color for this effect, default: WHITE.
@@ -55,7 +55,7 @@ import java.nio.ByteOrder
  * @sample com.lightstick.samples.EfxSamples.sampleBuildPayload
  */
 data class LSEffectPayload(
-    val msgType: MsgType = MsgType.MUSIC,
+    val msgType: MsgType = MsgType.EFFECT,
     val groupMask: Long = 0L,
     val color: Color = Colors.WHITE,
     val backgroundColor: Color = Colors.BLACK,
@@ -152,7 +152,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; 0=single/all (default). See [Group].
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -168,7 +168,7 @@ data class LSEffectPayload(
             transit: Int = 0,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            msgType: MsgType = MsgType.MUSIC,
+            msgType: MsgType = MsgType.EFFECT,
             groupMask: Long = 0L,
             spf: Int = 100,
             fade: Int = 100,
@@ -196,7 +196,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; 0=single/all (default). See [Group].
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
@@ -210,7 +210,7 @@ data class LSEffectPayload(
         fun off(
             transit: Int = 0,
             randomDelay: Int = 0,
-            msgType: MsgType = MsgType.MUSIC,
+            msgType: MsgType = MsgType.EFFECT,
             groupMask: Long = 0L,
             spf: Int = 100,
             fade: Int = 100,
@@ -240,7 +240,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; 0=single/all (default). See [Group].
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
@@ -257,7 +257,7 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            msgType: MsgType = MsgType.MUSIC,
+            msgType: MsgType = MsgType.EFFECT,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
@@ -289,7 +289,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; 0=single/all (default). See [Group].
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
@@ -306,7 +306,7 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            msgType: MsgType = MsgType.MUSIC,
+            msgType: MsgType = MsgType.EFFECT,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
@@ -338,7 +338,7 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; 0=single/all (default). See [Group].
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
@@ -355,7 +355,7 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            msgType: MsgType = MsgType.MUSIC,
+            msgType: MsgType = MsgType.EFFECT,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
@@ -379,7 +379,7 @@ data class LSEffectPayload(
 
     /**
      * Factories for the Glowsync group mapping protocol: GroupSetup (msgType=2) and
-     * group-targeted control (msgType=0/MUSIC + `groupMask`), built on the same 20-byte
+     * group-targeted control (msgType=0/EFFECT + `groupMask`), built on the same 20-byte
      * [LSEffectPayload] frame.
      *
      * There is no separate "GroupControl" msgType — targeting is expressed entirely by
@@ -469,7 +469,7 @@ data class LSEffectPayload(
         }
 
         /**
-         * Builds a group-targeted control command (msgType=[MsgType.MUSIC] + `groupMask`) that
+         * Builds a group-targeted control command (msgType=[MsgType.EFFECT] + `groupMask`) that
          * plays [effectType] on every group selected by [groupMask].
          *
          * Every group whose bit is set reacts to the same 802.15.4 packet at once. Combine
@@ -503,7 +503,7 @@ data class LSEffectPayload(
                 EffectType.BREATH -> 20 to 100
             }
             return LSEffectPayload(
-                msgType = MsgType.MUSIC,
+                msgType = MsgType.EFFECT,
                 groupMask = groupMask,
                 color = color,
                 backgroundColor = backgroundColor,

@@ -10,8 +10,8 @@ import androidx.annotation.RequiresPermission
  *
  * Unlike [LedControlManager], writes here bypass the msgType rewrite and timeline
  * machinery: a GroupSetup frame's msgType (GROUP_SETUP) must survive unmodified — which
- * [LedControlManager] would otherwise stamp back to MUSIC — and group-targeted control
- * frames (msgType=MUSIC + `groupMask`, see `LSEffectPayload.Group` in the public module)
+ * [LedControlManager] would otherwise stamp back to EFFECT — and group-targeted control
+ * frames (msgType=EFFECT + `groupMask`, see `LSEffectPayload.Group` in the public module)
  * skip [LedControlManager]'s stopTimeline()/effectIndex auto-management.
  *
  * Sequencing multiple group-control sends into a "wave" (파도타기, group-by-group timing)

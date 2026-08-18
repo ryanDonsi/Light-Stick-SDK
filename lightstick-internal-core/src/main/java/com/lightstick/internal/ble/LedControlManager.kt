@@ -28,12 +28,12 @@ internal class LedControlManager(
         private const val TAG = "LedControlManager"
 
         // LSEffectPayload byte[0] (protocol v2.0): msgType, the sole message-type discriminator.
-        // Effect/timeline sends through this manager are always "Music" — group messages
+        // Effect/timeline sends through this manager are always "Effect" — group messages
         // bypass this class entirely (see GroupControlManager) so a GroupSetup frame's msgType
-        // (GROUP_SETUP) survives unmodified, and group-targeted control frames (msgType=MUSIC
+        // (GROUP_SETUP) survives unmodified, and group-targeted control frames (msgType=EFFECT
         // + groupMask) skip this manager's stopTimeline()/effectIndex auto-management.
         private const val MSG_TYPE_BYTE_POSITION = 0
-        const val MSG_TYPE_MUSIC = 0
+        const val MSG_TYPE_EFFECT = 0
 
         // LSEffectPayload byte[18-19] (protocol v3, u16 LE): effectIndex — pure dedup/sequence
         // number, uninvolved in message-type discrimination (that moved to byte[0] in v3).
@@ -123,7 +123,7 @@ internal class LedControlManager(
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = setMsgType(bytes20, MSG_TYPE_MUSIC),
+            data = setMsgType(bytes20, MSG_TYPE_EFFECT),
             coalesceKey = "LCS:PAYLOAD"
         )
     }
@@ -150,7 +150,7 @@ internal class LedControlManager(
                     val ok = sendNoResponseCoalesced(
                         serviceUuid = UuidConstants.LCS_SERVICE,
                         charUuid = UuidConstants.LCS_PAYLOAD,
-                        data = setMsgType(frame, MSG_TYPE_MUSIC),
+                        data = setMsgType(frame, MSG_TYPE_EFFECT),
                         coalesceKey = "LCS:PAYLOAD"
                     )
                     if (!ok) {
@@ -176,7 +176,7 @@ internal class LedControlManager(
      * EFX 타임라인을 로드합니다.
      *
      * 로드와 동시에:
-     * 1. 모든 프레임의 msgType을 MSG_TYPE_MUSIC(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
+     * 1. 모든 프레임의 msgType을 MSG_TYPE_EFFECT(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
      * 2. effectIndex가 자동으로 증가 (새로운 재생 세션 시작)
      *
      * @param frames 타임라인 엔트리 리스트 (timestampMs, 20B payload)
@@ -190,9 +190,9 @@ internal class LedControlManager(
 
         val sortedFrames = frames.sortedBy { it.first }
 
-        // 모든 프레임을 MSG_TYPE_MUSIC(0)으로 고정 (그룹/게임 msgType 충돌 방지)
+        // 모든 프레임을 MSG_TYPE_EFFECT(0)으로 고정 (그룹/게임 msgType 충돌 방지)
         timeline = sortedFrames.map { (timestamp, frame) ->
-            timestamp to setMsgType(frame, MSG_TYPE_MUSIC)
+            timestamp to setMsgType(frame, MSG_TYPE_EFFECT)
         }
 
         lastSentIndex = -1
@@ -204,7 +204,7 @@ internal class LedControlManager(
         // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
 
-        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_MUSIC, effectIndex=$currentEffectIndex")
+        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
 
         startMonitor()
     }
