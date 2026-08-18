@@ -9,6 +9,7 @@ import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.EffectType
 import com.lightstick.types.LSEffectPayload
+import com.lightstick.types.MsgType
 import com.lightstick.game.GameLevel
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
@@ -767,17 +768,18 @@ data class Device(
     }
 
     // ------------------------------------------------------------------------
-    // Group Control (Glowsync group mapping spec v3)
+    // Group Control (Glowsync group mapping spec v2.0)
     // ------------------------------------------------------------------------
 
     /**
      * Sends a raw group-shaped [LSEffectPayload] (typically built via [LSEffectPayload.Group])
      * straight to THIS device's relay, bypassing [sendEffect]'s timeline-stop / msgType-forcing
-     * behavior — required for GroupSetup/GroupControl, whose msgType must survive unmodified.
+     * behavior — required for [MsgType.GROUP_SETUP] frames, whose msgType must survive
+     * unmodified ([sendEffect] would stamp it back to [MsgType.MUSIC]).
      *
-     * Most callers should use [sendGroupSetup] or [sendGroupControl] instead;
-     * this exists for one-off GroupControl sends (single group, single effect) built
-     * with [LSEffectPayload.Group.control] directly.
+     * Most callers should use [sendGroupSetup] or one of the [sendGroupControl] overloads
+     * instead; this exists for one-off sends built with [LSEffectPayload.Group.control] (or
+     * its siblings) directly.
      *
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected.
@@ -799,7 +801,7 @@ data class Device(
      * Unassigned lightsticks blink [com.lightstick.group.GroupPalette.colorFor] while this
      * keeps being sent; pressing a lightstick's button locks it to [groupId]. There is no
      * separate "stop" message — moving to the next group is just calling this again with
-     * the next id (spec §3.1).
+     * the next id.
      *
      * @return `true` if the beacon was enqueued; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
@@ -808,18 +810,24 @@ data class Device(
     fun sendGroupSetup(groupId: Int): Boolean = sendGroupPayload(LSEffectPayload.Group.setup(groupId))
 
     /**
-     * Sends a single **GroupControl** command for [groupId] (0=all, 1..20=one group).
+     * Sends a **group control** command targeting a single group (1..32).
      *
-     * @param color Foreground color; defaults to that group's palette color (or white
-     *        for the all-groups broadcast) — see [LSEffectPayload.Group.control].
+     * There is no separate "GroupControl" message type — under the hood this is a
+     * [MsgType.MUSIC] frame carrying a `groupMask` with just this group's bit set, so it's
+     * indistinguishable on the wire from [sendGroupControl] with multiple ids (see the
+     * overload below).
+     *
+     * @param color Foreground color; defaults to that group's palette color for groups 1..20
+     *        (required for 21..32, which have no palette entry) — see [LSEffectPayload.Group.control].
      * @return `true` if the command was enqueued; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     * @throws IllegalArgumentException If [color] is omitted for a [groupId] outside 1..20.
      *
      * @sample
      * ```kotlin
      * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — call this
-     * // once per group, spaced by your own visual-pacing interval (spec §7 FAQ recommends
-     * // 200-1000ms; values much below that read as all groups lighting up at once).
+     * // once per group, spaced by your own visual-pacing interval (recommended 200-1000ms;
+     * // values much below that read as all groups lighting up at once).
      * for (groupId in 1..groupCount) {
      *     device.sendGroupControl(groupId, EffectType.BLINK)
      *     delay(waveIntervalMs)
@@ -833,11 +841,75 @@ data class Device(
         effectType: EffectType,
         color: Color? = null,
         backgroundColor: Color = Colors.BLACK,
-        durationMs: Int = 0,
         period: Int? = null,
         spf: Int? = null
     ): Boolean = sendGroupPayload(
-        LSEffectPayload.Group.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
+        LSEffectPayload.Group.control(groupId, effectType, color, backgroundColor, period, spf)
+    )
+
+    /**
+     * Sends a **group control** command targeting an arbitrary combination of groups at once
+     * (e.g. group 1 + group 3), OR-ing their bits into a single `groupMask` so every targeted
+     * lightstick reacts to the exact same 802.15.4 packet simultaneously — unlike a sequential
+     * "wave" of separate [sendGroupControl] calls, there is no timing offset between them.
+     *
+     * @param groupIds Groups to target together (each 1..32, non-empty).
+     * @param color Foreground color (required — no single palette color applies to a
+     *        combination of groups).
+     * @return `true` if the command was enqueued; `false` if not connected.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     * @throws IllegalArgumentException If [groupIds] is empty or any id is outside 1..32.
+     */
+    @JvmOverloads
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGroupControl(
+        groupIds: Collection<Int>,
+        effectType: EffectType,
+        color: Color,
+        backgroundColor: Color = Colors.BLACK,
+        period: Int? = null,
+        spf: Int? = null
+    ): Boolean = sendGroupPayload(
+        LSEffectPayload.Group.controlGroups(groupIds, effectType, color, backgroundColor, period, spf)
+    )
+
+    /**
+     * Sends a **group control** command to every connected lightstick, regardless of group
+     * assignment (including lightsticks never assigned to any group) — `groupMask = 0`.
+     *
+     * @return `true` if the command was enqueued; `false` if not connected.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @JvmOverloads
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGroupControlAllSingle(
+        effectType: EffectType,
+        color: Color = Colors.WHITE,
+        backgroundColor: Color = Colors.BLACK,
+        period: Int? = null,
+        spf: Int? = null
+    ): Boolean = sendGroupPayload(
+        LSEffectPayload.Group.controlAllSingle(effectType, color, backgroundColor, period, spf)
+    )
+
+    /**
+     * Sends a **group control** command to every *group-assigned* lightstick —
+     * `groupMask = 0xFFFFFFFF` (every bit set). A lightstick never assigned to any group won't
+     * match any bit, so it does **not** react — unlike [sendGroupControlAllSingle].
+     *
+     * @return `true` if the command was enqueued; `false` if not connected.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @JvmOverloads
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGroupControlAllGroups(
+        effectType: EffectType,
+        color: Color = Colors.WHITE,
+        backgroundColor: Color = Colors.BLACK,
+        period: Int? = null,
+        spf: Int? = null
+    ): Boolean = sendGroupPayload(
+        LSEffectPayload.Group.controlAllGroups(effectType, color, backgroundColor, period, spf)
     )
 
     // ------------------------------------------------------------------------

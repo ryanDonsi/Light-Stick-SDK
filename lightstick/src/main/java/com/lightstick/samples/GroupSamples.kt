@@ -5,7 +5,7 @@ import com.lightstick.types.EffectType
 import com.lightstick.types.LSEffectPayload
 
 /**
- * Group protocol (Glowsync group mapping spec v3) usage samples.
+ * Group protocol (Glowsync group mapping spec v2.0) usage samples.
  */
 object GroupSamples {
 
@@ -20,10 +20,19 @@ object GroupSamples {
         // Play BLINK on group 3 only, using group 3's own palette color.
         val single = LSEffectPayload.Group.control(groupId = 3, effectType = EffectType.BLINK)
 
-        // Turn everything off.
-        val allOff = LSEffectPayload.Group.control(groupId = 0, effectType = EffectType.OFF)
+        // Play BLINK on group 1 + group 3 together — one packet, both react at once
+        // (unlike a sequential wave of separate single-group messages).
+        val combo = LSEffectPayload.Group.controlGroups(
+            groupIds = setOf(1, 3),
+            effectType = EffectType.BLINK,
+            color = com.lightstick.types.Colors.WHITE
+        )
+
+        // Turn everything off — every connected lightstick, regardless of group assignment.
+        val allOff = LSEffectPayload.Group.controlAllSingle(effectType = EffectType.OFF)
 
         single.toByteArray()
+        combo.toByteArray()
         allOff.toByteArray()
     }
 

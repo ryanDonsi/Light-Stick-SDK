@@ -1,35 +1,39 @@
 package com.lightstick.types
 
 /**
- * Message type carried in byte offset 0 of the 20-byte [LSEffectPayload] frame (protocol v3).
+ * Message type carried in byte offset 0 of the 20-byte [LSEffectPayload] frame (protocol v2.0,
+ * "msgType 단일 판별자 + groupMask" — supersedes the earlier `GROUP_CONTROL` msgType).
  *
- * As of v3 this is the **single, sole discriminator** for the whole frame — every message
- * (Music, GameMode, GroupSetup, GroupControl) shares one 20-byte layout that starts with
- * this byte and ends with a 16-bit `effectIndex` (offset 18-19, pure dedup/sequence number,
- * uninvolved in message-type discrimination). This replaces the v2 scheme where `effectIndex`
- * at offset 0-1 did double duty as a first-level game/non-game discriminator ahead of this
- * byte at offset 2.
+ * This is the **single, sole discriminator** for the whole frame — every message (single/group
+ * effect control, GameMode, GroupSetup) shares one 20-byte layout that starts with this byte
+ * and ends with a 16-bit `effectIndex` (offset 18-19, pure dedup/sequence number, uninvolved
+ * in message-type discrimination).
+ *
+ * There is no longer a separate "GroupControl" msgType: targeting one group, an arbitrary
+ * combination of groups, or every connected lightstick is now expressed by [MUSIC] plus the
+ * `groupMask` field (offset 1-4) — see [LSEffectPayload.Group.control].
  *
  * `GAME_MODE` messages (Game Mode 1-4) use a different field layout for offsets 1-17 than
- * Music/GroupSetup/GroupControl do — see the shared protocol doc's "body 레이아웃 B" — so
- * [LSEffectPayload] (which implements layout A) rejects frames carrying this value; build
- * GameMode payloads through the FF03 game command path instead.
+ * [MUSIC]/[GROUP_SETUP] do — see the shared protocol doc's "레이아웃 B" — so [LSEffectPayload]
+ * (which implements layout A) rejects frames carrying this value; build GameMode payloads
+ * through the FF03 game command path instead.
  *
  * @property code The numeric wire value written at payload offset 0.
  * @since 1.5.0
  */
 enum class MsgType(val code: Int) {
-    /** Music-synchronized effect payload (timeline / one-off effect sends). */
+    /**
+     * Single or group-targeted effect payload (timeline / one-off effect sends, including
+     * group control via `groupMask`). Covers what used to be split across `MUSIC` and the
+     * now-removed `GROUP_CONTROL`.
+     */
     MUSIC(0),
 
     /** Game Mode 1-4 command/result — uses a different field layout (see class doc). */
     GAME_MODE(1),
 
     /** Group join broadcast — see [LSEffectPayload.Group.setup]. */
-    GROUP_SETUP(2),
-
-    /** Group effect control — see [LSEffectPayload.Group.control]. */
-    GROUP_CONTROL(3);
+    GROUP_SETUP(2);
 
     companion object {
         /**

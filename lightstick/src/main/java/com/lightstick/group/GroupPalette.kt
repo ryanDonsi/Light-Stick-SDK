@@ -3,7 +3,7 @@ package com.lightstick.group
 import com.lightstick.types.Color
 
 /**
- * Fixed RGB palette for groups 1–20 (Glowsync group mapping spec v3).
+ * Fixed RGB palette for groups 1–20 (Glowsync group mapping spec v2.0).
  *
  * Generated with the "golden angle" method (hue advances ~137.508° per group, S/V
  * at 100%) so that consecutive group numbers are always close to maximally distinct

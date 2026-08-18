@@ -378,11 +378,10 @@ object EfxSamples {
     fun sampleBuildPayload(): LSEffectPayload {
         val payload = LSEffectPayload(
             msgType = com.lightstick.types.MsgType.MUSIC,
-            groupId = 0,                // 0 = unassigned/all
+            groupMask = 0L,             // 0 = single/all (ignore group membership)
             color = Colors.RED,
             backgroundColor = Colors.BLUE,
             effectType = com.lightstick.types.EffectType.STROBE,
-            durationMs = 5000,
             period = 20,                // 200ms period
             spf = 100,
             randomColor = 1,            // Enable random color
@@ -459,7 +458,7 @@ object EfxSamples {
             randomColor = 0,
             randomDelay = 0,
             msgType = com.lightstick.types.MsgType.MUSIC,
-            groupId = 0,            // 0 = unassigned/all
+            groupMask = 0L,         // 0 = single/all (ignore group membership)
             spf = 100,
             fade = 80,
             broadcasting = 1,       // Broadcast to nearby

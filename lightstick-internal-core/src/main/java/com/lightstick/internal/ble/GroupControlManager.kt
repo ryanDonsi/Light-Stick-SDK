@@ -6,14 +6,15 @@ import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 
 /**
- * Sends raw Group protocol frames (Glowsync group mapping spec v3) to FF02.
+ * Sends raw Group protocol frames (Glowsync group mapping spec v2.0) to FF02.
  *
  * Unlike [LedControlManager], writes here bypass the msgType rewrite and timeline
- * machinery: group messages must keep their own GROUP_SETUP/GROUP_CONTROL msgType byte
- * (see `LSEffectPayload.Group` in the public module), which [LedControlManager] would
- * otherwise stamp back to MUSIC.
+ * machinery: a GroupSetup frame's msgType (GROUP_SETUP) must survive unmodified — which
+ * [LedControlManager] would otherwise stamp back to MUSIC — and group-targeted control
+ * frames (msgType=MUSIC + `groupMask`, see `LSEffectPayload.Group` in the public module)
+ * skip [LedControlManager]'s stopTimeline()/effectIndex auto-management.
  *
- * Sequencing multiple GroupControl sends into a "wave" (파도타기, group-by-group timing)
+ * Sequencing multiple group-control sends into a "wave" (파도타기, group-by-group timing)
  * is the caller's responsibility — this class only ever sends one frame per call.
  */
 internal class GroupControlManager(
