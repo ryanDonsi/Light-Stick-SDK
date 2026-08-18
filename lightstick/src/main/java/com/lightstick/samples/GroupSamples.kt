@@ -5,7 +5,7 @@ import com.lightstick.types.EffectType
 import com.lightstick.types.LSEffectPayload
 
 /**
- * Group protocol (Glowsync group mapping spec v2.2) usage samples.
+ * Group protocol (Glowsync group mapping spec v3) usage samples.
  */
 object GroupSamples {
 

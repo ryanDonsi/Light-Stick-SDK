@@ -5,43 +5,34 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Structured LightStick Effect payload (protocol v2.2, `LE_BLE_PATLOAD_T`) that encodes to an
+ * Structured LightStick Effect payload (protocol v3, `LE_LED_PATLOAD_T`) that encodes to an
  * exact **20-byte** frame written to FF02.
  *
- * Byte layout (indices in brackets, little-endian for u16):
- *  [0..1]   effectIndex    (u16)  – Fixed `0x0000`. See "Payload discrimination" below.
- *  [2]      msgType        (u8)   – See [MsgType]. Default [MsgType.MUSIC].
- *  [3]      groupId        (u8)   – 0 = unassigned/all, 1..20 = group (see [com.lightstick.group.GroupPalette]).
- *  [4..6]   fgColor RGB    (3xu8) – Foreground color
- *  [7..9]   bgColor RGB    (3xu8) – Background color
- *  [10]     effectType     (u8)   – enum code, see [EffectType.code]
- *  [11..12] durationMs     (u16)
- *  [13]     period         (u8)
- *  [14]     spf            (u8)
- *  [15]     randomColor    (u8)   – 0 or 1 only (0=disabled, 1=enabled)
- *  [16]     randomDelay    (u8)   – 0~255: max random delay time (0=none, 1~255 = delay in units of 10ms)
- *  [17]     fade           (u8)
- *  [18]     broadcasting   (u8)   – 0 or 1 only (0=single device, 1=broadcast to nearby devices)
- *  [19]     syncIndex      (u8)
+ * Byte layout (indices in brackets, little-endian for u16). Shared by [MsgType.MUSIC],
+ * [MsgType.GROUP_SETUP] and [MsgType.GROUP_CONTROL] — [MsgType.GAME_MODE] uses a different
+ * layout entirely (see [MsgType]) and is rejected by [fromByteArray]:
+ *  [0]      msgType        (u8)   – Sole message-type discriminator. Default [MsgType.MUSIC].
+ *  [1]      groupId        (u8)   – 0 = unassigned/all, 1..20 = group (see [com.lightstick.group.GroupPalette]).
+ *  [2..4]   fgColor RGB    (3xu8) – Foreground color
+ *  [5..7]   bgColor RGB    (3xu8) – Background color
+ *  [8]      effectType     (u8)   – enum code, see [EffectType.code]
+ *  [9..10]  durationMs     (u16)
+ *  [11]     period         (u8)
+ *  [12]     spf            (u8)
+ *  [13]     randomColor    (u8)   – 0 or 1 only (0=disabled, 1=enabled)
+ *  [14]     randomDelay    (u8)   – 0~255: max random delay time (0=none, 1~255 = delay in units of 10ms)
+ *  [15]     fade           (u8)
+ *  [16]     broadcasting   (u8)   – 0 or 1 only (0=single device, 1=broadcast to nearby devices)
+ *  [17]     reserved       (u8)   – Always 0.
+ *  [18..19] effectIndex    (u16)  – Pure dedup/sequence number. Uninvolved in message-type
+ *                                   discrimination (contrast with v2's offset-0 effectIndex).
  *
- * As of protocol v2.2, offsets 0-3 carry effectIndex/msgType/groupId, replacing the v1.4
- * `mode`(u16)/`ledMask`(u16) fields — firmware no longer reads `ledMask`; per-LED targeting
- * is not part of the current protocol. Offsets 4-19 are unchanged from v1.4.
- *
- * ### Payload discrimination (shared with the Game Mode protocol)
- *
- * The relay/lightstick firmware share one physical 20-byte buffer between two unrelated
- * features and reinterpret it in two steps, `effectIndex` first:
- * - `effectIndex == 0x0005` → a Game Mode 1-4 command (`LE_GAME_PATLOAD_T`, offsets 2-19 mean
- *   something completely different — subIndex/cmdIndex/level/option/etc.). Sent to **FF03**;
- *   see `GameManager.EFFECT_INDEX_GAME`. Never construct this via [LSEffectPayload].
- * - `effectIndex == 0x0000` → this class (`LE_BLE_PATLOAD_T`), sent to **FF02**, further split
- *   by [msgType] into Music/Game/GroupSetup/GroupControl.
- *
- * Because of this, `effectIndex` is **not** a caller-configurable field: [toByteArray] always
- * writes `0x0000`, and [fromByteArray] throws if the source bytes carry `0x0005` — those bytes
- * are a Game Mode command, not a valid [LSEffectPayload] frame, and decoding them here would
- * silently misread every other field.
+ * As of protocol v3, `msgType` moved to offset 0 as the single discriminator and `effectIndex`
+ * moved to offset 18-19 as a pure sequence/dedup number — replacing v2's two-level scheme
+ * (effectIndex at offset 0-1 doubling as a game/non-game gate, msgType at offset 2) and v1's
+ * `mode`/`ledMask` fields. [Device.loadTimeline] auto-manages `effectIndex` the same way it
+ * used to auto-manage the old `syncIndex` field this replaces — most callers never set it by
+ * hand.
  *
  * Validation:
  * - Throws [IllegalArgumentException] if any field is outside its valid range.
@@ -58,7 +49,7 @@ import java.nio.ByteOrder
  * @param randomDelay Random delay time in units of 10ms (0=none, 1~255=10ms~2550ms), default: 0.
  * @param fade Unsigned byte (0–255), firmware-specific fade parameter, default: 100.
  * @param broadcasting Broadcasting flag (0=single device, 1=broadcast to nearby devices), default: 0.
- * @param syncIndex Unsigned byte (0–255), used for device sync/slot, default: 0.
+ * @param effectIndex Unsigned 16-bit dedup/sequence number (0–65535), default: 0.
  *
  * @throws IllegalArgumentException If any argument violates the documented ranges.
  * @since 1.0.0
@@ -78,20 +69,20 @@ data class LSEffectPayload(
     val randomDelay: Int = 0,
     val fade: Int = 100,
     val broadcasting: Int = 0,
-    val syncIndex: Int = 0
+    val effectIndex: Int = 0
 ) {
 
     init {
         require(groupId in 0..20)         { "groupId must be within 0..20" }
         require(durationMs in 0..0xFFFF)  { "durationMs must be within 0..65535" }
+        require(effectIndex in 0..0xFFFF) { "effectIndex must be within 0..65535" }
 
         // 0~255 범위 체크
         for ((name, v) in listOf(
             "period" to period,
             "spf" to spf,
             "randomDelay" to randomDelay,
-            "fade" to fade,
-            "syncIndex" to syncIndex
+            "fade" to fade
         )) require(v in 0..255) { "$name must be within 0..255" }
 
         // 0 or 1만 허용
@@ -118,28 +109,28 @@ data class LSEffectPayload(
         fun u16le(v: Int) = byteArrayOf(u8(v), u8(v ushr 8))
 
         val out = ByteArray(20)
-        // [0..1] effectIndex — fixed 0x0000 (0x0005 marks a Game Mode FF03 payload instead)
-        u16le(EFFECT_INDEX_LED_GROUP).copyInto(out, 0)
-        // [2] msgType
-        out[2] = u8(msgType.code)
-        // [3] groupId
-        out[3] = u8(groupId)
-        // [4..6] fgColor RGB
-        out[4] = u8(color.r); out[5] = u8(color.g); out[6] = u8(color.b)
-        // [7..9] bgColor RGB
-        out[7] = u8(backgroundColor.r); out[8] = u8(backgroundColor.g); out[9] = u8(backgroundColor.b)
-        // [10] effectType code
-        out[10] = u8(effectType.code)
-        // [11..12] durationMs
-        u16le(durationMs).copyInto(out, 11)
-        // [13..19] tail fields
-        out[13] = u8(period)
-        out[14] = u8(spf)
-        out[15] = u8(randomColor)
-        out[16] = u8(randomDelay)
-        out[17] = u8(fade)
-        out[18] = u8(broadcasting)
-        out[19] = u8(syncIndex)
+        // [0] msgType
+        out[0] = u8(msgType.code)
+        // [1] groupId
+        out[1] = u8(groupId)
+        // [2..4] fgColor RGB
+        out[2] = u8(color.r); out[3] = u8(color.g); out[4] = u8(color.b)
+        // [5..7] bgColor RGB
+        out[5] = u8(backgroundColor.r); out[6] = u8(backgroundColor.g); out[7] = u8(backgroundColor.b)
+        // [8] effectType code
+        out[8] = u8(effectType.code)
+        // [9..10] durationMs
+        u16le(durationMs).copyInto(out, 9)
+        // [11..17] tail fields
+        out[11] = u8(period)
+        out[12] = u8(spf)
+        out[13] = u8(randomColor)
+        out[14] = u8(randomDelay)
+        out[15] = u8(fade)
+        out[16] = u8(broadcasting)
+        out[17] = 0 // reserved
+        // [18..19] effectIndex
+        u16le(effectIndex).copyInto(out, 18)
         return out
     }
 
@@ -167,7 +158,7 @@ data class LSEffectPayload(
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
-         * @param syncIndex Sync index (default: 0).
+         * @param effectIndex Dedup/sequence number (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.ON].
          */
@@ -183,7 +174,7 @@ data class LSEffectPayload(
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
-            syncIndex: Int = 0
+            effectIndex: Int = 0
         ) = LSEffectPayload(
             msgType = msgType,
             groupId = groupId,
@@ -195,7 +186,7 @@ data class LSEffectPayload(
             randomDelay = randomDelay,
             fade = fade,
             broadcasting = broadcasting,
-            syncIndex = syncIndex
+            effectIndex = effectIndex
         )
 
         /**
@@ -211,7 +202,7 @@ data class LSEffectPayload(
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
-         * @param syncIndex Sync index (default: 0).
+         * @param effectIndex Dedup/sequence number (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.OFF].
          */
@@ -225,7 +216,7 @@ data class LSEffectPayload(
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
-            syncIndex: Int = 0,
+            effectIndex: Int = 0,
         ) = LSEffectPayload(
             msgType = msgType,
             groupId = groupId,
@@ -236,7 +227,7 @@ data class LSEffectPayload(
             randomDelay = randomDelay,
             fade = fade,
             broadcasting = broadcasting,
-            syncIndex = syncIndex
+            effectIndex = effectIndex
         )
 
         /**
@@ -255,7 +246,7 @@ data class LSEffectPayload(
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param syncIndex Sync index (default: 0).
+         * @param effectIndex Dedup/sequence number (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.STROBE].
          */
@@ -271,7 +262,7 @@ data class LSEffectPayload(
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
-            syncIndex: Int = 0,
+            effectIndex: Int = 0,
             groupId: Int = 0
         ) = LSEffectPayload(
             msgType = msgType,
@@ -285,7 +276,7 @@ data class LSEffectPayload(
             randomDelay = randomDelay,
             fade = fade,
             broadcasting = broadcasting,
-            syncIndex = syncIndex
+            effectIndex = effectIndex
         )
 
         /**
@@ -304,7 +295,7 @@ data class LSEffectPayload(
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param syncIndex Sync index (default: 0).
+         * @param effectIndex Dedup/sequence number (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.BLINK].
          */
@@ -320,7 +311,7 @@ data class LSEffectPayload(
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
-            syncIndex: Int = 0,
+            effectIndex: Int = 0,
             groupId: Int = 0
         ) = LSEffectPayload(
             msgType = msgType,
@@ -334,7 +325,7 @@ data class LSEffectPayload(
             randomDelay = randomDelay,
             fade = fade,
             broadcasting = broadcasting,
-            syncIndex = syncIndex
+            effectIndex = effectIndex
         )
 
         /**
@@ -353,7 +344,7 @@ data class LSEffectPayload(
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param syncIndex Sync index (default: 0).
+         * @param effectIndex Dedup/sequence number (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.BREATH].
          */
@@ -369,7 +360,7 @@ data class LSEffectPayload(
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
-            syncIndex: Int = 0,
+            effectIndex: Int = 0,
             groupId: Int = 0
         ) = LSEffectPayload(
             msgType = msgType,
@@ -383,16 +374,16 @@ data class LSEffectPayload(
             randomDelay = randomDelay,
             fade = fade,
             broadcasting = broadcasting,
-            syncIndex = syncIndex
+            effectIndex = effectIndex
         )
     }
 
     /**
-     * Factories for the Glowsync group mapping protocol (v2.2): GroupSetup (msgType=2) and
+     * Factories for the Glowsync group mapping protocol (v3): GroupSetup (msgType=2) and
      * GroupControl (msgType=3) messages, built on the same 20-byte [LSEffectPayload] frame.
      *
      * These reuse [randomColor]=0, [randomDelay]=1, [fade]=0 and [broadcasting]=0 — fixed
-     * values the group feature doesn't use — and leave [syncIndex] at the legacy default (0).
+     * values the group feature doesn't use.
      */
     object Group {
 
@@ -497,22 +488,15 @@ data class LSEffectPayload(
 
     companion object {
 
-        /** Fixed `effectIndex` value marking this 20-byte frame as `LE_BLE_PATLOAD_T` (FF02). */
-        private const val EFFECT_INDEX_LED_GROUP = 0x0000
-
-        /** `effectIndex` value that instead marks a Game Mode 1-4 command (`LE_GAME_PATLOAD_T`, FF03). */
-        private const val EFFECT_INDEX_GAME = 0x0005
-
         /**
          * Reconstructs a payload from a **20-byte** serialized frame.
          * Mirrors [toByteArray] layout exactly.
          *
          * @param bytes A 20-byte array containing the serialized payload.
          * @return A deserialized [LSEffectPayload] instance.
-         * @throws IllegalArgumentException If [bytes] length is not exactly 20, or if byte[0-1]
-         *         (effectIndex) isn't `0x0000` — `0x0005` means [bytes] is a Game Mode FF03
-         *         command (`LE_GAME_PATLOAD_T`), not a valid [LSEffectPayload] frame; decoding
-         *         it here would silently misread every other field.
+         * @throws IllegalArgumentException If [bytes] length is not exactly 20, or if byte[0]
+         *         (msgType) is [MsgType.GAME_MODE] — Game Mode frames use a different field
+         *         layout (see [MsgType]) and are not valid [LSEffectPayload] frames.
          *
          * @sample com.lightstick.samples.EfxSamples.sampleDecodePayload
          */
@@ -524,15 +508,10 @@ data class LSEffectPayload(
             fun u16(): Int = bb.short.toInt() and 0xFFFF
             fun u8(): Int = bb.get().toInt() and 0xFF
 
-            val effectIndex = u16()
-            require(effectIndex == EFFECT_INDEX_LED_GROUP) {
-                if (effectIndex == EFFECT_INDEX_GAME) {
-                    "bytes is a Game Mode FF03 command (effectIndex=0x0005), not an LSEffectPayload frame"
-                } else {
-                    "effectIndex must be 0x0000 for LSEffectPayload (got 0x%04X)".format(effectIndex)
-                }
-            }
             val msgType = MsgType.fromCode(u8())
+            require(msgType != MsgType.GAME_MODE) {
+                "bytes is a Game Mode payload (msgType=GAME_MODE), not an LSEffectPayload frame"
+            }
             val groupId = u8()
             val fgR = u8(); val fgG = u8(); val fgB = u8()
             val bgR = u8(); val bgG = u8(); val bgB = u8()
@@ -544,7 +523,8 @@ data class LSEffectPayload(
             val randomDelay = u8()
             val fade = u8()
             val broadcasting = u8()
-            val syncIndex = u8()
+            u8() // reserved (ignored)
+            val effectIndex = u16()
 
             return LSEffectPayload(
                 msgType = msgType,
@@ -559,7 +539,7 @@ data class LSEffectPayload(
                 randomDelay = randomDelay,
                 fade = fade,
                 broadcasting = broadcasting,
-                syncIndex = syncIndex
+                effectIndex = effectIndex
             )
         }
     }

@@ -284,7 +284,7 @@ data class Device(
      * The SDK automatically:
      * - Pins every frame's msgType to MUSIC, so a frame accidentally built as Game/Group
      *   never collides with those message types during playback
-     * - Increments syncIndex for new playback session
+     * - Increments effectIndex for new playback session
      * - Manages timeline state internally
      *
      * @param frames Timeline entries [(timestampMs, 20B payload), ...]
@@ -364,7 +364,7 @@ data class Device(
     /**
      * Resumes effect transmission.
      *
-     * The SDK automatically increments syncIndex for device resynchronization.
+     * The SDK automatically increments effectIndex for device resynchronization.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -767,7 +767,7 @@ data class Device(
     }
 
     // ------------------------------------------------------------------------
-    // Group Control (Glowsync group mapping spec v2.2)
+    // Group Control (Glowsync group mapping spec v3)
     // ------------------------------------------------------------------------
 
     /**

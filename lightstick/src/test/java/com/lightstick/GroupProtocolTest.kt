@@ -10,7 +10,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Group protocol (Glowsync group mapping spec v2.2) unit tests — no BLE connection needed.
+ * Group protocol (Glowsync group mapping spec v3) unit tests — no BLE connection needed.
  */
 class GroupProtocolTest {
 
@@ -52,7 +52,7 @@ class GroupProtocolTest {
     @Test
     fun testMsgTypeCodes() {
         assertEquals(0, MsgType.MUSIC.code)
-        assertEquals(1, MsgType.GAME.code)
+        assertEquals(1, MsgType.GAME_MODE.code)
         assertEquals(2, MsgType.GROUP_SETUP.code)
         assertEquals(3, MsgType.GROUP_CONTROL.code)
     }
@@ -86,20 +86,21 @@ class GroupProtocolTest {
         val bytes = LSEffectPayload.Group.setup(groupId = 5).toByteArray()
 
         assertEquals(20, bytes.size)
-        assertEquals(0, bytes[0].toInt()); assertEquals(0, bytes[1].toInt()) // effectIndex = 0
-        assertEquals(2, bytes[2].toInt())   // msgType = GroupSetup
-        assertEquals(5, bytes[3].toInt())   // groupId
+        assertEquals(2, bytes[0].toInt())   // msgType = GroupSetup
+        assertEquals(5, bytes[1].toInt())   // groupId
         val fg = GroupPalette.colorFor(5)
-        assertEquals(fg.r, bytes[4].toInt() and 0xFF)
-        assertEquals(fg.g, bytes[5].toInt() and 0xFF)
-        assertEquals(fg.b, bytes[6].toInt() and 0xFF)
-        assertEquals(3, bytes[10].toInt())  // effectType = BLINK
-        assertEquals(6, bytes[13].toInt())  // period
-        assertEquals(100, bytes[14].toInt() and 0xFF) // spf
-        assertEquals(0, bytes[15].toInt())  // randomColor fixed 0
-        assertEquals(1, bytes[16].toInt())  // randomDelay fixed 1
-        assertEquals(0, bytes[17].toInt())  // fadeValue fixed 0
-        assertEquals(0, bytes[18].toInt())  // broadcasting fixed 0
+        assertEquals(fg.r, bytes[2].toInt() and 0xFF)
+        assertEquals(fg.g, bytes[3].toInt() and 0xFF)
+        assertEquals(fg.b, bytes[4].toInt() and 0xFF)
+        assertEquals(3, bytes[8].toInt())   // effectType = BLINK
+        assertEquals(6, bytes[11].toInt())  // period
+        assertEquals(100, bytes[12].toInt() and 0xFF) // spf
+        assertEquals(0, bytes[13].toInt())  // randomColor fixed 0
+        assertEquals(1, bytes[14].toInt())  // randomDelay fixed 1
+        assertEquals(0, bytes[15].toInt())  // fadeValue fixed 0
+        assertEquals(0, bytes[16].toInt())  // broadcasting fixed 0
+        assertEquals(0, bytes[17].toInt())  // reserved
+        assertEquals(0, bytes[18].toInt()); assertEquals(0, bytes[19].toInt()) // effectIndex = 0
     }
 
     @Test
@@ -134,9 +135,9 @@ class GroupProtocolTest {
     fun testControlMsgTypeAndByteLayout() {
         val bytes = LSEffectPayload.Group.control(groupId = 0, effectType = EffectType.BLINK).toByteArray()
         assertEquals(20, bytes.size)
-        assertEquals(3, bytes[2].toInt()) // msgType = GroupControl
-        assertEquals(0, bytes[3].toInt()) // groupId = all
-        assertEquals(3, bytes[10].toInt()) // effectType = BLINK
+        assertEquals(3, bytes[0].toInt()) // msgType = GroupControl
+        assertEquals(0, bytes[1].toInt()) // groupId = all
+        assertEquals(3, bytes[8].toInt()) // effectType = BLINK
     }
 
     @Test

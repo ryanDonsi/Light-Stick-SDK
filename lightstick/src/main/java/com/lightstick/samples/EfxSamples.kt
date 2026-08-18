@@ -389,7 +389,7 @@ object EfxSamples {
             randomDelay = 10,           // Max 100ms random delay
             fade = 80,
             broadcasting = 1,           // Broadcast to nearby devices
-            syncIndex = 0
+            effectIndex = 0
         )
         println("Payload built: effectType=${payload.effectType}, period=${payload.period}")
         return payload
@@ -463,7 +463,7 @@ object EfxSamples {
             spf = 100,
             fade = 80,
             broadcasting = 1,       // Broadcast to nearby
-            syncIndex = 0
+            effectIndex = 0
         )
 
         // BREATH with random features

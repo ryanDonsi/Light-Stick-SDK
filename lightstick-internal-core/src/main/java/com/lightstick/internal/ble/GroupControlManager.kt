@@ -6,7 +6,7 @@ import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 
 /**
- * Sends raw Group protocol frames (Glowsync group mapping spec v2.2) to FF02.
+ * Sends raw Group protocol frames (Glowsync group mapping spec v3) to FF02.
  *
  * Unlike [LedControlManager], writes here bypass the msgType rewrite and timeline
  * machinery: group messages must keep their own GROUP_SETUP/GROUP_CONTROL msgType byte

@@ -91,37 +91,38 @@ class LightStickSDKTest {
     // ===========================================================================================
 
     @Test
-    fun testToByteArrayAlwaysWritesEffectIndexZero() {
-        // effectIndex는 항상 0x0000 고정 — FF03 게임모드 페이로드(0x0005)와 구분되는 discriminator.
+    fun testToByteArrayWritesMsgTypeAtOffsetZero() {
+        // protocol v3: msgType(offset 0)이 유일한 메시지 종류 판별자.
         val payload = LSEffectPayload.Effects.on(Colors.RED)
         val bytes = payload.toByteArray()
-        assertEquals(0, bytes[0].toInt())
-        assertEquals(0, bytes[1].toInt())
+        assertEquals(0, bytes[0].toInt()) // MsgType.MUSIC
     }
 
     @Test
-    fun testFromByteArrayRejectsGameModeEffectIndex() {
-        // effectIndex=0x0005는 게임모드(FF03) 페이로드 — LSEffectPayload로 디코딩하면 안 됨.
+    fun testFromByteArrayRejectsGameModeMsgType() {
+        // msgType=GAME_MODE(1)는 다른 필드 레이아웃(body B)을 쓰는 게임모드 페이로드 —
+        // LSEffectPayload(body A)로 디코딩하면 안 됨.
         val bytes = ByteArray(20)
-        bytes[0] = 0x05
-        bytes[1] = 0x00
+        bytes[0] = 1
         assertThrows(IllegalArgumentException::class.java) {
             LSEffectPayload.fromByteArray(bytes)
         }
     }
 
     @Test
-    fun testFromByteArrayRejectsUnknownEffectIndex() {
-        val bytes = ByteArray(20)
-        bytes[0] = 0x01
-        bytes[1] = 0x00
-        assertThrows(IllegalArgumentException::class.java) {
-            LSEffectPayload.fromByteArray(bytes)
-        }
+    fun testEffectIndexRoundTripsAtOffset18() {
+        // protocol v3: effectIndex(offset 18-19, u16 LE)는 순수 중복 검사/시퀀스 번호 용도.
+        val payload = LSEffectPayload.Effects.on(Colors.RED, effectIndex = 0x1234)
+        val bytes = payload.toByteArray()
+        assertEquals(0x34, bytes[18].toInt() and 0xFF)
+        assertEquals(0x12, bytes[19].toInt() and 0xFF)
+
+        val decoded = LSEffectPayload.fromByteArray(bytes)
+        assertEquals(0x1234, decoded.effectIndex)
     }
 
     @Test
-    fun testRoundTripPreservesEffectIndexZero() {
+    fun testRoundTripPreservesFields() {
         val original = LSEffectPayload.Effects.blink(period = 5, color = Colors.BLUE)
         val decoded = LSEffectPayload.fromByteArray(original.toByteArray())
         assertEquals(original, decoded)
@@ -138,7 +139,7 @@ class LightStickSDKTest {
         val bytes = blinkPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (BLINK = 3)
-        assertEquals(3, bytes[10].toInt())
+        assertEquals(3, bytes[8].toInt())
     }
 
     @Test
@@ -152,7 +153,7 @@ class LightStickSDKTest {
         val bytes = strobePayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (STROBE = 2)
-        assertEquals(2, bytes[10].toInt())
+        assertEquals(2, bytes[8].toInt())
     }
 
     @Test
@@ -166,7 +167,7 @@ class LightStickSDKTest {
         val bytes = breathPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (BREATH = 4)
-        assertEquals(4, bytes[10].toInt())
+        assertEquals(4, bytes[8].toInt())
     }
 
     @Test
@@ -177,7 +178,7 @@ class LightStickSDKTest {
         val bytes = onPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (ON = 1)
-        assertEquals(1, bytes[10].toInt())
+        assertEquals(1, bytes[8].toInt())
     }
 
     @Test
@@ -188,7 +189,7 @@ class LightStickSDKTest {
         val bytes = offPayload.toByteArray()
         assertEquals(20, bytes.size)
         // 이펙트 타입 확인 (OFF = 0)
-        assertEquals(0, bytes[10].toInt())
+        assertEquals(0, bytes[8].toInt())
     }
 
     // ===========================================================================================
