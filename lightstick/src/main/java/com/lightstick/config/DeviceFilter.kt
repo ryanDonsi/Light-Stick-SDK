@@ -117,35 +117,6 @@ data class DeviceFilter internal constructor(
             )
         }
 
-        /**
-         * Matches Glowsync relay ("RL") advertising names: `GlowSyncXXXX RL`, where `XXXX`
-         * is a 4-digit hex suffix. This is the device type the SDK connects to and writes
-         * the 20-byte LED/group payload to.
-         *
-         * Equivalent to `byName("^GlowSync[0-9A-Fa-f]{4} RL$", MatchMode.REGEX)`.
-         *
-         * @see byName
-         */
-        @JvmStatic
-        fun glowSyncRelay(): DeviceFilter =
-            byName("^GlowSync[0-9A-Fa-f]{4} RL$", MatchMode.REGEX)
-
-        /**
-         * Matches both Glowsync relay ("RL") and master-lightstick ("GL") advertising names:
-         * `GlowSyncXXXX RL` or `GlowSyncXXXX GL`.
-         *
-         * Direct app-to-master-lightstick pairing (GL) is currently out of scope for this
-         * SDK's connection flow — use [glowSyncRelay] unless you have your own handling for
-         * GL devices.
-         *
-         * Equivalent to `byName("^GlowSync[0-9A-Fa-f]{4} (RL|GL)$", MatchMode.REGEX)`.
-         *
-         * @see byName
-         */
-        @JvmStatic
-        fun glowSyncDevice(): DeviceFilter =
-            byName("^GlowSync[0-9A-Fa-f]{4} (RL|GL)$", MatchMode.REGEX)
-
         // ============================================================================================
         // MAC Address-based Filters
         // ============================================================================================
@@ -484,5 +455,58 @@ data class DeviceFilter internal constructor(
          * Example: Pattern `"LS-.*-2024"` matches `"LS-PRO-2024"`, `"LS-LITE-2024"`, etc.
          */
         REGEX
+    }
+
+    /**
+     * Incrementally builds a [DeviceFilter] out of multiple name patterns, OR-combined.
+     *
+     * Use this when the set of acceptable name patterns isn't known as a fixed list up
+     * front (e.g. assembled conditionally). For a fixed list, [byName] + [or] — or
+     * [DeviceFilter.byMacPrefixes] for the MAC equivalent — needs no builder:
+     * ```
+     * DeviceFilter.byName("RL", MatchMode.ENDS_WITH)
+     *     .or(DeviceFilter.byName("GL", MatchMode.ENDS_WITH))
+     * ```
+     * The builder itself is mutable and not thread-safe; call [build] once to obtain the
+     * resulting immutable [DeviceFilter], same as every other filter in this SDK.
+     *
+     * Example:
+     * ```
+     * val filter = DeviceFilter.Builder()
+     *     .addName("RL", MatchMode.ENDS_WITH)
+     *     .addName("GL", MatchMode.ENDS_WITH)
+     *     .build()
+     * ```
+     */
+    class Builder {
+        private val filters = mutableListOf<DeviceFilter>()
+
+        /**
+         * Adds a name pattern to match (OR-combined with any patterns already added).
+         *
+         * @param pattern The pattern to match against device names.
+         * @param mode The matching mode to use (default: [MatchMode.CONTAINS]).
+         * @param ignoreCase Whether to ignore case when matching (default: `true`).
+         * @return This builder, for chaining.
+         */
+        @JvmOverloads
+        fun addName(
+            pattern: String,
+            mode: MatchMode = MatchMode.CONTAINS,
+            ignoreCase: Boolean = true
+        ): Builder {
+            filters.add(byName(pattern, mode, ignoreCase))
+            return this
+        }
+
+        /**
+         * Builds the immutable [DeviceFilter]: an OR of every pattern added via [addName].
+         *
+         * @throws IllegalStateException If no patterns were added.
+         */
+        fun build(): DeviceFilter {
+            check(filters.isNotEmpty()) { "Builder needs at least one addName() call before build()" }
+            return filters.reduce { acc, next -> acc.or(next) }
+        }
     }
 }
