@@ -377,8 +377,8 @@ object EfxSamples {
     @JvmStatic
     fun sampleBuildPayload(): LSEffectPayload {
         val payload = LSEffectPayload(
-            mode = LSEffectPayload.MODE_EFFECT_PAYLOAD,
-            ledMask = 0x00FF,           // First 8 LEDs
+            msgType = com.lightstick.types.MsgType.MUSIC,
+            groupId = 0,                // 0 = unassigned/all
             color = Colors.RED,
             backgroundColor = Colors.BLUE,
             effectType = com.lightstick.types.EffectType.STROBE,
@@ -458,8 +458,8 @@ object EfxSamples {
             transit = 30,
             randomColor = 0,
             randomDelay = 0,
-            mode = LSEffectPayload.MODE_EFFECT_PAYLOAD,
-            ledMask = 0x00FF,      // First 8 LEDs only
+            msgType = com.lightstick.types.MsgType.MUSIC,
+            groupId = 0,            // 0 = unassigned/all
             spf = 100,
             fade = 80,
             broadcasting = 1,       // Broadcast to nearby

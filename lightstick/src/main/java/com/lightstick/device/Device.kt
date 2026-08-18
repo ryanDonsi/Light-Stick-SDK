@@ -12,7 +12,6 @@ import com.lightstick.types.LSEffectPayload
 import com.lightstick.game.GameLevel
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
-import com.lightstick.group.GroupPayload
 import com.lightstick.ota.OtaManager
 import com.lightstick.device.DeviceInfo
 import java.util.concurrent.atomic.AtomicInteger
@@ -771,18 +770,20 @@ data class Device(
     // ------------------------------------------------------------------------
 
     /**
-     * Sends a raw [GroupPayload] (GroupSetup or GroupControl) to THIS device's relay.
+     * Sends a raw group-shaped [LSEffectPayload] (typically built via [LSEffectPayload.Group])
+     * straight to THIS device's relay, bypassing [sendEffect]'s timeline-stop / msgType-forcing
+     * behavior — required for GroupSetup/GroupControl, whose msgType must survive unmodified.
      *
      * Most callers should use [sendGroupSetup] or [sendGroupControlWave] instead;
      * this exists for one-off GroupControl sends (single group, single effect) built
-     * with [GroupPayload.control] directly.
+     * with [LSEffectPayload.Group.control] directly.
      *
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendGroupPayload(payload: GroupPayload): Boolean {
+    fun sendGroupPayload(payload: LSEffectPayload): Boolean {
         return try {
             if (!isConnected()) return false
             Facade.sendGroupPayloadTo(mac, payload.toByteArray())
@@ -803,13 +804,13 @@ data class Device(
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendGroupSetup(groupId: Int): Boolean = sendGroupPayload(GroupPayload.setup(groupId))
+    fun sendGroupSetup(groupId: Int): Boolean = sendGroupPayload(LSEffectPayload.Group.setup(groupId))
 
     /**
      * Sends a single **GroupControl** command for [groupId] (0=all, 1..20=one group).
      *
      * @param color Foreground color; defaults to that group's palette color (or white
-     *        for the all-groups broadcast) — see [GroupPayload.control].
+     *        for the all-groups broadcast) — see [LSEffectPayload.Group.control].
      * @return `true` if the command was enqueued; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
@@ -824,7 +825,7 @@ data class Device(
         period: Int? = null,
         spf: Int? = null
     ): Boolean = sendGroupPayload(
-        GroupPayload.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
+        LSEffectPayload.Group.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
     )
 
     /**
@@ -836,13 +837,13 @@ data class Device(
      * than a wave; the reference app defaults to 500ms. BLE write completion is handled
      * internally within each interval tick, so there's no need to separately budget for it.
      *
-     * If [repeat] is true, after group [groupCount] a full OFF ([GroupPayload.control] with
-     * groupId=0) is sent, then the wave restarts from group 1 — always forward (1→N), never
+     * If [repeat] is true, after group [groupCount] a full OFF ([LSEffectPayload.Group.control]
+     * with groupId=0) is sent, then the wave restarts from group 1 — always forward (1→N), never
      * reversed — and continues until [stopGroupControlWave] is called. Starting a new wave
      * (or calling this again) cancels any wave already running.
      *
      * @param color Foreground color applied to every group in the wave; defaults to each
-     *        group's own palette color (`null` — see [GroupPayload.control]).
+     *        group's own palette color (`null` — see [LSEffectPayload.Group.control]).
      * @param onGroupSent Invoked with the 1-based group id right after each send.
      * @return `true` if the wave was started; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
@@ -866,10 +867,10 @@ data class Device(
         return try {
             if (!isConnected()) return false
             val payloads = (1..groupCount).map { groupId ->
-                GroupPayload.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
+                LSEffectPayload.Group.control(groupId, effectType, color, backgroundColor, durationMs, period, spf)
                     .toByteArray()
             }
-            val resetPayload = GroupPayload.control(0, EffectType.OFF).toByteArray()
+            val resetPayload = LSEffectPayload.Group.control(0, EffectType.OFF).toByteArray()
             Facade.startGroupControlWave(mac, payloads, intervalMs, repeat, resetPayload, onGroupSent)
         } catch (_: Throwable) {
             false

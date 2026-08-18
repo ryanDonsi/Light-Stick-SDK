@@ -27,10 +27,11 @@ internal class LedControlManager(
     companion object {
         private const val TAG = "LedControlManager"
 
-        // LSEffectPayload bytes[0-1] (u16 Little Endian): 동작 모드
-        private const val MODE_BYTE_POSITION = 0
-        const val MODE_EFFECT_PAYLOAD = 1  // 일반 이펙트 페이로드
-        const val MODE_GAME = 5            // 게임 모드
+        // LSEffectPayload byte[2] (protocol v2.2): msgType. Effect/timeline sends through
+        // this manager are always "Music" — group messages bypass this class entirely
+        // (see GroupControlManager) so they keep their own GROUP_SETUP/GROUP_CONTROL msgType.
+        private const val MSG_TYPE_BYTE_POSITION = 2
+        const val MSG_TYPE_MUSIC = 0
 
         private const val SYNC_INDEX_BYTE_POSITION = 19  // LSEffectPayload의 syncIndex 위치
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
@@ -118,7 +119,7 @@ internal class LedControlManager(
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = setMode(bytes20, MODE_EFFECT_PAYLOAD),
+            data = setMsgType(bytes20, MSG_TYPE_MUSIC),
             coalesceKey = "LCS:PAYLOAD"
         )
     }
@@ -145,7 +146,7 @@ internal class LedControlManager(
                     val ok = sendNoResponseCoalesced(
                         serviceUuid = UuidConstants.LCS_SERVICE,
                         charUuid = UuidConstants.LCS_PAYLOAD,
-                        data = setMode(frame, MODE_EFFECT_PAYLOAD),
+                        data = setMsgType(frame, MSG_TYPE_MUSIC),
                         coalesceKey = "LCS:PAYLOAD"
                     )
                     if (!ok) {
@@ -171,7 +172,7 @@ internal class LedControlManager(
      * EFX 타임라인을 로드합니다.
      *
      * 로드와 동시에:
-     * 1. 모든 프레임의 mode를 MODE_EFFECT_PAYLOAD(1)로 설정 (게임모드 충돌 방지)
+     * 1. 모든 프레임의 msgType을 MSG_TYPE_MUSIC(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
      * 2. syncIndex가 자동으로 증가 (새로운 재생 세션 시작)
      *
      * @param frames 타임라인 엔트리 리스트 (timestampMs, 20B payload)
@@ -185,9 +186,9 @@ internal class LedControlManager(
 
         val sortedFrames = frames.sortedBy { it.first }
 
-        // 모든 프레임을 MODE_EFFECT_PAYLOAD(1)로 고정 (게임모드=5 충돌 방지)
+        // 모든 프레임을 MSG_TYPE_MUSIC(0)으로 고정 (그룹/게임 msgType 충돌 방지)
         timeline = sortedFrames.map { (timestamp, frame) ->
-            timestamp to setMode(frame, MODE_EFFECT_PAYLOAD)
+            timestamp to setMsgType(frame, MSG_TYPE_MUSIC)
         }
 
         lastSentIndex = -1
@@ -199,7 +200,7 @@ internal class LedControlManager(
         // ✅ 새 타임라인 로드 시 syncIndex 자동 증가
         currentSyncIndex = (currentSyncIndex % 255) + 1
 
-        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, mode=MODE_EFFECT_PAYLOAD, syncIndex=$currentSyncIndex")
+        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_MUSIC, syncIndex=$currentSyncIndex")
 
         startMonitor()
     }
@@ -364,18 +365,14 @@ internal class LedControlManager(
     // ============================================================================================
 
     /**
-     * LSEffectPayload의 bytes[0-1](mode)를 설정합니다.
-     * MODE_EFFECT_PAYLOAD(1) 또는 MODE_GAME(5)
-     *
-     * mode는 Little Endian u16으로 저장됩니다.
+     * LSEffectPayload의 byte[2](msgType, protocol v2.2)를 설정합니다.
      */
-    private fun setMode(frame: ByteArray, mode: Int): ByteArray {
+    private fun setMsgType(frame: ByteArray, msgType: Int): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }
-        require(mode in 0..0xFFFF) { "mode must be 0-65535" }
+        require(msgType in 0..0xFF) { "msgType must be 0-255" }
 
         return frame.copyOf().apply {
-            this[MODE_BYTE_POSITION] = (mode and 0xFF).toByte()
-            this[MODE_BYTE_POSITION + 1] = ((mode shr 8) and 0xFF).toByte()
+            this[MSG_TYPE_BYTE_POSITION] = msgType.toByte()
         }
     }
 

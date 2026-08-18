@@ -813,7 +813,7 @@ object Facade {
     // Group Control (Glowsync group mapping spec v2.2)
     // ============================================================================================
 
-    /** Writes a raw 20-byte Group protocol frame (GroupPayload.toByteArray()) to FF02. */
+    /** Writes a raw 20-byte Group protocol frame (LSEffectPayload.toByteArray()) to FF02. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendGroupPayloadTo(mac: String, bytes20: ByteArray): Boolean {
         requireInit()

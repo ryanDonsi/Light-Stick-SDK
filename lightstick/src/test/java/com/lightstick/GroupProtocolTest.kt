@@ -1,11 +1,11 @@
 package com.lightstick.test
 
-import com.lightstick.group.GroupMsgType
 import com.lightstick.group.GroupPalette
-import com.lightstick.group.GroupPayload
 import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.EffectType
+import com.lightstick.types.LSEffectPayload
+import com.lightstick.types.MsgType
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -46,36 +46,36 @@ class GroupProtocolTest {
     }
 
     // ===========================================================================================
-    // GroupMsgType
+    // MsgType
     // ===========================================================================================
 
     @Test
-    fun testGroupMsgTypeCodes() {
-        assertEquals(0, GroupMsgType.MUSIC.code)
-        assertEquals(1, GroupMsgType.GAME.code)
-        assertEquals(2, GroupMsgType.GROUP_SETUP.code)
-        assertEquals(3, GroupMsgType.GROUP_CONTROL.code)
+    fun testMsgTypeCodes() {
+        assertEquals(0, MsgType.MUSIC.code)
+        assertEquals(1, MsgType.GAME.code)
+        assertEquals(2, MsgType.GROUP_SETUP.code)
+        assertEquals(3, MsgType.GROUP_CONTROL.code)
     }
 
     @Test
-    fun testGroupMsgTypeFromCode() {
-        assertEquals(GroupMsgType.GROUP_SETUP, GroupMsgType.fromCode(2))
-        assertEquals(GroupMsgType.GROUP_CONTROL, GroupMsgType.fromCode(3))
-        assertEquals(GroupMsgType.MUSIC, GroupMsgType.fromCode(99)) // unknown -> MUSIC
+    fun testMsgTypeFromCode() {
+        assertEquals(MsgType.GROUP_SETUP, MsgType.fromCode(2))
+        assertEquals(MsgType.GROUP_CONTROL, MsgType.fromCode(3))
+        assertEquals(MsgType.MUSIC, MsgType.fromCode(99)) // unknown -> MUSIC
     }
 
     // ===========================================================================================
-    // GroupPayload.setup
+    // LSEffectPayload.Group.setup
     // ===========================================================================================
 
     @Test
     fun testSetupPayloadFields() {
-        val payload = GroupPayload.setup(groupId = 3)
+        val payload = LSEffectPayload.Group.setup(groupId = 3)
 
-        assertEquals(GroupMsgType.GROUP_SETUP, payload.msgType)
+        assertEquals(MsgType.GROUP_SETUP, payload.msgType)
         assertEquals(3, payload.groupId)
-        assertEquals(GroupPalette.colorFor(3), payload.fgColor)
-        assertEquals(Colors.BLACK, payload.bgColor)
+        assertEquals(GroupPalette.colorFor(3), payload.color)
+        assertEquals(Colors.BLACK, payload.backgroundColor)
         assertEquals(EffectType.BLINK, payload.effectType)
         assertEquals(6, payload.period)
         assertEquals(100, payload.spf)
@@ -83,7 +83,7 @@ class GroupProtocolTest {
 
     @Test
     fun testSetupPayloadBytes() {
-        val bytes = GroupPayload.setup(groupId = 5).toByteArray()
+        val bytes = LSEffectPayload.Group.setup(groupId = 5).toByteArray()
 
         assertEquals(20, bytes.size)
         assertEquals(0, bytes[0].toInt()); assertEquals(0, bytes[1].toInt()) // effectIndex = 0
@@ -104,35 +104,35 @@ class GroupProtocolTest {
 
     @Test
     fun testSetupRejectsGroupZeroAndOutOfRange() {
-        assertThrows(IllegalArgumentException::class.java) { GroupPayload.setup(0) }
-        assertThrows(IllegalArgumentException::class.java) { GroupPayload.setup(21) }
+        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload.Group.setup(0) }
+        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload.Group.setup(21) }
     }
 
     // ===========================================================================================
-    // GroupPayload.control
+    // LSEffectPayload.Group.control
     // ===========================================================================================
 
     @Test
     fun testControlDefaultsToGroupPaletteColor() {
-        val payload = GroupPayload.control(groupId = 7, effectType = EffectType.ON)
-        assertEquals(GroupPalette.colorFor(7), payload.fgColor)
+        val payload = LSEffectPayload.Group.control(groupId = 7, effectType = EffectType.ON)
+        assertEquals(GroupPalette.colorFor(7), payload.color)
     }
 
     @Test
     fun testControlAllGroupsDefaultsToWhite() {
-        val payload = GroupPayload.control(groupId = 0, effectType = EffectType.OFF)
-        assertEquals(Colors.WHITE, payload.fgColor)
+        val payload = LSEffectPayload.Group.control(groupId = 0, effectType = EffectType.OFF)
+        assertEquals(Colors.WHITE, payload.color)
     }
 
     @Test
     fun testControlExplicitColorOverridesDefault() {
-        val payload = GroupPayload.control(groupId = 1, effectType = EffectType.ON, color = Colors.CYAN)
-        assertEquals(Colors.CYAN, payload.fgColor)
+        val payload = LSEffectPayload.Group.control(groupId = 1, effectType = EffectType.ON, color = Colors.CYAN)
+        assertEquals(Colors.CYAN, payload.color)
     }
 
     @Test
     fun testControlMsgTypeAndByteLayout() {
-        val bytes = GroupPayload.control(groupId = 0, effectType = EffectType.BLINK).toByteArray()
+        val bytes = LSEffectPayload.Group.control(groupId = 0, effectType = EffectType.BLINK).toByteArray()
         assertEquals(20, bytes.size)
         assertEquals(3, bytes[2].toInt()) // msgType = GroupControl
         assertEquals(0, bytes[3].toInt()) // groupId = all
@@ -142,10 +142,10 @@ class GroupProtocolTest {
     @Test
     fun testControlRejectsOutOfRangeGroupId() {
         assertThrows(IllegalArgumentException::class.java) {
-            GroupPayload.control(groupId = 21, effectType = EffectType.ON)
+            LSEffectPayload.Group.control(groupId = 21, effectType = EffectType.ON)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            GroupPayload.control(groupId = -1, effectType = EffectType.ON)
+            LSEffectPayload.Group.control(groupId = -1, effectType = EffectType.ON)
         }
     }
 
@@ -155,23 +155,24 @@ class GroupProtocolTest {
 
     @Test
     fun testDefaultPeriodSpfTable() {
-        assertEquals(0 to 100, GroupPayload.defaultPeriodSpf(EffectType.OFF))
-        assertEquals(0 to 100, GroupPayload.defaultPeriodSpf(EffectType.ON))
-        assertEquals(10 to 20, GroupPayload.defaultPeriodSpf(EffectType.STROBE))
-        assertEquals(6 to 100, GroupPayload.defaultPeriodSpf(EffectType.BLINK))
-        assertEquals(20 to 100, GroupPayload.defaultPeriodSpf(EffectType.BREATH))
+        assertEquals(0 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.OFF))
+        assertEquals(0 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.ON))
+        assertEquals(10 to 20, LSEffectPayload.Group.defaultPeriodSpf(EffectType.STROBE))
+        assertEquals(6 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.BLINK))
+        assertEquals(20 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.BREATH))
     }
 
     @Test
     fun testControlUsesDefaultTimingWhenNotProvided() {
-        val strobe = GroupPayload.control(groupId = 1, effectType = EffectType.STROBE)
+        val strobe = LSEffectPayload.Group.control(groupId = 1, effectType = EffectType.STROBE)
         assertEquals(10, strobe.period)
         assertEquals(20, strobe.spf)
     }
 
     @Test
     fun testControlHonorsExplicitTimingOverride() {
-        val strobe = GroupPayload.control(groupId = 1, effectType = EffectType.STROBE, period = 99, spf = 50)
+        val strobe =
+            LSEffectPayload.Group.control(groupId = 1, effectType = EffectType.STROBE, period = 99, spf = 50)
         assertEquals(99, strobe.period)
         assertEquals(50, strobe.spf)
     }
@@ -182,13 +183,13 @@ class GroupProtocolTest {
 
     @Test
     fun testRoundTripSetup() {
-        val original = GroupPayload.setup(groupId = 12)
-        val decoded = GroupPayload.fromByteArray(original.toByteArray())
+        val original = LSEffectPayload.Group.setup(groupId = 12)
+        val decoded = LSEffectPayload.fromByteArray(original.toByteArray())
 
         assertEquals(original.msgType, decoded.msgType)
         assertEquals(original.groupId, decoded.groupId)
-        assertEquals(original.fgColor, decoded.fgColor)
-        assertEquals(original.bgColor, decoded.bgColor)
+        assertEquals(original.color, decoded.color)
+        assertEquals(original.backgroundColor, decoded.backgroundColor)
         assertEquals(original.effectType, decoded.effectType)
         assertEquals(original.period, decoded.period)
         assertEquals(original.spf, decoded.spf)
@@ -196,19 +197,19 @@ class GroupProtocolTest {
 
     @Test
     fun testRoundTripControl() {
-        val original = GroupPayload.control(
+        val original = LSEffectPayload.Group.control(
             groupId = 0,
             effectType = EffectType.BREATH,
             color = Colors.PINK,
             backgroundColor = Colors.BLUE,
             durationMs = 4000
         )
-        val decoded = GroupPayload.fromByteArray(original.toByteArray())
+        val decoded = LSEffectPayload.fromByteArray(original.toByteArray())
 
         assertEquals(original.msgType, decoded.msgType)
         assertEquals(original.groupId, decoded.groupId)
-        assertEquals(original.fgColor, decoded.fgColor)
-        assertEquals(original.bgColor, decoded.bgColor)
+        assertEquals(original.color, decoded.color)
+        assertEquals(original.backgroundColor, decoded.backgroundColor)
         assertEquals(original.effectType, decoded.effectType)
         assertEquals(original.durationMs, decoded.durationMs)
     }
@@ -216,7 +217,7 @@ class GroupProtocolTest {
     @Test
     fun testInvalidByteLengthThrows() {
         assertThrows(IllegalArgumentException::class.java) {
-            GroupPayload.fromByteArray(ByteArray(19))
+            LSEffectPayload.fromByteArray(ByteArray(19))
         }
     }
 }

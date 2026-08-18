@@ -1,14 +1,16 @@
 package com.lightstick.types
 
+import com.lightstick.group.GroupPalette
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Structured LightStick Effect payload (EFX spec v1.4) that encodes to an exact **20-byte** frame.
+ * Structured LightStick Effect payload (protocol v2.2) that encodes to an exact **20-byte** frame.
  *
  * Byte layout (indices in brackets, little-endian for u16):
- *  [0..1]   mode           (u16)  – Operation mode: see [MODE_EFFECT_PAYLOAD], [MODE_GAME]
- *  [2..3]   ledMask        (u16)  – LED bitmask (0x0000 commonly means "all" in firmware)
+ *  [0..1]   effectIndex    (u16)  – Reserved, always 0 unless a future protocol revision defines it.
+ *  [2]      msgType        (u8)   – See [MsgType]. Default [MsgType.MUSIC].
+ *  [3]      groupId        (u8)   – 0 = unassigned/all, 1..20 = group (see [com.lightstick.group.GroupPalette]).
  *  [4..6]   fgColor RGB    (3xu8) – Foreground color
  *  [7..9]   bgColor RGB    (3xu8) – Background color
  *  [10]     effectType     (u8)   – enum code, see [EffectType.code]
@@ -21,11 +23,16 @@ import java.nio.ByteOrder
  *  [18]     broadcasting   (u8)   – 0 or 1 only (0=single device, 1=broadcast to nearby devices)
  *  [19]     syncIndex      (u8)
  *
+ * As of protocol v2.2, offsets 0-3 carry effectIndex/msgType/groupId, replacing the v1.4
+ * `mode`(u16)/`ledMask`(u16) fields — firmware no longer reads `ledMask`; per-LED targeting
+ * is not part of the current protocol. Offsets 4-19 are unchanged from v1.4.
+ *
  * Validation:
  * - Throws [IllegalArgumentException] if any field is outside its valid range.
  *
- * @param mode Operation mode (u16). Use [MODE_EFFECT_PAYLOAD] or [MODE_GAME]. Default: [MODE_EFFECT_PAYLOAD].
- * @param ledMask Unsigned 16-bit LED bitmask, default: 0x0000 (all LEDs).
+ * @param effectIndex Reserved u16 field, default: 0.
+ * @param msgType Message type (u8); see [MsgType]. Default: [MsgType.MUSIC].
+ * @param groupId Target group: 0 = unassigned/all, 1..20 = a single group. Default: 0.
  * @param color RGB foreground color for this effect, default: WHITE.
  * @param backgroundColor RGB background color for this effect, default: BLACK.
  * @param effectType Logical effect type; serialized as [EffectType.code], default: ON.
@@ -44,8 +51,9 @@ import java.nio.ByteOrder
  * @sample com.lightstick.samples.EfxSamples.sampleBuildPayload
  */
 data class LSEffectPayload(
-    val mode: Int = MODE_EFFECT_PAYLOAD,
-    val ledMask: Int = 0x0000,
+    val effectIndex: Int = 0,
+    val msgType: MsgType = MsgType.MUSIC,
+    val groupId: Int = 0,
     val color: Color = Colors.WHITE,
     val backgroundColor: Color = Colors.BLACK,
     val effectType: EffectType = EffectType.ON,
@@ -60,8 +68,8 @@ data class LSEffectPayload(
 ) {
 
     init {
-        require(mode in 0..0xFFFF)        { "mode must be within 0..65535" }
-        require(ledMask in 0..0xFFFF)     { "ledMask must be within 0..0xFFFF" }
+        require(effectIndex in 0..0xFFFF) { "effectIndex must be within 0..65535" }
+        require(groupId in 0..20)         { "groupId must be within 0..20" }
         require(durationMs in 0..0xFFFF)  { "durationMs must be within 0..65535" }
 
         // 0~255 범위 체크
@@ -97,10 +105,12 @@ data class LSEffectPayload(
         fun u16le(v: Int) = byteArrayOf(u8(v), u8(v ushr 8))
 
         val out = ByteArray(20)
-        // [0..1] mode
-        u16le(mode).copyInto(out, 0)
-        // [2..3] ledMask
-        u16le(ledMask).copyInto(out, 2)
+        // [0..1] effectIndex
+        u16le(effectIndex).copyInto(out, 0)
+        // [2] msgType
+        out[2] = u8(msgType.code)
+        // [3] groupId
+        out[3] = u8(groupId)
         // [4..6] fgColor RGB
         out[4] = u8(color.r); out[5] = u8(color.g); out[6] = u8(color.b)
         // [7..9] bgColor RGB
@@ -125,7 +135,7 @@ data class LSEffectPayload(
      * All fields can be customized; those not provided use sensible defaults.
      *
      * Note: Primary parameters (color, period, etc.) are listed first for ease of use,
-     * while optional parameters (mode, ledMask, spf, fade, etc.) follow with defaults.
+     * while optional parameters (msgType, groupId, spf, fade, etc.) follow with defaults.
      */
     object Effects {
 
@@ -139,8 +149,8 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
-         * @param ledMask LED bitmask (default: 0x0000 = all LEDs).
+         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param groupId Target group: 0=all, 1..20=one group (default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
@@ -155,15 +165,15 @@ data class LSEffectPayload(
             transit: Int = 0,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            mode: Int = MODE_EFFECT_PAYLOAD,
-            ledMask: Int = 0x0000,
+            msgType: MsgType = MsgType.MUSIC,
+            groupId: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
             syncIndex: Int = 0
         ) = LSEffectPayload(
-            mode = mode,
-            ledMask = ledMask,
+            msgType = msgType,
+            groupId = groupId,
             color = color,
             effectType = EffectType.ON,
             period = transit,
@@ -183,7 +193,8 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
+         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param groupId Target group: 0=all, 1..20=one group (default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
@@ -196,13 +207,15 @@ data class LSEffectPayload(
         fun off(
             transit: Int = 0,
             randomDelay: Int = 0,
-            mode: Int = MODE_EFFECT_PAYLOAD,
+            msgType: MsgType = MsgType.MUSIC,
+            groupId: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             broadcasting: Int = 0,
             syncIndex: Int = 0,
         ) = LSEffectPayload(
-            mode = mode,
+            msgType = msgType,
+            groupId = groupId,
             color = Colors.BLACK,
             effectType = EffectType.OFF,
             period = transit,
@@ -224,12 +237,12 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
+         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param groupId Target group: 0=all, 1..20=one group (default: 0).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param syncIndex Sync index (default: 0).
-         * @param ledMask LED bitmask (default: 0x0000 = all LEDs).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.STROBE].
          */
@@ -241,15 +254,15 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            mode: Int = MODE_EFFECT_PAYLOAD,
+            msgType: MsgType = MsgType.MUSIC,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             syncIndex: Int = 0,
-            ledMask: Int = 0x0000
+            groupId: Int = 0
         ) = LSEffectPayload(
-            mode = mode,
-            ledMask = ledMask,
+            msgType = msgType,
+            groupId = groupId,
             color = color,
             backgroundColor = backgroundColor,
             effectType = EffectType.STROBE,
@@ -273,12 +286,12 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
+         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param groupId Target group: 0=all, 1..20=one group (default: 0).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param syncIndex Sync index (default: 0).
-         * @param ledMask LED bitmask (default: 0x0000 = all LEDs).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.BLINK].
          */
@@ -290,15 +303,15 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            mode: Int = MODE_EFFECT_PAYLOAD,
+            msgType: MsgType = MsgType.MUSIC,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             syncIndex: Int = 0,
-            ledMask: Int = 0x0000
+            groupId: Int = 0
         ) = LSEffectPayload(
-            mode = mode,
-            ledMask = ledMask,
+            msgType = msgType,
+            groupId = groupId,
             color = color,
             backgroundColor = backgroundColor,
             effectType = EffectType.BLINK,
@@ -322,12 +335,12 @@ data class LSEffectPayload(
          * @param randomDelay Random delay in units of 10ms, 0~255 (default: 0).
          *
          * **Advanced Parameters** (optional):
-         * @param mode Operation mode (default: [MODE_EFFECT_PAYLOAD]).
+         * @param msgType Message type (default: [MsgType.MUSIC]).
+         * @param groupId Target group: 0=all, 1..20=one group (default: 0).
          * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
          * @param syncIndex Sync index (default: 0).
-         * @param ledMask LED bitmask (default: 0x0000 = all LEDs).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.BREATH].
          */
@@ -339,15 +352,15 @@ data class LSEffectPayload(
             backgroundColor: Color = Colors.BLACK,
             randomColor: Int = 0,
             randomDelay: Int = 0,
-            mode: Int = MODE_EFFECT_PAYLOAD,
+            msgType: MsgType = MsgType.MUSIC,
             broadcasting: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             syncIndex: Int = 0,
-            ledMask: Int = 0x0000
+            groupId: Int = 0
         ) = LSEffectPayload(
-            mode = mode,
-            ledMask = ledMask,
+            msgType = msgType,
+            groupId = groupId,
             color = color,
             backgroundColor = backgroundColor,
             effectType = EffectType.BREATH,
@@ -361,12 +374,115 @@ data class LSEffectPayload(
         )
     }
 
-    companion object {
-        /** 일반 이펙트 페이로드 모드 */
-        const val MODE_EFFECT_PAYLOAD = 1
+    /**
+     * Factories for the Glowsync group mapping protocol (v2.2): GroupSetup (msgType=2) and
+     * GroupControl (msgType=3) messages, built on the same 20-byte [LSEffectPayload] frame.
+     *
+     * These reuse [randomColor]=0, [randomDelay]=1, [fade]=0 and [broadcasting]=0 — fixed
+     * values the group feature doesn't use — and leave [syncIndex] at the legacy default (0).
+     */
+    object Group {
 
-        /** 게임 모드 */
-        const val MODE_GAME = 5
+        /**
+         * Default (period, spf) per [EffectType], reverse-engineered from the firmware's
+         * timing formula:
+         * ```
+         * BLINK / STROBE segment (on or off) ms   = (spf / 2) * period
+         * BREATH segment (fade-up/hold/down/hold) = (spf / 2) * (period / 2)
+         * ```
+         * These are estimates; adjust here if real-device timing feels off — no firmware
+         * rebuild required, since period/spf are just message field values.
+         */
+        @JvmStatic
+        fun defaultPeriodSpf(effectType: EffectType): Pair<Int, Int> = when (effectType) {
+            EffectType.OFF, EffectType.ON -> 0 to 100
+            EffectType.STROBE -> 10 to 20
+            EffectType.BLINK -> 6 to 100
+            EffectType.BREATH -> 20 to 100
+        }
+
+        /**
+         * Builds a **GroupSetup** (msgType=2) broadcast: the "join group [groupId]" beacon
+         * sent while the organizer holds the group screen open.
+         *
+         * Unassigned lightsticks blink [GroupPalette.colorFor] while this is being broadcast;
+         * pressing the lightstick's button locks it to this group. There is no explicit
+         * "stop" message — the caller decides when to move on to the next group's setup.
+         *
+         * @param groupId Group to advertise (1..20).
+         * @throws IllegalArgumentException If [groupId] is outside 1..20.
+         */
+        @JvmStatic
+        fun setup(groupId: Int): LSEffectPayload {
+            require(groupId in GroupPalette.MIN_GROUP_ID..GroupPalette.MAX_GROUP_ID) {
+                "groupId must be within ${GroupPalette.MIN_GROUP_ID}..${GroupPalette.MAX_GROUP_ID} for GroupSetup"
+            }
+            return LSEffectPayload(
+                msgType = MsgType.GROUP_SETUP,
+                groupId = groupId,
+                color = GroupPalette.colorFor(groupId),
+                backgroundColor = Colors.BLACK,
+                effectType = EffectType.BLINK,
+                period = 6,
+                spf = 100,
+                randomColor = 0,
+                randomDelay = 1,
+                fade = 0,
+                broadcasting = 0
+            )
+        }
+
+        /**
+         * Builds a **GroupControl** (msgType=3) command that plays [effectType] on the
+         * targeted group.
+         *
+         * @param groupId Target group: 0 = all groups, 1..20 = a single group.
+         * @param effectType Effect to play (OFF/ON/STROBE/BLINK/BREATH).
+         * @param color Foreground color. Defaults to [GroupPalette.colorFor] for a single
+         *        group (so control re-plays that group's own color), or white for the
+         *        all-groups broadcast (groupId=0).
+         * @param backgroundColor Background color for BLINK/BREATH (default: black).
+         * @param durationMs Duration in ms (default: 0). Not yet auto-reverted by firmware.
+         * @param period Optional timing override; defaults per [defaultPeriodSpf].
+         * @param spf Optional timing override; defaults per [defaultPeriodSpf].
+         * @throws IllegalArgumentException If [groupId] is outside 0..20.
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun control(
+            groupId: Int,
+            effectType: EffectType,
+            color: Color? = null,
+            backgroundColor: Color = Colors.BLACK,
+            durationMs: Int = 0,
+            period: Int? = null,
+            spf: Int? = null
+        ): LSEffectPayload {
+            require(groupId in 0..20) { "groupId must be within 0..20 for GroupControl" }
+            val (defaultPeriod, defaultSpf) = defaultPeriodSpf(effectType)
+            val fg = color ?: if (groupId in GroupPalette.MIN_GROUP_ID..GroupPalette.MAX_GROUP_ID) {
+                GroupPalette.colorFor(groupId)
+            } else {
+                Colors.WHITE
+            }
+            return LSEffectPayload(
+                msgType = MsgType.GROUP_CONTROL,
+                groupId = groupId,
+                color = fg,
+                backgroundColor = backgroundColor,
+                effectType = effectType,
+                durationMs = durationMs,
+                period = period ?: defaultPeriod,
+                spf = spf ?: defaultSpf,
+                randomColor = 0,
+                randomDelay = 1,
+                fade = 0,
+                broadcasting = 0
+            )
+        }
+    }
+
+    companion object {
 
         /**
          * Reconstructs a payload from a **20-byte** serialized frame.
@@ -386,8 +502,9 @@ data class LSEffectPayload(
             fun u16(): Int = bb.short.toInt() and 0xFFFF
             fun u8(): Int = bb.get().toInt() and 0xFF
 
-            val mode = u16()
-            val ledMask = u16()
+            val effectIndex = u16()
+            val msgType = MsgType.fromCode(u8())
+            val groupId = u8()
             val fgR = u8(); val fgG = u8(); val fgB = u8()
             val bgR = u8(); val bgG = u8(); val bgB = u8()
             val effectTypeCode = u8()
@@ -401,8 +518,9 @@ data class LSEffectPayload(
             val syncIndex = u8()
 
             return LSEffectPayload(
-                mode = mode,
-                ledMask = ledMask,
+                effectIndex = effectIndex,
+                msgType = msgType,
+                groupId = groupId,
                 color = Color(fgR, fgG, fgB),
                 backgroundColor = Color(bgR, bgG, bgB),
                 effectType = EffectType.fromCode(effectTypeCode),

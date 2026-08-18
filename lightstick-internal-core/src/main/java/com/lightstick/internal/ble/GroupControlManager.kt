@@ -17,9 +17,10 @@ import kotlinx.coroutines.launch
  * Sends raw Group protocol frames (Glowsync group mapping spec v2.2) to FF02 and drives
  * the "wave" (파도타기) sequencing used by group control.
  *
- * Unlike [LedControlManager], writes here bypass the mode-byte rewrite and timeline
- * machinery: the group protocol owns all 20 bytes of the frame (see `GroupPayload` in
- * the public module), including what [LedControlManager] treats as the mode field.
+ * Unlike [LedControlManager], writes here bypass the msgType rewrite and timeline
+ * machinery: group messages must keep their own GROUP_SETUP/GROUP_CONTROL msgType byte
+ * (see `LSEffectPayload.Group` in the public module), which [LedControlManager] would
+ * otherwise stamp back to MUSIC.
  */
 internal class GroupControlManager(
     private val gattClient: GattClient
