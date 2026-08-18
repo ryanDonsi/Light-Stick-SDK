@@ -791,21 +791,25 @@ data class Device(
      * // Join group N (organizer holds this screen open; see LSEffectPayload.Group.setup).
      * device.sendGroupPayload(LSEffectPayload.Group.setup(groupId = n))
      *
+     * // Group 1 + group 3 together, in one simultaneous packet — combine GRP* constants with `or`.
+     * device.sendGroupPayload(
+     *     LSEffectPayload.Group.control(
+     *         LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, EffectType.ON, Colors.WHITE
+     *     )
+     * )
+     *
      * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — send once
      * // per group, spaced by your own visual-pacing interval (recommended 200-1000ms; values
      * // much below that read as all groups lighting up at once).
      * for (groupId in 1..groupCount) {
-     *     device.sendGroupPayload(LSEffectPayload.Group.control(groupId, EffectType.BLINK))
+     *     device.sendGroupPayload(LSEffectPayload.Group.control(1L shl (groupId - 1), EffectType.BLINK, Colors.WHITE))
      *     delay(waveIntervalMs)
      * }
      *
-     * // Group 1 + group 3 together, in one simultaneous packet.
-     * device.sendGroupPayload(
-     *     LSEffectPayload.Group.controlGroups(setOf(1, 3), EffectType.ON, color = Colors.WHITE)
-     * )
-     *
      * // Every connected lightstick, regardless of group assignment.
-     * device.sendGroupPayload(LSEffectPayload.Group.controlAllSingle(EffectType.OFF))
+     * device.sendGroupPayload(
+     *     LSEffectPayload.Group.control(LSEffectPayload.Group.ALL_SINGLE, EffectType.OFF, Colors.WHITE)
+     * )
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)

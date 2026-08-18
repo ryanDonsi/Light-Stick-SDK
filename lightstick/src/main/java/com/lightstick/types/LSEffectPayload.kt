@@ -383,73 +383,57 @@ data class LSEffectPayload(
      * [LSEffectPayload] frame.
      *
      * There is no separate "GroupControl" msgType — targeting is expressed entirely by
-     * `groupMask` (offset 1-4): a 32-bit bitmask where bit(N-1) selects group N (1..32),
-     * any combination of bits can be set at once (e.g. group 1 + group 3 in a single frame,
-     * so every targeted lightstick reacts to the exact same 802.15.4 packet simultaneously —
-     * unlike a sequential "wave" of separate messages), `0` means single/all (ignore group
-     * membership entirely), and `0xFFFFFFFF` means every group.
+     * `groupMask` (offset 1-4): a 32-bit bitmask where bit(N-1) selects group N (1..32). Combine
+     * groups with plain `or`, e.g. `GRP1 or GRP3` — every targeted lightstick reacts to the same
+     * 802.15.4 packet at once, unlike a sequential "wave" of separate messages. [ALL_SINGLE]
+     * means single/all (ignore group membership entirely); [ALL_GROUPS] means every
+     * group-assigned lightstick.
      *
-     * These reuse [randomColor]=0, [randomDelay]=1, [fade]=0 and [broadcasting]=0 — fixed
+     * `control` reuses [randomColor]=0, [randomDelay]=1, [fade]=0 and [broadcasting]=0 — fixed
      * values the group feature doesn't use.
+     *
+     * @sample com.lightstick.samples.GroupSamples.sampleGroupControl
      */
     object Group {
 
+        const val GRP1: Long = 1L shl 0
+        const val GRP2: Long = 1L shl 1
+        const val GRP3: Long = 1L shl 2
+        const val GRP4: Long = 1L shl 3
+        const val GRP5: Long = 1L shl 4
+        const val GRP6: Long = 1L shl 5
+        const val GRP7: Long = 1L shl 6
+        const val GRP8: Long = 1L shl 7
+        const val GRP9: Long = 1L shl 8
+        const val GRP10: Long = 1L shl 9
+        const val GRP11: Long = 1L shl 10
+        const val GRP12: Long = 1L shl 11
+        const val GRP13: Long = 1L shl 12
+        const val GRP14: Long = 1L shl 13
+        const val GRP15: Long = 1L shl 14
+        const val GRP16: Long = 1L shl 15
+        const val GRP17: Long = 1L shl 16
+        const val GRP18: Long = 1L shl 17
+        const val GRP19: Long = 1L shl 18
+        const val GRP20: Long = 1L shl 19
+        const val GRP21: Long = 1L shl 20
+        const val GRP22: Long = 1L shl 21
+        const val GRP23: Long = 1L shl 22
+        const val GRP24: Long = 1L shl 23
+        const val GRP25: Long = 1L shl 24
+        const val GRP26: Long = 1L shl 25
+        const val GRP27: Long = 1L shl 26
+        const val GRP28: Long = 1L shl 27
+        const val GRP29: Long = 1L shl 28
+        const val GRP30: Long = 1L shl 29
+        const val GRP31: Long = 1L shl 30
+        const val GRP32: Long = 1L shl 31
+
         /** Mask value meaning "single/all — ignore group membership entirely" (spec: `0`). */
-        const val MASK_ALL_SINGLE: Long = 0L
+        const val ALL_SINGLE: Long = 0L
 
         /** Mask value meaning "every group" — all 32 bits set (spec: `0xFFFFFFFF`). */
-        const val MASK_ALL_GROUPS: Long = 0xFFFFFFFFL
-
-        /** Minimum valid group id for mask bit positions. */
-        const val MIN_GROUP_ID: Int = 1
-
-        /** Maximum valid group id for mask bit positions (32-bit mask). */
-        const val MAX_GROUP_ID: Int = 32
-
-        /**
-         * Builds a `groupMask` selecting a single group.
-         *
-         * @param groupId Group id (1..32).
-         * @throws IllegalArgumentException If [groupId] is outside 1..32.
-         */
-        @JvmStatic
-        fun maskFor(groupId: Int): Long {
-            require(groupId in MIN_GROUP_ID..MAX_GROUP_ID) {
-                "groupId must be within $MIN_GROUP_ID..$MAX_GROUP_ID (got $groupId)"
-            }
-            return 1L shl (groupId - 1)
-        }
-
-        /**
-         * Builds a `groupMask` selecting an arbitrary combination of groups (e.g. group 1 +
-         * group 3), OR-ing each id's bit together.
-         *
-         * @param groupIds Group ids to combine (each 1..32).
-         * @throws IllegalArgumentException If [groupIds] is empty or any id is outside 1..32.
-         */
-        @JvmStatic
-        fun maskFor(groupIds: Collection<Int>): Long {
-            require(groupIds.isNotEmpty()) { "groupIds must not be empty" }
-            return groupIds.fold(0L) { acc, id -> acc or maskFor(id) }
-        }
-
-        /**
-         * Default (period, spf) per [EffectType], reverse-engineered from the firmware's
-         * timing formula:
-         * ```
-         * BLINK / STROBE segment (on or off) ms   = (spf / 2) * period
-         * BREATH segment (fade-up/hold/down/hold) = (spf / 2) * (period / 2)
-         * ```
-         * These are estimates; adjust here if real-device timing feels off — no firmware
-         * rebuild required, since period/spf are just message field values.
-         */
-        @JvmStatic
-        fun defaultPeriodSpf(effectType: EffectType): Pair<Int, Int> = when (effectType) {
-            EffectType.OFF, EffectType.ON -> 0 to 100
-            EffectType.STROBE -> 10 to 20
-            EffectType.BLINK -> 6 to 100
-            EffectType.BREATH -> 20 to 100
-        }
+        const val ALL_GROUPS: Long = 0xFFFFFFFFL
 
         /**
          * Builds a **GroupSetup** (msgType=2) broadcast: the "join group [groupId]" beacon
@@ -460,8 +444,8 @@ data class LSEffectPayload(
          * "stop" message — the caller decides when to move on to the next group's setup.
          *
          * @param groupId Group to advertise (1..20 — see [GroupPalette] for the palette's
-         *        current range; groups 21..32 are addressable on the wire but have no built-in
-         *        palette color yet).
+         *        current range; groups 21..32 are addressable on the wire via `GRP21`..`GRP32`
+         *        but have no built-in palette color yet).
          * @throws IllegalArgumentException If [groupId] is outside 1..20.
          */
         @JvmStatic
@@ -471,7 +455,7 @@ data class LSEffectPayload(
             }
             return LSEffectPayload(
                 msgType = MsgType.GROUP_SETUP,
-                groupMask = maskFor(groupId),
+                groupMask = 1L shl (groupId - 1),
                 color = GroupPalette.colorFor(groupId),
                 backgroundColor = Colors.BLACK,
                 effectType = EffectType.BLINK,
@@ -488,28 +472,23 @@ data class LSEffectPayload(
          * Builds a group-targeted control command (msgType=[MsgType.MUSIC] + `groupMask`) that
          * plays [effectType] on every group selected by [groupMask].
          *
-         * Every group whose bit is set reacts to the same 802.15.4 packet at once — this is
-         * how simultaneous multi-group control (e.g. group 1 + group 3 together) differs from
-         * a sequential "wave" of separate single-group messages.
+         * Every group whose bit is set reacts to the same 802.15.4 packet at once. Combine
+         * groups with `or`, e.g. `control(GRP1 or GRP3, EffectType.ON, Colors.WHITE)`; use
+         * [ALL_SINGLE] or [ALL_GROUPS] to target everyone.
          *
-         * This is the low-level primitive for callers who already have a raw mask (e.g. their
-         * own group-membership bitset). For a single group or a list of ids, prefer [control]
-         * or [controlGroups] — deliberately **not** overloads of this function: a bare `Long`
-         * mask and an `Int` group id look alike at a call site but mean very different things
-         * (`5` = group 5, `5L` = mask `0b101` = groups 1+3), so they get distinct names instead
-         * of relying on the reader to notice an `L` suffix.
-         *
-         * @param groupMask Target groups; see [maskFor], [MASK_ALL_SINGLE], [MASK_ALL_GROUPS].
+         * @param groupMask Target groups — one or more `GRP*` constants OR'd together, or
+         *        [ALL_SINGLE] / [ALL_GROUPS].
          * @param effectType Effect to play (OFF/ON/STROBE/BLINK/BREATH).
-         * @param color Foreground color (required — with an arbitrary/combined mask there's no
-         *        single sensible palette default).
+         * @param color Foreground color.
          * @param backgroundColor Background color for BLINK/BREATH (default: black).
-         * @param period Optional timing override; defaults per [defaultPeriodSpf].
-         * @param spf Optional timing override; defaults per [defaultPeriodSpf].
+         * @param period Optional timing override; defaults come from [effectType] (BLINK=6,
+         *        STROBE=10, BREATH=20, ON/OFF=0).
+         * @param spf Optional timing override; defaults come from [effectType] (STROBE=20,
+         *        others=100).
          */
         @JvmStatic
         @JvmOverloads
-        fun controlMask(
+        fun control(
             groupMask: Long,
             effectType: EffectType,
             color: Color,
@@ -517,7 +496,12 @@ data class LSEffectPayload(
             period: Int? = null,
             spf: Int? = null
         ): LSEffectPayload {
-            val (defaultPeriod, defaultSpf) = defaultPeriodSpf(effectType)
+            val (defaultPeriod, defaultSpf) = when (effectType) {
+                EffectType.OFF, EffectType.ON -> 0 to 100
+                EffectType.STROBE -> 10 to 20
+                EffectType.BLINK -> 6 to 100
+                EffectType.BREATH -> 20 to 100
+            }
             return LSEffectPayload(
                 msgType = MsgType.MUSIC,
                 groupMask = groupMask,
@@ -532,85 +516,6 @@ data class LSEffectPayload(
                 broadcasting = 0
             )
         }
-
-        /**
-         * Builds a control command targeting a single group.
-         *
-         * @param groupId Target group (1..32).
-         * @param color Foreground color. Defaults to [GroupPalette.colorFor] for groups 1..20;
-         *        required (throws if omitted) for groups 21..32, which have no palette entry.
-         * @throws IllegalArgumentException If [groupId] is outside 1..32, or if [color] is
-         *         omitted for a [groupId] outside the palette's 1..20 range.
-         */
-        @JvmStatic
-        @JvmOverloads
-        fun control(
-            groupId: Int,
-            effectType: EffectType,
-            color: Color? = null,
-            backgroundColor: Color = Colors.BLACK,
-            period: Int? = null,
-            spf: Int? = null
-        ): LSEffectPayload {
-            val fg = color ?: if (groupId in GroupPalette.MIN_GROUP_ID..GroupPalette.MAX_GROUP_ID) {
-                GroupPalette.colorFor(groupId)
-            } else {
-                throw IllegalArgumentException(
-                    "color is required for groupId=$groupId (no palette entry outside " +
-                        "${GroupPalette.MIN_GROUP_ID}..${GroupPalette.MAX_GROUP_ID})"
-                )
-            }
-            return controlMask(maskFor(groupId), effectType, fg, backgroundColor, period, spf)
-        }
-
-        /**
-         * Builds a control command targeting an arbitrary combination of groups at once (e.g.
-         * `controlGroups(setOf(1, 3), ...)`), OR-ing their bits into one `groupMask` so they
-         * all react to the same packet simultaneously.
-         *
-         * @param groupIds Groups to target together (each 1..32, non-empty).
-         * @param color Foreground color (required — no single palette color applies to a
-         *        combination of groups).
-         */
-        @JvmStatic
-        @JvmOverloads
-        fun controlGroups(
-            groupIds: Collection<Int>,
-            effectType: EffectType,
-            color: Color,
-            backgroundColor: Color = Colors.BLACK,
-            period: Int? = null,
-            spf: Int? = null
-        ): LSEffectPayload = controlMask(maskFor(groupIds), effectType, color, backgroundColor, period, spf)
-
-        /**
-         * Builds a control command for [MASK_ALL_SINGLE] — every connected lightstick reacts
-         * regardless of group assignment (including lightsticks never assigned a group).
-         */
-        @JvmStatic
-        @JvmOverloads
-        fun controlAllSingle(
-            effectType: EffectType,
-            color: Color = Colors.WHITE,
-            backgroundColor: Color = Colors.BLACK,
-            period: Int? = null,
-            spf: Int? = null
-        ): LSEffectPayload = controlMask(MASK_ALL_SINGLE, effectType, color, backgroundColor, period, spf)
-
-        /**
-         * Builds a control command for [MASK_ALL_GROUPS] — every *group-assigned* lightstick
-         * reacts (a lightstick never assigned to any group won't match any bit, so it does
-         * **not** react — unlike [controlAllSingle]).
-         */
-        @JvmStatic
-        @JvmOverloads
-        fun controlAllGroups(
-            effectType: EffectType,
-            color: Color = Colors.WHITE,
-            backgroundColor: Color = Colors.BLACK,
-            period: Int? = null,
-            spf: Int? = null
-        ): LSEffectPayload = controlMask(MASK_ALL_GROUPS, effectType, color, backgroundColor, period, spf)
     }
 
     companion object {

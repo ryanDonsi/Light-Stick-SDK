@@ -63,37 +63,26 @@ class GroupProtocolTest {
     }
 
     // ===========================================================================================
-    // LSEffectPayload.Group.maskFor
+    // LSEffectPayload.Group GRP* constants
     // ===========================================================================================
 
     @Test
-    fun testMaskForSingleGroup() {
-        assertEquals(0b1L, LSEffectPayload.Group.maskFor(1))
-        assertEquals(0b100L, LSEffectPayload.Group.maskFor(3))
-        assertEquals(1L shl 31, LSEffectPayload.Group.maskFor(32))
+    fun testGrpConstants() {
+        assertEquals(0b1L, LSEffectPayload.Group.GRP1)
+        assertEquals(0b100L, LSEffectPayload.Group.GRP3)
+        assertEquals(1L shl 31, LSEffectPayload.Group.GRP32)
     }
 
     @Test
-    fun testMaskForCombination() {
+    fun testGrpConstantsCombine() {
         // group 1 + group 3
-        assertEquals(0b101L, LSEffectPayload.Group.maskFor(listOf(1, 3)))
-    }
-
-    @Test
-    fun testMaskForRejectsOutOfRange() {
-        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload.Group.maskFor(0) }
-        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload.Group.maskFor(33) }
-    }
-
-    @Test
-    fun testMaskForRejectsEmptyCollection() {
-        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload.Group.maskFor(emptyList()) }
+        assertEquals(0b101L, LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3)
     }
 
     @Test
     fun testMaskAllConstants() {
-        assertEquals(0L, LSEffectPayload.Group.MASK_ALL_SINGLE)
-        assertEquals(0xFFFFFFFFL, LSEffectPayload.Group.MASK_ALL_GROUPS)
+        assertEquals(0L, LSEffectPayload.Group.ALL_SINGLE)
+        assertEquals(0xFFFFFFFFL, LSEffectPayload.Group.ALL_GROUPS)
     }
 
     // ===========================================================================================
@@ -105,7 +94,7 @@ class GroupProtocolTest {
         val payload = LSEffectPayload.Group.setup(groupId = 3)
 
         assertEquals(MsgType.GROUP_SETUP, payload.msgType)
-        assertEquals(LSEffectPayload.Group.maskFor(3), payload.groupMask)
+        assertEquals(LSEffectPayload.Group.GRP3, payload.groupMask)
         assertEquals(GroupPalette.colorFor(3), payload.color)
         assertEquals(Colors.BLACK, payload.backgroundColor)
         assertEquals(EffectType.BLINK, payload.effectType)
@@ -146,57 +135,56 @@ class GroupProtocolTest {
     // ===========================================================================================
 
     @Test
-    fun testControlSingleGroupDefaultsToGroupPaletteColor() {
-        val payload = LSEffectPayload.Group.control(groupId = 7, effectType = EffectType.ON)
-        assertEquals(GroupPalette.colorFor(7), payload.color)
-        assertEquals(LSEffectPayload.Group.maskFor(7), payload.groupMask)
+    fun testControlSingleGroupMask() {
+        val payload = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP7,
+            effectType = EffectType.ON,
+            color = Colors.CYAN
+        )
+        assertEquals(Colors.CYAN, payload.color)
+        assertEquals(LSEffectPayload.Group.GRP7, payload.groupMask)
         assertEquals(MsgType.MUSIC, payload.msgType)
     }
 
     @Test
-    fun testControlSingleGroupOutsidePaletteRequiresColor() {
-        assertThrows(IllegalArgumentException::class.java) {
-            LSEffectPayload.Group.control(groupId = 25, effectType = EffectType.ON)
-        }
-        // With an explicit color it's fine.
-        val payload = LSEffectPayload.Group.control(groupId = 25, effectType = EffectType.ON, color = Colors.CYAN)
-        assertEquals(Colors.CYAN, payload.color)
-        assertEquals(LSEffectPayload.Group.maskFor(25), payload.groupMask)
-    }
-
-    @Test
-    fun testControlExplicitColorOverridesDefault() {
-        val payload = LSEffectPayload.Group.control(groupId = 1, effectType = EffectType.ON, color = Colors.CYAN)
-        assertEquals(Colors.CYAN, payload.color)
-    }
-
-    @Test
-    fun testControlGroupsCombinesMask() {
-        val payload = LSEffectPayload.Group.controlGroups(
-            groupIds = listOf(1, 3),
+    fun testControlCombinesGrpConstantsWithOr() {
+        val payload = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
             effectType = EffectType.BLINK,
             color = Colors.WHITE
         )
-        assertEquals(LSEffectPayload.Group.maskFor(listOf(1, 3)), payload.groupMask)
+        assertEquals(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, payload.groupMask)
         assertEquals(MsgType.MUSIC, payload.msgType)
     }
 
     @Test
     fun testControlAllSingleUsesMaskZero() {
-        val payload = LSEffectPayload.Group.controlAllSingle(effectType = EffectType.OFF)
-        assertEquals(LSEffectPayload.Group.MASK_ALL_SINGLE, payload.groupMask)
+        val payload = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.ALL_SINGLE,
+            effectType = EffectType.OFF,
+            color = Colors.WHITE
+        )
+        assertEquals(LSEffectPayload.Group.ALL_SINGLE, payload.groupMask)
         assertEquals(MsgType.MUSIC, payload.msgType)
     }
 
     @Test
     fun testControlAllGroupsUsesMaskAllBits() {
-        val payload = LSEffectPayload.Group.controlAllGroups(effectType = EffectType.OFF)
-        assertEquals(LSEffectPayload.Group.MASK_ALL_GROUPS, payload.groupMask)
+        val payload = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.ALL_GROUPS,
+            effectType = EffectType.OFF,
+            color = Colors.WHITE
+        )
+        assertEquals(LSEffectPayload.Group.ALL_GROUPS, payload.groupMask)
     }
 
     @Test
     fun testControlMsgTypeAndByteLayout() {
-        val bytes = LSEffectPayload.Group.controlAllSingle(effectType = EffectType.BLINK).toByteArray()
+        val bytes = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.ALL_SINGLE,
+            effectType = EffectType.BLINK,
+            color = Colors.WHITE
+        ).toByteArray()
         assertEquals(20, bytes.size)
         assertEquals(0, bytes[0].toInt()) // msgType = MUSIC (no more dedicated GroupControl msgType)
         assertEquals(0, bytes[1].toInt()); assertEquals(0, bytes[2].toInt())
@@ -206,8 +194,8 @@ class GroupProtocolTest {
 
     @Test
     fun testControlGroupsMaskByteLayout() {
-        val bytes = LSEffectPayload.Group.controlGroups(
-            groupIds = listOf(1, 3),
+        val bytes = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
             effectType = EffectType.ON,
             color = Colors.WHITE
         ).toByteArray()
@@ -217,29 +205,36 @@ class GroupProtocolTest {
     }
 
     // ===========================================================================================
-    // defaultPeriodSpf timing table
+    // Default timing table (via control())
     // ===========================================================================================
 
     @Test
-    fun testDefaultPeriodSpfTable() {
-        assertEquals(0 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.OFF))
-        assertEquals(0 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.ON))
-        assertEquals(10 to 20, LSEffectPayload.Group.defaultPeriodSpf(EffectType.STROBE))
-        assertEquals(6 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.BLINK))
-        assertEquals(20 to 100, LSEffectPayload.Group.defaultPeriodSpf(EffectType.BREATH))
-    }
-
-    @Test
     fun testControlUsesDefaultTimingWhenNotProvided() {
-        val strobe = LSEffectPayload.Group.control(groupId = 1, effectType = EffectType.STROBE)
-        assertEquals(10, strobe.period)
-        assertEquals(20, strobe.spf)
+        val off = LSEffectPayload.Group.control(LSEffectPayload.Group.GRP1, EffectType.OFF, Colors.WHITE)
+        assertEquals(0, off.period); assertEquals(100, off.spf)
+
+        val on = LSEffectPayload.Group.control(LSEffectPayload.Group.GRP1, EffectType.ON, Colors.WHITE)
+        assertEquals(0, on.period); assertEquals(100, on.spf)
+
+        val strobe = LSEffectPayload.Group.control(LSEffectPayload.Group.GRP1, EffectType.STROBE, Colors.WHITE)
+        assertEquals(10, strobe.period); assertEquals(20, strobe.spf)
+
+        val blink = LSEffectPayload.Group.control(LSEffectPayload.Group.GRP1, EffectType.BLINK, Colors.WHITE)
+        assertEquals(6, blink.period); assertEquals(100, blink.spf)
+
+        val breath = LSEffectPayload.Group.control(LSEffectPayload.Group.GRP1, EffectType.BREATH, Colors.WHITE)
+        assertEquals(20, breath.period); assertEquals(100, breath.spf)
     }
 
     @Test
     fun testControlHonorsExplicitTimingOverride() {
-        val strobe =
-            LSEffectPayload.Group.control(groupId = 1, effectType = EffectType.STROBE, period = 99, spf = 50)
+        val strobe = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP1,
+            effectType = EffectType.STROBE,
+            color = Colors.WHITE,
+            period = 99,
+            spf = 50
+        )
         assertEquals(99, strobe.period)
         assertEquals(50, strobe.spf)
     }
@@ -264,8 +259,8 @@ class GroupProtocolTest {
 
     @Test
     fun testRoundTripControl() {
-        val original = LSEffectPayload.Group.controlGroups(
-            groupIds = listOf(2, 5),
+        val original = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP2 or LSEffectPayload.Group.GRP5,
             effectType = EffectType.BREATH,
             color = Colors.PINK,
             backgroundColor = Colors.BLUE

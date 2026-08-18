@@ -17,19 +17,27 @@ object GroupSamples {
     }
 
     fun sampleGroupControl() {
-        // Play BLINK on group 3 only, using group 3's own palette color.
-        val single = LSEffectPayload.Group.control(groupId = 3, effectType = EffectType.BLINK)
+        // Play BLINK on group 3 only.
+        val single = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP3,
+            effectType = EffectType.BLINK,
+            color = com.lightstick.types.Colors.WHITE
+        )
 
         // Play BLINK on group 1 + group 3 together — one packet, both react at once
         // (unlike a sequential wave of separate single-group messages).
-        val combo = LSEffectPayload.Group.controlGroups(
-            groupIds = setOf(1, 3),
+        val combo = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
             effectType = EffectType.BLINK,
             color = com.lightstick.types.Colors.WHITE
         )
 
         // Turn everything off — every connected lightstick, regardless of group assignment.
-        val allOff = LSEffectPayload.Group.controlAllSingle(effectType = EffectType.OFF)
+        val allOff = LSEffectPayload.Group.control(
+            groupMask = LSEffectPayload.Group.ALL_SINGLE,
+            effectType = EffectType.OFF,
+            color = com.lightstick.types.Colors.WHITE
+        )
 
         single.toByteArray()
         combo.toByteArray()
