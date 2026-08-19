@@ -665,12 +665,14 @@ data class Device(
      * Subscribes to FF04 game result Notify and sends a READY command (FF03) to start a game.
      *
      * The relay / master wand broadcasts READY via 802.15.4; wands auto-start ~2 s later.
-     * [onResult] is called once per wand result packet received (up to 2 s after game ends).
+     * [onResult] is called once per wand that reports a result (up to 2 s after game ends) —
+     * there is no team-color field on the wire, so for Mode 3 the app aggregates per-[GameResult.wandId]
+     * scores into red/blue totals itself, using its own wand-to-team assignment.
      *
      * Typical usage:
      * ```kotlin
      * device.startGame(GameMode.SPEED_REACTION, GameLevel.NORMAL) { result ->
-     *     if (result.isWandIdValid && result.redScore == 5) {
+     *     if (result.isWandIdValid && result.score == 5) {
      *         // wand result.wandId finished first
      *     }
      * }
@@ -678,7 +680,7 @@ data class Device(
      * For Mode 3 use [GAME_OPTION_RANDOM_TEAM] as [option] to randomise team assignment:
      * ```kotlin
      * device.startGame(GameMode.TEAM_BATTLE, GameLevel.EASY, Device.GAME_OPTION_RANDOM_TEAM) { result ->
-     *     val winner = if (result.redScore > result.blueScore) "Red" else "Blue"
+     *     // accumulate result.score under whichever team result.wandId was assigned to
      * }
      * ```
      *
@@ -699,17 +701,16 @@ data class Device(
     ): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.subscribeGameResults(mac) { subIndex, redScore, blueScore, totalCount, wandId ->
+            Facade.subscribeGameResults(mac) { subIndex, result, msgId, wandId ->
                 // 펌웨어가 결과 패킷의 subIndex를 0 또는 다른 값으로 내려보낼 수 있다.
                 // 이 경우 startGame()에 전달된 mode를 fallback으로 사용한다.
                 val gameMode = GameMode.fromSubIndex(subIndex) ?: mode
                 onResult(
                     GameResult(
-                        mode       = gameMode,
-                        redScore   = redScore,
-                        blueScore  = blueScore,
-                        totalCount = totalCount,
-                        wandId     = wandId
+                        mode   = gameMode,
+                        score  = result,
+                        wandId = wandId,
+                        msgId  = msgId
                     )
                 )
             }
