@@ -57,26 +57,48 @@ enum class GameLevel(val value: Int) {
 }
 
 /**
- * Parsed game result received via FF04 Notify from the relay (`GameMode_Spec_v2_6.docx` §2.4,
- * unchanged — FF03 commands moved to layout B but FF04 has not).
+ * Parsed game result received via FF04 Notify from the relay (`GameMode_Spec_v2_7.docx` §2.4).
  *
- * For Mode 1 / Mode 2: [redScore] holds the individual score (0–5); [blueScore] is always 0.
- * For Mode 3 / Mode 4: [redScore] and [blueScore] are team totals; compare to determine the winner.
+ * FF04 carries two different notifications sharing this one shape, told apart by [cmdIndex]:
+ * - [CMD_RESULT] (5): a real game result. For Mode 1/2, [redScore] is the individual score
+ *   (0–5) and [blueScore] is always 0; for Mode 3/4, [redScore]/[blueScore] are team totals —
+ *   compare them to determine the winner. [wandId] is the reporting wand's id (Mode 1/2 only;
+ *   Mode 3/4 send 0). Use [isWandIdValid] to check it.
+ * - [CMD_TEAM_CONFIRM] (8): Mode 4 only, an aggregated Notify sent after
+ *   `Device.sendTeamAssignEnd` — [totalCount] is the confirmed headcount for the team that was
+ *   just ended, and [wandId] is *reinterpreted* as that team's id (0=RED/1=BLUE), not a wand
+ *   identifier — [isWandIdValid] is meaningless here and always reports `false`.
+ *   [redScore]/[blueScore] are unused (0) for this notification.
  *
  * @property mode        Game mode this result belongs to.
- * @property redScore    Red-team cumulative score (or individual score for Mode 1/2).
- * @property blueScore   Blue-team cumulative score (always 0 for Mode 1/2).
- * @property totalCount  Number of wands that reported results (participant count).
- * @property wandId      Wand identifier (lower 2 bytes of MAC). 0x0000 / 0xFFFF = invalid.
+ * @property cmdIndex    [CMD_RESULT] or [CMD_TEAM_CONFIRM] — determines how the other fields
+ *                        below are interpreted.
+ * @property redScore    Red-team cumulative score (or individual score for Mode 1/2). Unused
+ *                        (0) for [CMD_TEAM_CONFIRM].
+ * @property blueScore   Blue-team cumulative score (always 0 for Mode 1/2). Unused (0) for
+ *                        [CMD_TEAM_CONFIRM].
+ * @property totalCount  [CMD_RESULT]: number of wands that reported so far (Mode 1/2).
+ *                        [CMD_TEAM_CONFIRM]: confirmed headcount for the just-ended team.
+ * @property wandId      [CMD_RESULT]: wand identifier (lower 2 bytes of MAC), 0x0000/0xFFFF =
+ *                        invalid. [CMD_TEAM_CONFIRM]: team id (0=RED/1=BLUE) — not a wand id.
  */
 data class GameResult(
     val mode: GameMode,
+    val cmdIndex: Int,
     val redScore: Int,
     val blueScore: Int,
     val totalCount: Int,
     val wandId: Int
 ) {
-    /** `false` if [wandId] is the reserved invalid value 0x0000 or 0xFFFF. */
+    /** `false` for [CMD_TEAM_CONFIRM], or if [wandId] is the reserved invalid value 0x0000/0xFFFF. */
     val isWandIdValid: Boolean
-        get() = wandId != 0x0000 && wandId != 0xFFFF
+        get() = cmdIndex == CMD_RESULT && wandId != 0x0000 && wandId != 0xFFFF
+
+    companion object {
+        /** [cmdIndex] for an individual game result (score) Notify. */
+        const val CMD_RESULT: Int = 5
+
+        /** [cmdIndex] for a Mode 4 aggregated team-assignment Notify (see class doc). */
+        const val CMD_TEAM_CONFIRM: Int = 8
+    }
 }

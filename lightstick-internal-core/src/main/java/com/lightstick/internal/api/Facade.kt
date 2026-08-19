@@ -758,13 +758,14 @@ object Facade {
      * Subscribes to FF04 game result Notify on the given device.
      *
      * The callback parameters map directly to the 20-byte result packet
-     * (`GameMode_Spec_v2_6.docx` §2.4, unchanged — FF03 moved to layout B but FF04 has not):
-     * subIndex, redScore, blueScore, totalCount, wandId.
+     * (`GameMode_Spec_v2_7.docx` §2.4, unified with FF03's msgType/effectIndex shape):
+     * subIndex, cmdIndex (RESULT=5 or TEAM_CONFIRM=8 — see [GameManager] for how field meaning
+     * depends on this), redScore, blueScore, totalCount, wandId.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun subscribeGameResults(
         mac: String,
-        onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
+        onResult: (subIndex: Int, cmdIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
     ): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
@@ -807,6 +808,25 @@ object Facade {
         requireInit()
         if (!isConnected(mac)) return false
         return requireSession(mac).game.sendWinner(subIndex, winnerWandId)
+    }
+
+    /** Mode 4 only: sends TEAM_ASSIGN (cmdIndex=7) to FF03 to start assigning [teamId]. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameTeamAssign(mac: String, teamId: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendTeamAssign(teamId)
+    }
+
+    /**
+     * Mode 4 only: sends TEAM_ASSIGN_END (cmdIndex=9) to FF03 to end assignment for [teamId].
+     * Triggers an aggregated TEAM_CONFIRM(8) Notify on FF04 with that team's confirmed headcount.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameTeamAssignEnd(mac: String, teamId: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendTeamAssignEnd(teamId)
     }
 
     // ============================================================================================

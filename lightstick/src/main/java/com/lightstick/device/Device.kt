@@ -665,7 +665,9 @@ data class Device(
      * Subscribes to FF04 game result Notify and sends a READY command (FF03) to start a game.
      *
      * The relay / master wand broadcasts READY via 802.15.4; wands auto-start ~2 s later.
-     * [onResult] is called once per wand result packet received (up to 2 s after game ends).
+     * [onResult] is called once per Notify received — for Mode 4, this also includes the
+     * aggregated TEAM_CONFIRM Notify triggered by [sendTeamAssignEnd]; check
+     * [GameResult.cmdIndex] to tell it apart from a real result.
      *
      * Typical usage:
      * ```kotlin
@@ -699,13 +701,14 @@ data class Device(
     ): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.subscribeGameResults(mac) { subIndex, redScore, blueScore, totalCount, wandId ->
+            Facade.subscribeGameResults(mac) { subIndex, cmdIndex, redScore, blueScore, totalCount, wandId ->
                 // 펌웨어가 결과 패킷의 subIndex를 0 또는 다른 값으로 내려보낼 수 있다.
                 // 이 경우 startGame()에 전달된 mode를 fallback으로 사용한다.
                 val gameMode = GameMode.fromSubIndex(subIndex) ?: mode
                 onResult(
                     GameResult(
                         mode       = gameMode,
+                        cmdIndex   = cmdIndex,
                         redScore   = redScore,
                         blueScore  = blueScore,
                         totalCount = totalCount,
@@ -762,7 +765,7 @@ data class Device(
      * [GameMode.TEAM_BATTLE] is not supported; returns `false` without sending.
      *
      * @param mode         Game mode that just concluded (must be Mode 1 or Mode 2).
-     * @param winnerWandId Wand ID of the winner, written at payload offset 14–15 (LE).
+     * @param winnerWandId Wand ID of the winner, written at payload offset 9–10 (LE).
      * @return `true` if the command was enqueued; `false` if not connected, mode is unsupported,
      *         or an error prevented submission.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
@@ -773,6 +776,45 @@ data class Device(
         return try {
             if (!isConnected()) return false
             Facade.sendGameWinner(mac, mode.subIndex, winnerWandId)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Mode 4 (manual team simultaneous) only: starts/continues team assignment for [teamId].
+     * Unassigned wands blink that team's color; pressing a wand's button locks it in. Call
+     * [sendTeamAssignEnd] when the organizer is ready to move on (e.g. RED, then BLUE).
+     *
+     * @param teamId 0 = RED, 1 = BLUE.
+     * @return `true` if the command was enqueued; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendTeamAssign(teamId: Int): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.sendGameTeamAssign(mac, teamId)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Mode 4 only: ends assignment for [teamId]. Not forwarded to wands over 802.15.4 — the
+     * relay handles it locally and replies with an aggregated Notify (delivered through
+     * [startGame]'s `onResult`, [GameResult.cmdIndex] == [GameResult.CMD_TEAM_CONFIRM]) carrying
+     * that team's confirmed headcount in [GameResult.totalCount].
+     *
+     * @param teamId 0 = RED, 1 = BLUE.
+     * @return `true` if the command was enqueued; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendTeamAssignEnd(teamId: Int): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.sendGameTeamAssignEnd(mac, teamId)
         } catch (_: Throwable) {
             false
         }
