@@ -13,7 +13,7 @@ import androidx.annotation.RequiresPermission
  * otherwise stamp back to EFFECT — and must not be silently replaced by a later coalesced
  * write while the organizer moves quickly between groups.
  *
- * Group *control* (msgType=EFFECT + `groupMask`, see `LSEffectPayload.Group` in the public
+ * Group *control* (msgType=EFFECT + `groupMask`, see `Group` in the public
  * module) is just an ordinary effect payload and goes through [LedControlManager] like any
  * other `Device.sendEffect` call — this class is only ever reached via
  * `Device.sendGroupSetting`, one frame per call.

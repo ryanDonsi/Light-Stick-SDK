@@ -4,6 +4,7 @@ import com.lightstick.group.GroupPalette
 import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.EffectType
+import com.lightstick.types.Group
 import com.lightstick.types.LSEffectPayload
 import com.lightstick.types.MsgType
 import org.junit.Assert.*
@@ -69,26 +70,26 @@ class GroupProtocolTest {
     }
 
     // ===========================================================================================
-    // LSEffectPayload.Group GRP* constants
+    // Group GRP* constants
     // ===========================================================================================
 
     @Test
     fun testGrpConstants() {
-        assertEquals(0b1L, LSEffectPayload.Group.GRP1)
-        assertEquals(0b100L, LSEffectPayload.Group.GRP3)
-        assertEquals(1L shl 31, LSEffectPayload.Group.GRP32)
+        assertEquals(0b1L, Group.GRP1)
+        assertEquals(0b100L, Group.GRP3)
+        assertEquals(1L shl 31, Group.GRP32)
     }
 
     @Test
     fun testGrpConstantsCombine() {
         // group 1 + group 3
-        assertEquals(0b101L, LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3)
+        assertEquals(0b101L, Group.GRP1 or Group.GRP3)
     }
 
     @Test
     fun testMaskAllConstants() {
-        assertEquals(0L, LSEffectPayload.Group.ALL_SINGLE)
-        assertEquals(0xFFFFFFFFL, LSEffectPayload.Group.ALL_GROUPS)
+        assertEquals(0L, Group.ALL_SINGLE)
+        assertEquals(0xFFFFFFFFL, Group.ALL_GROUPS)
     }
 
     // ===========================================================================================
@@ -98,23 +99,23 @@ class GroupProtocolTest {
     @Test
     fun testControlSingleGroupMask() {
         val payload = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.GRP7,
+            groupMask = Group.GRP7,
             effectType = EffectType.ON,
             color = Colors.CYAN
         )
         assertEquals(Colors.CYAN, payload.color)
-        assertEquals(LSEffectPayload.Group.GRP7, payload.groupMask)
+        assertEquals(Group.GRP7, payload.groupMask)
         assertEquals(MsgType.EFFECT, payload.msgType)
     }
 
     @Test
     fun testControlCombinesGrpConstantsWithOr() {
         val payload = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
+            groupMask = Group.GRP1 or Group.GRP3,
             effectType = EffectType.BLINK,
             color = Colors.WHITE
         )
-        assertEquals(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, payload.groupMask)
+        assertEquals(Group.GRP1 or Group.GRP3, payload.groupMask)
         assertEquals(MsgType.EFFECT, payload.msgType)
     }
 
@@ -123,25 +124,25 @@ class GroupProtocolTest {
         // groupMask omitted -> ALL_SINGLE, so a plain payload targets every connected
         // lightstick regardless of group assignment.
         val payload = LSEffectPayload(effectType = EffectType.OFF, color = Colors.WHITE)
-        assertEquals(LSEffectPayload.Group.ALL_SINGLE, payload.groupMask)
+        assertEquals(Group.ALL_SINGLE, payload.groupMask)
         assertEquals(MsgType.EFFECT, payload.msgType)
     }
 
     @Test
     fun testControlAllGroupsUsesMaskAllBits() {
         val payload = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.ALL_GROUPS,
+            groupMask = Group.ALL_GROUPS,
             effectType = EffectType.OFF,
             color = Colors.WHITE
         )
-        assertEquals(LSEffectPayload.Group.ALL_GROUPS, payload.groupMask)
+        assertEquals(Group.ALL_GROUPS, payload.groupMask)
     }
 
     @Test
     fun testControlPositionalConstructorShape() {
         // The shape the SDK is designed around: groupMask, effectType, color positionally.
-        val payload = LSEffectPayload(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, EffectType.ON, Colors.WHITE)
-        assertEquals(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, payload.groupMask)
+        val payload = LSEffectPayload(Group.GRP1 or Group.GRP3, EffectType.ON, Colors.WHITE)
+        assertEquals(Group.GRP1 or Group.GRP3, payload.groupMask)
         assertEquals(EffectType.ON, payload.effectType)
         assertEquals(Colors.WHITE, payload.color)
     }
@@ -159,7 +160,7 @@ class GroupProtocolTest {
     @Test
     fun testControlGroupsMaskByteLayout() {
         val bytes = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
+            groupMask = Group.GRP1 or Group.GRP3,
             effectType = EffectType.ON,
             color = Colors.WHITE
         ).toByteArray()
@@ -240,7 +241,7 @@ class GroupProtocolTest {
     @Test
     fun testRoundTripControl() {
         val original = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.GRP2 or LSEffectPayload.Group.GRP5,
+            groupMask = Group.GRP2 or Group.GRP5,
             effectType = EffectType.BREATH,
             color = Colors.PINK,
             backgroundColor = Colors.BLUE

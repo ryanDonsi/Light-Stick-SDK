@@ -9,6 +9,7 @@ import com.lightstick.internal.api.Facade
 import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.EffectType
+import com.lightstick.types.Group
 import com.lightstick.types.LSEffectPayload
 import com.lightstick.types.MsgType
 import com.lightstick.game.GameLevel
@@ -240,7 +241,7 @@ data class Device(
     /**
      * Sends a 20-byte effect payload to THIS device — including group-targeted control.
      * There is no separate group-control method: a group (or "everyone") target is just
-     * [LSEffectPayload.groupMask] on an ordinary payload — see [LSEffectPayload.Group] for the
+     * [LSEffectPayload.groupMask] on an ordinary payload — see [Group] for the
      * `GRP1`..`GRP32` / `ALL_SINGLE` / `ALL_GROUPS` mask constants.
      *
      * @param payload 20-byte structured effect payload.
@@ -252,7 +253,7 @@ data class Device(
      * ```kotlin
      * // Group 1 + group 3 together, in one simultaneous packet.
      * device.sendEffect(
-     *     LSEffectPayload(LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3, EffectType.ON, Colors.WHITE)
+     *     LSEffectPayload(Group.GRP1 or Group.GRP3, EffectType.ON, Colors.WHITE)
      * )
      *
      * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — send once

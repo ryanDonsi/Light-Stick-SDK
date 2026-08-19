@@ -11,7 +11,7 @@ package com.lightstick.types
  *
  * There is no longer a separate "GroupControl" msgType: targeting one group, an arbitrary
  * combination of groups, or every connected lightstick is now expressed by [EFFECT] plus the
- * `groupMask` field (offset 1-4) — see [LSEffectPayload.Group] for the mask constants.
+ * `groupMask` field (offset 1-4) — see [Group] for the mask constants.
  *
  * `GAME_MODE` messages (Game Mode 1-4) use a different field layout for offsets 1-17 than
  * [EFFECT]/[GROUP_SETUP] do — see the shared protocol doc's "레이아웃 B" — so [LSEffectPayload]

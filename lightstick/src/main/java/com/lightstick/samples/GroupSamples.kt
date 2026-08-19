@@ -2,6 +2,7 @@ package com.lightstick.samples
 
 import com.lightstick.group.GroupPalette
 import com.lightstick.types.EffectType
+import com.lightstick.types.Group
 import com.lightstick.types.LSEffectPayload
 
 /**
@@ -17,7 +18,7 @@ object GroupSamples {
     fun sampleGroupControl() {
         // Play BLINK on group 3 only.
         val single = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.GRP3,
+            groupMask = Group.GRP3,
             effectType = EffectType.BLINK,
             color = com.lightstick.types.Colors.WHITE
         )
@@ -25,7 +26,7 @@ object GroupSamples {
         // Play BLINK on group 1 + group 3 together — one packet, both react at once
         // (unlike a sequential wave of separate single-group messages).
         val combo = LSEffectPayload(
-            groupMask = LSEffectPayload.Group.GRP1 or LSEffectPayload.Group.GRP3,
+            groupMask = Group.GRP1 or Group.GRP3,
             effectType = EffectType.BLINK,
             color = com.lightstick.types.Colors.WHITE
         )
