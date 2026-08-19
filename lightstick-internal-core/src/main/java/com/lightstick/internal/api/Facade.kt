@@ -757,16 +757,14 @@ object Facade {
     /**
      * Subscribes to FF04 game result Notify on the given device.
      *
-     * The callback parameters map directly to the 20-byte result packet (protocol v2.0
-     * "레이아웃 B" `LE_GAME_PATLOAD_T`, uplink fields): subIndex, result (per-wand score),
-     * msgId (burst-dedup sequence), wandId. Fires once per wand result Notify — there is no
-     * team-color field on the wire, so red/blue aggregation for Mode 3 is the app's
-     * responsibility based on its own wand-to-team assignment.
+     * The callback parameters map directly to the 20-byte result packet
+     * (`GameMode_Spec_v2_6.docx` §2.4, unchanged — FF03 moved to layout B but FF04 has not):
+     * subIndex, redScore, blueScore, totalCount, wandId.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun subscribeGameResults(
         mac: String,
-        onResult: (subIndex: Int, result: Int, msgId: Int, wandId: Int) -> Unit
+        onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
     ): Boolean {
         requireInit()
         if (!isConnected(mac)) return false

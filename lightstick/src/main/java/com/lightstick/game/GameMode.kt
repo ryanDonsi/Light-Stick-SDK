@@ -57,25 +57,24 @@ enum class GameLevel(val value: Int) {
 }
 
 /**
- * A single wand's game result, received via one FF04 Notify from the relay (protocol v2.0
- * "레이아웃 B" — one Notify per reporting wand, not a team-aggregated packet).
+ * Parsed game result received via FF04 Notify from the relay (`GameMode_Spec_v2_6.docx` §2.4,
+ * unchanged — FF03 commands moved to layout B but FF04 has not).
  *
- * There is no team-color field on the wire: for [GameMode.TEAM_BATTLE] (Mode 3), the app must
- * aggregate [score] per [wandId] into red/blue totals itself, using its own wand-to-team
- * assignment (e.g. from however teams were assigned at game start).
+ * For Mode 1 / Mode 2: [redScore] holds the individual score (0–5); [blueScore] is always 0.
+ * For Mode 3 / Mode 4: [redScore] and [blueScore] are team totals; compare to determine the winner.
  *
- * @property mode    Game mode this result belongs to.
- * @property score   This wand's individual score for the round (0–5).
- * @property wandId  Wand identifier (lower 2 bytes of MAC). 0x0000 / 0xFFFF = invalid.
- * @property msgId   Burst-dedup sequence number from the wire. 802.15.4 repeats each result 3x
- *                    and the relay already dedups before forwarding via FF04, so this is
- *                    normally just diagnostic — a safety net if a duplicate ever slips through.
+ * @property mode        Game mode this result belongs to.
+ * @property redScore    Red-team cumulative score (or individual score for Mode 1/2).
+ * @property blueScore   Blue-team cumulative score (always 0 for Mode 1/2).
+ * @property totalCount  Number of wands that reported results (participant count).
+ * @property wandId      Wand identifier (lower 2 bytes of MAC). 0x0000 / 0xFFFF = invalid.
  */
 data class GameResult(
     val mode: GameMode,
-    val score: Int,
-    val wandId: Int,
-    val msgId: Int
+    val redScore: Int,
+    val blueScore: Int,
+    val totalCount: Int,
+    val wandId: Int
 ) {
     /** `false` if [wandId] is the reserved invalid value 0x0000 or 0xFFFF. */
     val isWandIdValid: Boolean

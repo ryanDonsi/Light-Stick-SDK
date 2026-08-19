@@ -6,28 +6,31 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 
 /**
- * Game command sender and result parser for the relay/master wand game protocol
- * (protocol v2.0, "레이아웃 B" — `LE_GAME_PATLOAD_T`, msgType=1/GAMEMODE).
+ * Game command sender and result parser for the relay/master wand game protocol.
  *
- * Writes 20-byte command payloads to FF03 (LCS_GAME_CMD) and subscribes to
- * FF04 (LCS_GAME_RESULT) Notify to receive per-wand game results.
+ * FF03 (LCS_GAME_CMD, app→wand commands) and FF04 (LCS_GAME_RESULT, wand→app result Notify)
+ * use **two different, independently-versioned layouts** — do not assume symmetry between them:
  *
- * Byte layout — the same 20-byte struct is reused for both directions:
- * downlink (app→wand command, consumed by `game_on_receive()`) and uplink
- * (wand→relay result, filled by `game_result_tx()`/`game_result_tx_m1()`):
- *   Offset 0      msgType   (u8)      – always 1 (GAMEMODE)
- *   Offset 1      subIndex  (u8)      – game mode 1~4
- *   Offset 2      cmdIndex  (u8)      – READY(1) / STOP(3) / CLEAR(4) / RESULT(5) / WINNER(6)
- *   Offset 3      level     (u8)      – Mode1/2/3 difficulty, Mode4 round count / team id
- *   Offset 4-5    option    (u16 LE)  – Mode3 random team (0xFF), Mode4 READY measure ms (<=8000)
- *   Offset 6      result    (u8)      – uplink only: per-wand score. Downlink (command): 0
- *   Offset 7-8    msgId     (u16 LE)  – uplink only: burst-dedup sequence number (802.15.4
- *                                       repeats results 3x; relay dedups before forwarding via
- *                                       FF04). Separate from effectIndex (downlink dedup) —
- *                                       never merge the two.
- *   Offset 9-10   wandId    (u16 LE)  – winner / reporting wand id
- *   Offset 11-17  reserved  (7 bytes)
- *   Offset 18-19  effectIndex (u16 LE) – downlink dedup only
+ * FF03 command payload (protocol v2.0 "레이아웃 B", `LE_GAME_PATLOAD_T` downlink half):
+ *   Offset 0     msgType   (u8)      – always 1 (GAMEMODE)
+ *   Offset 1     subIndex  (u8)      – game mode 1~4
+ *   Offset 2     cmdIndex  (u8)      – READY(1) / STOP(3) / CLEAR(4) / WINNER(6)
+ *   Offset 3     level     (u8)      – Mode1/2/3 difficulty, Mode4 round count / team id
+ *   Offset 4-5   option    (u16 LE)  – Mode3 random team (0xFF), Mode4 READY measure ms
+ *   Offset 6-19  unused in this SDK (result/msgId/wandId/reserved/effectIndex — 0)
+ *   (WINNER additionally sets wandId at offset 9-10.)
+ *
+ * FF04 result Notify payload (`GameMode_Spec_v2_6.docx` §2.4 — **unchanged**, still on the old
+ * layout; FF03 moved to layout B but FF04 has not):
+ *   Offset 0-1   effect_index (u16 LE) – fixed 0x0005
+ *   Offset 2-3   sub_index    (u16 LE) – game mode 1~4
+ *   Offset 4-5   cmd_index    (u16 LE) – RESULT=5 / TEAM_CONFIRM=8 (not parsed by this SDK)
+ *   Offset 6-7   red_score    (u16 LE) – Mode1/2: individual score / Mode3/4: RED team total
+ *   Offset 8-9   blue_score   (u16 LE) – Mode1/2: 0 / Mode3/4: BLUE team total
+ *   Offset 10-11 total_count  (u16 LE) – cumulative wand count that has reported so far
+ *   Offset 12-13 reserved0
+ *   Offset 14-15 wand_id      (u16 LE) – Mode1/2: reporting wand's id / Mode3/4: 0x0000
+ *   Offset 16-19 reserved1
  */
 internal class GameManager(private val gattClient: GattClient) {
 
@@ -60,20 +63,20 @@ internal class GameManager(private val gattClient: GattClient) {
     // -------------------------------------------------------------------------
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun subscribeResults(onResult: (subIndex: Int, result: Int, msgId: Int, wandId: Int) -> Unit) {
+    fun subscribeResults(onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit) {
         gattClient.addNotificationListener(UuidConstants.LCS_GAME_RESULT) { bytes ->
             Log.d(TAG, "FF04 RX [${bytes.size}B] raw : ${bytes.toHex()}")
 
             val parsed = parseResult(bytes)
             if (parsed == null) {
-                Log.w(TAG, "FF04 RX parse failed (size=${bytes.size}, need >=11)")
+                Log.w(TAG, "FF04 RX parse failed (size=${bytes.size}, need >=12)")
                 return@addNotificationListener
             }
-            val (si, result, msgId, wandId) = parsed
-            Log.d(TAG, "FF04 RX parsed : subIndex=$si  result=$result  msgId=0x%04X  wandId=0x%04X".format(msgId, wandId))
+            val (si, r, b, t, w) = parsed
+            Log.d(TAG, "FF04 RX parsed : subIndex=$si  redScore=$r  blueScore=$b  totalCount=$t  wandId=0x%04X".format(w))
             if (si !in 1..4) Log.w(TAG, "FF04 RX unexpected subIndex=$si (expected 1~4)")
-            if (wandId == 0x0000 || wandId == 0xFFFF) Log.w(TAG, "FF04 RX wandId=0x%04X is invalid sentinel".format(wandId))
-            onResult(si, result, msgId, wandId)
+            if (w == 0x0000 || w == 0xFFFF) Log.w(TAG, "FF04 RX wandId=0x%04X is invalid sentinel".format(w))
+            onResult(si, r, b, t, w)
         }
         gattClient.setCharacteristicNotification(
             serviceUuid = UuidConstants.LCS_SERVICE,
@@ -91,7 +94,7 @@ internal class GameManager(private val gattClient: GattClient) {
     }
 
     // -------------------------------------------------------------------------
-    // Game commands
+    // Game commands (FF03, layout B)
     // -------------------------------------------------------------------------
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -137,6 +140,7 @@ internal class GameManager(private val gattClient: GattClient) {
             writeType   = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         )
 
+    /** FF03 layout B: msgType(0)/subIndex(1)/cmdIndex(2)/level(3)/option(4-5 u16). */
     private fun buildPayload(subIndex: Int, cmdIndex: Int, level: Int, option: Int): ByteArray =
         ByteArray(20).also { buf ->
             buf[0] = MSG_TYPE_GAME_MODE.toByte()
@@ -146,6 +150,7 @@ internal class GameManager(private val gattClient: GattClient) {
             putU16LE(buf, 4, option)
         }
 
+    /** FF03 layout B WINNER: same header, wandId written at offset 9-10 (u16). */
     private fun buildWinnerPayload(subIndex: Int, winnerWandId: Int): ByteArray =
         ByteArray(20).also { buf ->
             buf[0] = MSG_TYPE_GAME_MODE.toByte()
@@ -154,17 +159,26 @@ internal class GameManager(private val gattClient: GattClient) {
             putU16LE(buf, 9, winnerWandId)
         }
 
-    private data class ResultFields(val subIndex: Int, val result: Int, val msgId: Int, val wandId: Int)
-
-    /** Returns null if bytes are too short to parse (need offsets 0-10). */
-    private fun parseResult(bytes: ByteArray): ResultFields? {
-        if (bytes.size < 11) return null
-        val subIndex = bytes[1].toInt() and 0xFF
-        val result   = bytes[6].toInt() and 0xFF
-        val msgId    = getU16LE(bytes, 7)
-        val wandId   = getU16LE(bytes, 9)
-        return ResultFields(subIndex, result, msgId, wandId)
+    /**
+     * FF04 result Notify (`GameMode_Spec_v2_6.docx` §2.4, unchanged): subIndex at offset 2,
+     * redScore/blueScore/totalCount at 6/8/10, wandId at offset 14 per spec §7.1.
+     * Returns null if bytes are too short to parse.
+     */
+    private fun parseResult(bytes: ByteArray): Array<Int>? {
+        if (bytes.size < 12) return null
+        val subIndex   = getU16LE(bytes, 2)
+        val redScore   = getU16LE(bytes, 6)
+        val blueScore  = getU16LE(bytes, 8)
+        val totalCount = getU16LE(bytes, 10)
+        val wandId     = if (bytes.size >= 16) getU16LE(bytes, 14) else 0
+        return arrayOf(subIndex, redScore, blueScore, totalCount, wandId)
     }
+
+    private operator fun Array<Int>.component1() = this[0]
+    private operator fun Array<Int>.component2() = this[1]
+    private operator fun Array<Int>.component3() = this[2]
+    private operator fun Array<Int>.component4() = this[3]
+    private operator fun Array<Int>.component5() = this[4]
 
     private fun putU16LE(buf: ByteArray, offset: Int, value: Int) {
         buf[offset]     = (value and 0xFF).toByte()
