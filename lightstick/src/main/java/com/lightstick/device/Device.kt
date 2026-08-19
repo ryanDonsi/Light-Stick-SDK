@@ -662,7 +662,7 @@ data class Device(
 
 
     /**
-     * Subscribes to FF04 game result Notify. Sends no command by itself — pair with
+     * Enables FF04 game result Notify. Sends no command by itself — pair with
      * [sendGameCmd]`(GameCmd.START, ...)` to actually start a game, or with
      * [sendGameCmd]`(GameCmd.TEAM_ASSIGN_END, ...)` to receive that command's aggregated
      * confirmation (Mode 4). [onResult] fires once per Notify; check [GameResult.cmdIndex] to
@@ -670,11 +670,11 @@ data class Device(
      * confirmation ([GameResult.CMD_TEAM_CONFIRM]).
      *
      * @param onResult Called for each [GameResult] Notify received from the relay.
-     * @return `true` if the subscribe was submitted; `false` if not connected.
+     * @return `true` if the CCCD write was submitted; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun subscribeGameResults(onResult: (GameResult) -> Unit): Boolean {
+    fun setNotifyGameResults(onResult: (GameResult) -> Unit): Boolean {
         return try {
             if (!isConnected()) return false
             Facade.subscribeGameResults(mac) { subIndex, cmdIndex, redScore, blueScore, totalCount, wandId ->
@@ -708,12 +708,12 @@ data class Device(
      *   `mode` is ignored (always Mode 4).
      * - [GameCmd.STOP] / [GameCmd.CLEAR]: no extra params.
      *
-     * Sends the command only — pair with [subscribeGameResults] beforehand to observe results
+     * Sends the command only — pair with [setNotifyGameResults] beforehand to observe results
      * (including [GameCmd.TEAM_ASSIGN_END]'s aggregated confirmation).
      *
      * Typical usage:
      * ```kotlin
-     * device.subscribeGameResults { result ->
+     * device.setNotifyGameResults { result ->
      *     if (result.cmdIndex == GameResult.CMD_RESULT && result.isWandIdValid && result.redScore == 5) {
      *         // wand result.wandId finished first
      *     }
@@ -764,12 +764,12 @@ data class Device(
     }
 
     /**
-     * Cancels the FF04 Notify subscription without sending any command to the device.
+     * Disables FF04 game result Notify without sending any command to the device.
      *
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun unsubscribeGameResults() {
+    fun clearNotifyGameResults() {
         try {
             Facade.unsubscribeGameResults(mac)
         } catch (_: Throwable) { }
