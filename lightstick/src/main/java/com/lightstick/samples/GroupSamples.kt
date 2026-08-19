@@ -1,8 +1,8 @@
 package com.lightstick.samples
 
-import com.lightstick.group.GroupPalette
 import com.lightstick.types.EffectType
 import com.lightstick.types.Group
+import com.lightstick.types.GroupPalette
 import com.lightstick.types.LSEffectPayload
 
 /**

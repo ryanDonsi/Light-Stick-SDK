@@ -1,10 +1,10 @@
 package com.lightstick.test
 
-import com.lightstick.group.GroupPalette
 import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.EffectType
 import com.lightstick.types.Group
+import com.lightstick.types.GroupPalette
 import com.lightstick.types.LSEffectPayload
 import com.lightstick.types.MsgType
 import org.junit.Assert.*

@@ -4,19 +4,19 @@ import android.Manifest
 import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
-import com.lightstick.group.GroupPalette
+import com.lightstick.device.DeviceInfo
+import com.lightstick.game.GameLevel
+import com.lightstick.game.GameMode
+import com.lightstick.game.GameResult
 import com.lightstick.internal.api.Facade
+import com.lightstick.ota.OtaManager
 import com.lightstick.types.Color
 import com.lightstick.types.Colors
 import com.lightstick.types.EffectType
 import com.lightstick.types.Group
+import com.lightstick.types.GroupPalette
 import com.lightstick.types.LSEffectPayload
 import com.lightstick.types.MsgType
-import com.lightstick.game.GameLevel
-import com.lightstick.game.GameMode
-import com.lightstick.game.GameResult
-import com.lightstick.ota.OtaManager
-import com.lightstick.device.DeviceInfo
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.parcelize.Parcelize
 

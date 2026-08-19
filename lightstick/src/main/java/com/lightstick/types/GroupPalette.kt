@@ -1,6 +1,4 @@
-package com.lightstick.group
-
-import com.lightstick.types.Color
+package com.lightstick.types
 
 /**
  * Fixed RGB palette for groups 1–20 (Glowsync group mapping spec v2.0).
