@@ -708,21 +708,22 @@ data class Device(
      *   `mode` is ignored (always Mode 4).
      * - [GameCmd.STOP] / [GameCmd.CLEAR]: no extra params.
      *
-     * Sends the command only — pair with [setNotifyGameResults] beforehand to observe results
-     * (including [GameCmd.TEAM_ASSIGN_END]'s aggregated confirmation).
+     * Pass [onResult] to (re-)enable FF04 Notify before sending, exactly like the old
+     * `startGame` did — harmless to pass on more than one call (e.g. every Mode 4 step), since
+     * it just re-registers the same listener. Omit it on calls where the subscription from an
+     * earlier [sendGameCmd] call (or a standalone [setNotifyGameResults]) is already active.
      *
-     * Typical usage:
+     * Typical usage — single call, just like `startGame` before:
      * ```kotlin
-     * device.setNotifyGameResults { result ->
+     * device.sendGameCmd(GameCmd.START, mode = GameMode.SPEED_REACTION, level = GameLevel.NORMAL.value) { result ->
      *     if (result.cmdIndex == GameResult.CMD_RESULT && result.isWandIdValid && result.redScore == 5) {
      *         // wand result.wandId finished first
      *     }
      * }
-     * device.sendGameCmd(GameCmd.START, mode = GameMode.SPEED_REACTION, level = GameLevel.NORMAL.value)
      * ```
-     * Mode 4 team assignment:
+     * Mode 4 team assignment — subscribe once on the first call, reuse it after:
      * ```kotlin
-     * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 0)       // RED starts
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 0) { result -> ... }  // RED starts, subscribes
      * // ... wands lock in as their buttons are pressed ...
      * device.sendGameCmd(GameCmd.TEAM_ASSIGN_END, level = 0)   // RED ends -> aggregated Notify
      * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 1)       // BLUE starts
@@ -730,13 +731,15 @@ data class Device(
      * device.sendGameCmd(GameCmd.START, mode = GameMode.TEAM_SIMULTANEOUS, level = 3, option = 5000)
      * ```
      *
-     * @param cmd    Command to send.
-     * @param mode   Game mode; required for [GameCmd.START] / [GameCmd.WINNER], ignored otherwise.
-     * @param level  Meaning depends on [cmd] — see above. Default 0.
-     * @param option Meaning depends on [cmd] — see above. Default 0.
-     * @param wandId Winner's wand id; only used by [GameCmd.WINNER]. Default 0.
-     * @return `true` if the command was enqueued; `false` if not connected, [GameCmd.WINNER] was
-     *         requested for an unsupported mode, or an error prevented submission.
+     * @param cmd      Command to send.
+     * @param mode     Game mode; required for [GameCmd.START] / [GameCmd.WINNER], ignored otherwise.
+     * @param level    Meaning depends on [cmd] — see above. Default 0.
+     * @param option   Meaning depends on [cmd] — see above. Default 0.
+     * @param wandId   Winner's wand id; only used by [GameCmd.WINNER]. Default 0.
+     * @param onResult If non-null, calls [setNotifyGameResults] with it before sending [cmd].
+     * @return `true` if the command was enqueued; `false` if not connected, the Notify
+     *         (re-)subscription failed, [GameCmd.WINNER] was requested for an unsupported mode,
+     *         or an error prevented submission.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -745,11 +748,13 @@ data class Device(
         mode: GameMode? = null,
         level: Int = 0,
         option: Int = 0,
-        wandId: Int = 0
+        wandId: Int = 0,
+        onResult: ((GameResult) -> Unit)? = null
     ): Boolean {
         if (cmd == GameCmd.WINNER && mode == GameMode.TEAM_BATTLE) return false
         return try {
             if (!isConnected()) return false
+            if (onResult != null && !setNotifyGameResults(onResult)) return false
             when (cmd) {
                 GameCmd.START -> Facade.sendGameReady(mac, mode?.subIndex ?: 0, level, option)
                 GameCmd.STOP -> Facade.sendGameStop(mac)
