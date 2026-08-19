@@ -15,7 +15,7 @@ package com.lightstick.types
  * sent via [Device.sendEffect] exactly like a non-group effect.
  *
  * @sample com.lightstick.samples.GroupSamples.sampleGroupControl
- * @since 1.6.0
+ * @since 2.0.0
  */
 object Group {
 

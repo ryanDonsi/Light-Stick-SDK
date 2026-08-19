@@ -19,7 +19,7 @@ package com.lightstick.types
  * through the FF03 game command path instead.
  *
  * @property code The numeric wire value written at payload offset 0.
- * @since 1.5.0
+ * @since 2.0.0
  */
 enum class MsgType(val code: Int) {
     /**

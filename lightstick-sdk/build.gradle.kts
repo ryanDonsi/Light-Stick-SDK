@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "com.lightstick"
-version = "1.4.1"
+version = "2.0.0"
 
 androidFusedLibrary {
     namespace = "com.lightstick.sdk"
@@ -84,7 +84,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.lightstick"
             artifactId = "lightstick-sdk"
-            version = "1.4.1"
+            version = project.version.toString()
 
             from(components["fusedLibraryComponent"])
             artifact(aggregatedSources.get())

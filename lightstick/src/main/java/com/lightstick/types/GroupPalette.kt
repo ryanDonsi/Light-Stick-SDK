@@ -13,7 +13,7 @@ package com.lightstick.types
  * 3 and 4 drifted off the formula (group 3 ≈ group 16, group 1 ≈ group 4), which is
  * fixed in this table.
  *
- * @since 1.5.0
+ * @since 2.0.0
  */
 object GroupPalette {
 
