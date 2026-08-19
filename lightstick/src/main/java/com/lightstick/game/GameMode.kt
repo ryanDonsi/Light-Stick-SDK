@@ -13,16 +13,29 @@ enum class GameMode(val subIndex: Int) {
     TEMPO(2),
 
     /** Mode 3 — Red vs Blue team battle over 5 rounds. */
-    TEAM_BATTLE(3);
+    TEAM_BATTLE(3),
+
+    /**
+     * Mode 4 — manual team assignment (see [GameCmd.TEAM_ASSIGN] / [GameCmd.TEAM_ASSIGN_END]),
+     * then everyone shakes simultaneously for 1–3 rounds; team totals are compared.
+     * `START`'s `level` param means round count (1~3) here, not difficulty — and `option` is
+     * the raw per-round measure time in ms (spec suggests 8000/5000/3000 for easy/normal/hard,
+     * but any value works), unlike the 0xFF sentinel [TEAM_BATTLE] uses.
+     */
+    TEAM_SIMULTANEOUS(4);
 
     companion object {
         fun fromSubIndex(subIndex: Int): GameMode? = entries.find { it.subIndex == subIndex }
     }
 
     /**
-     * Maximum time (ms) the app should wait for a [GameResult] Notify after calling
-     * [Device.startGame], per spec §3. Includes the 2-second auto-start delay plus
-     * a 2-second safety margin.
+     * Maximum time (ms) the app should wait for a [GameResult] Notify after sending
+     * [GameCmd.START] via `Device.sendGameCmd`, per spec §3. Includes the 2-second auto-start
+     * delay plus a 2-second safety margin.
+     *
+     * For [TEAM_SIMULTANEOUS], [level] is ignored — round count and per-round measure time are
+     * both app-chosen (not derived from [GameLevel]), so this returns a conservative ceiling
+     * for the documented worst case (3 rounds × 8 s).
      *
      * Usage:
      * ```kotlin
@@ -42,6 +55,7 @@ enum class GameMode(val subIndex: Int) {
             GameLevel.NORMAL -> 31_000L   // 2 + 25 + 2 + 2
             GameLevel.HARD   -> 26_000L   // 2 + 20 + 2 + 2
         }
+        TEAM_SIMULTANEOUS -> 30_000L      // 2 + 3*8 + 2*1 + 2, worst case (3 rounds @ 8s + rest)
     }
 }
 
@@ -64,8 +78,8 @@ enum class GameLevel(val value: Int) {
  *   (0–5) and [blueScore] is always 0; for Mode 3/4, [redScore]/[blueScore] are team totals —
  *   compare them to determine the winner. [wandId] is the reporting wand's id (Mode 1/2 only;
  *   Mode 3/4 send 0). Use [isWandIdValid] to check it.
- * - [CMD_TEAM_CONFIRM] (8): Mode 4 only, an aggregated Notify sent after
- *   `Device.sendTeamAssignEnd` — [totalCount] is the confirmed headcount for the team that was
+ * - [CMD_TEAM_CONFIRM] (8): Mode 4 only, an aggregated Notify sent after the app sends
+ *   [GameCmd.TEAM_ASSIGN_END] — [totalCount] is the confirmed headcount for the team that was
  *   just ended, and [wandId] is *reinterpreted* as that team's id (0=RED/1=BLUE), not a wand
  *   identifier — [isWandIdValid] is meaningless here and always reports `false`.
  *   [redScore]/[blueScore] are unused (0) for this notification.

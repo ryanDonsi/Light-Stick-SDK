@@ -5,7 +5,7 @@ import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.device.DeviceInfo
-import com.lightstick.game.GameLevel
+import com.lightstick.game.GameCmd
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
 import com.lightstick.internal.api.Facade
@@ -662,49 +662,23 @@ data class Device(
 
 
     /**
-     * Subscribes to FF04 game result Notify and sends a READY command (FF03) to start a game.
+     * Subscribes to FF04 game result Notify. Sends no command by itself — pair with
+     * [sendGameCmd]`(GameCmd.START, ...)` to actually start a game, or with
+     * [sendGameCmd]`(GameCmd.TEAM_ASSIGN_END, ...)` to receive that command's aggregated
+     * confirmation (Mode 4). [onResult] fires once per Notify; check [GameResult.cmdIndex] to
+     * tell a real result ([GameResult.CMD_RESULT]) apart from a Mode 4 team-assignment
+     * confirmation ([GameResult.CMD_TEAM_CONFIRM]).
      *
-     * The relay / master wand broadcasts READY via 802.15.4; wands auto-start ~2 s later.
-     * [onResult] is called once per Notify received — for Mode 4, this also includes the
-     * aggregated TEAM_CONFIRM Notify triggered by [sendTeamAssignEnd]; check
-     * [GameResult.cmdIndex] to tell it apart from a real result.
-     *
-     * Typical usage:
-     * ```kotlin
-     * device.startGame(GameMode.SPEED_REACTION, GameLevel.NORMAL) { result ->
-     *     if (result.isWandIdValid && result.redScore == 5) {
-     *         // wand result.wandId finished first
-     *     }
-     * }
-     * ```
-     * For Mode 3 use [GAME_OPTION_RANDOM_TEAM] as [option] to randomise team assignment:
-     * ```kotlin
-     * device.startGame(GameMode.TEAM_BATTLE, GameLevel.EASY, Device.GAME_OPTION_RANDOM_TEAM) { result ->
-     *     val winner = if (result.redScore > result.blueScore) "Red" else "Blue"
-     * }
-     * ```
-     *
-     * @param mode     Game mode to start.
-     * @param level    Difficulty level (default: [GameLevel.NORMAL]).
-     * @param option   Extra option byte: use [GAME_OPTION_RANDOM_TEAM] for Mode 3 random team
-     *                 assignment, 0 for Mode 1 / Mode 2.
      * @param onResult Called for each [GameResult] Notify received from the relay.
-     * @return `true` if both the subscribe and READY write were submitted; `false` otherwise.
+     * @return `true` if the subscribe was submitted; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun startGame(
-        mode: GameMode,
-        level: GameLevel = GameLevel.NORMAL,
-        option: Int = 0,
-        onResult: (GameResult) -> Unit
-    ): Boolean {
+    fun subscribeGameResults(onResult: (GameResult) -> Unit): Boolean {
         return try {
             if (!isConnected()) return false
             Facade.subscribeGameResults(mac) { subIndex, cmdIndex, redScore, blueScore, totalCount, wandId ->
-                // 펌웨어가 결과 패킷의 subIndex를 0 또는 다른 값으로 내려보낼 수 있다.
-                // 이 경우 startGame()에 전달된 mode를 fallback으로 사용한다.
-                val gameMode = GameMode.fromSubIndex(subIndex) ?: mode
+                val gameMode = GameMode.fromSubIndex(subIndex) ?: return@subscribeGameResults
                 onResult(
                     GameResult(
                         mode       = gameMode,
@@ -716,105 +690,74 @@ data class Device(
                     )
                 )
             }
-            Facade.sendGameReady(mac, mode.subIndex, level.value, option)
+            true
         } catch (_: Throwable) {
             false
         }
     }
 
     /**
-     * Sends a STOP command (cmdIndex=3) to FF03 to abort a running game immediately.
+     * Sends a game command to FF03. Single entry point for every game command — which
+     * parameters matter depends on [cmd]:
+     * - [GameCmd.START]: [mode] + [level] (difficulty, or Mode 4 round count 1~3) + [option]
+     *   (use [GAME_OPTION_RANDOM_TEAM] for Mode 3 random team, or Mode 4's per-round measure
+     *   time in ms).
+     * - [GameCmd.WINNER]: [mode] (Mode 1/2 only — [GameMode.TEAM_BATTLE] returns `false`) +
+     *   [wandId].
+     * - [GameCmd.TEAM_ASSIGN] / [GameCmd.TEAM_ASSIGN_END]: [level] as the team id (0=RED/1=BLUE);
+     *   `mode` is ignored (always Mode 4).
+     * - [GameCmd.STOP] / [GameCmd.CLEAR]: no extra params.
      *
-     * @return `true` if the command was enqueued; `false` otherwise.
+     * Sends the command only — pair with [subscribeGameResults] beforehand to observe results
+     * (including [GameCmd.TEAM_ASSIGN_END]'s aggregated confirmation).
+     *
+     * Typical usage:
+     * ```kotlin
+     * device.subscribeGameResults { result ->
+     *     if (result.cmdIndex == GameResult.CMD_RESULT && result.isWandIdValid && result.redScore == 5) {
+     *         // wand result.wandId finished first
+     *     }
+     * }
+     * device.sendGameCmd(GameCmd.START, mode = GameMode.SPEED_REACTION, level = GameLevel.NORMAL.value)
+     * ```
+     * Mode 4 team assignment:
+     * ```kotlin
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 0)       // RED starts
+     * // ... wands lock in as their buttons are pressed ...
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN_END, level = 0)   // RED ends -> aggregated Notify
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 1)       // BLUE starts
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN_END, level = 1)   // BLUE ends -> aggregated Notify
+     * device.sendGameCmd(GameCmd.START, mode = GameMode.TEAM_SIMULTANEOUS, level = 3, option = 5000)
+     * ```
+     *
+     * @param cmd    Command to send.
+     * @param mode   Game mode; required for [GameCmd.START] / [GameCmd.WINNER], ignored otherwise.
+     * @param level  Meaning depends on [cmd] — see above. Default 0.
+     * @param option Meaning depends on [cmd] — see above. Default 0.
+     * @param wandId Winner's wand id; only used by [GameCmd.WINNER]. Default 0.
+     * @return `true` if the command was enqueued; `false` if not connected, [GameCmd.WINNER] was
+     *         requested for an unsupported mode, or an error prevented submission.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun stopGame(): Boolean {
+    fun sendGameCmd(
+        cmd: GameCmd,
+        mode: GameMode? = null,
+        level: Int = 0,
+        option: Int = 0,
+        wandId: Int = 0
+    ): Boolean {
+        if (cmd == GameCmd.WINNER && mode == GameMode.TEAM_BATTLE) return false
         return try {
             if (!isConnected()) return false
-            Facade.sendGameStop(mac)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Sends a CLEAR command (cmdIndex=4) to FF03 to reset the device to idle.
-     *
-     * Call this after a game ends to prepare for the next round. Unsubscribes game result
-     * notifications automatically.
-     *
-     * @return `true` if the command was enqueued; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun clearGame(): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.unsubscribeGameResults(mac)
-            Facade.sendGameClear(mac)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Sends a WINNER command (cmdIndex=6) to FF03 to announce the winning wand.
-     *
-     * Only valid for [GameMode.SPEED_REACTION] (Mode 1) and [GameMode.TEMPO] (Mode 2).
-     * [GameMode.TEAM_BATTLE] is not supported; returns `false` without sending.
-     *
-     * @param mode         Game mode that just concluded (must be Mode 1 or Mode 2).
-     * @param winnerWandId Wand ID of the winner, written at payload offset 9–10 (LE).
-     * @return `true` if the command was enqueued; `false` if not connected, mode is unsupported,
-     *         or an error prevented submission.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendWinner(mode: GameMode, winnerWandId: Int): Boolean {
-        if (mode == GameMode.TEAM_BATTLE) return false
-        return try {
-            if (!isConnected()) return false
-            Facade.sendGameWinner(mac, mode.subIndex, winnerWandId)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Mode 4 (manual team simultaneous) only: starts/continues team assignment for [teamId].
-     * Unassigned wands blink that team's color; pressing a wand's button locks it in. Call
-     * [sendTeamAssignEnd] when the organizer is ready to move on (e.g. RED, then BLUE).
-     *
-     * @param teamId 0 = RED, 1 = BLUE.
-     * @return `true` if the command was enqueued; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendTeamAssign(teamId: Int): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.sendGameTeamAssign(mac, teamId)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Mode 4 only: ends assignment for [teamId]. Not forwarded to wands over 802.15.4 — the
-     * relay handles it locally and replies with an aggregated Notify (delivered through
-     * [startGame]'s `onResult`, [GameResult.cmdIndex] == [GameResult.CMD_TEAM_CONFIRM]) carrying
-     * that team's confirmed headcount in [GameResult.totalCount].
-     *
-     * @param teamId 0 = RED, 1 = BLUE.
-     * @return `true` if the command was enqueued; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendTeamAssignEnd(teamId: Int): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.sendGameTeamAssignEnd(mac, teamId)
+            when (cmd) {
+                GameCmd.START -> Facade.sendGameReady(mac, mode?.subIndex ?: 0, level, option)
+                GameCmd.STOP -> Facade.sendGameStop(mac)
+                GameCmd.CLEAR -> Facade.sendGameClear(mac)
+                GameCmd.WINNER -> Facade.sendGameWinner(mac, mode?.subIndex ?: 0, wandId)
+                GameCmd.TEAM_ASSIGN -> Facade.sendGameTeamAssign(mac, level)
+                GameCmd.TEAM_ASSIGN_END -> Facade.sendGameTeamAssignEnd(mac, level)
+            }
         } catch (_: Throwable) {
             false
         }
@@ -898,8 +841,9 @@ data class Device(
 
     companion object {
         /**
-         * Pass as the `option` argument of [startGame] for [GameMode.TEAM_BATTLE] to let the
-         * relay assign Red / Blue teams randomly (spec §5, option = 0xFF).
+         * Pass as the `option` argument of [sendGameCmd]`(GameCmd.START, ...)` for
+         * [GameMode.TEAM_BATTLE] to let the relay assign Red / Blue teams randomly
+         * (spec §5, option = 0xFF).
          */
         const val GAME_OPTION_RANDOM_TEAM: Int = 0xFF
     }
