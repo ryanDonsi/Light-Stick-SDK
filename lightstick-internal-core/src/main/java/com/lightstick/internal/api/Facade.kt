@@ -57,6 +57,11 @@ object Facade {
         check(::appContext.isInitialized) { "Facade.initialize(context) must be called first." }
     }
 
+    /** Toggles debug logging (packet TX/RX, connection/OTA diagnostics) across the BLE layer. */
+    fun setDebugLoggingEnabled(enabled: Boolean) {
+        com.lightstick.internal.util.Log.enabled = enabled
+    }
+
     @MainThread
     fun initialize(
         context: Context,

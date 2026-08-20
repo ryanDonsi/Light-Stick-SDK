@@ -124,6 +124,21 @@ object LSBluetooth {
         Facade.restoreSystemConnectedDevices()
     }
 
+    /**
+     * Turns BLE debug logging on/off — every packet write (color, effect, group, game command)
+     * and its raw bytes, plus connection/service-discovery/OTA diagnostics, all logged under
+     * the `Lightstick` tag. Off by default in this build; call this to enable it while
+     * developing or diagnosing an issue, and turn it back off for production.
+     *
+     * Safe to call any time (not just at startup), from any thread.
+     *
+     * @param enabled `true` to log, `false` to silence.
+     */
+    @JvmStatic
+    fun setDebugLoggingEnabled(enabled: Boolean) {
+        Facade.setDebugLoggingEnabled(enabled)
+    }
+
     // ============================================================================================
     // Scan
     // ============================================================================================

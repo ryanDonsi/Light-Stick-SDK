@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.internal.util.Log
 
 /**
  * Sends raw GroupSetup frames (Glowsync group mapping spec v2.0, msgType=GROUP_SETUP) to FF02.
@@ -26,6 +27,7 @@ internal class GroupControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Group payload must be 20 bytes" }
+        Log.d("[GroupControlManager] FF02 TX GroupSetup raw : ${bytes20.toHex()}")
         return gattClient.writeCharacteristic(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
@@ -35,4 +37,6 @@ internal class GroupControlManager(
             coalesceKey = null
         )
     }
+
+    private fun ByteArray.toHex(): String = joinToString(" ") { "%02X".format(it) }
 }

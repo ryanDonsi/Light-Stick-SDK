@@ -3,7 +3,7 @@ package com.lightstick.internal.ble
 import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
 import android.os.SystemClock
-import android.util.Log
+import com.lightstick.internal.util.Log
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.*
@@ -25,8 +25,6 @@ internal class LedControlManager(
 ) : AutoCloseable {
 
     companion object {
-        private const val TAG = "LedControlManager"
-
         // LSEffectPayload byte[0] (protocol v2.0): msgType, the sole message-type discriminator.
         // Effect/timeline sends through this manager are always "Effect" — this includes
         // group-targeted control (msgType=EFFECT + groupMask), which is an ordinary effect
@@ -204,7 +202,7 @@ internal class LedControlManager(
         // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
 
-        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
+        Log.d("[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
 
         startMonitor()
     }
@@ -299,11 +297,11 @@ internal class LedControlManager(
                 if (ok) {
                     transmittedCount++
                 } else {
-                    Log.w(TAG, "Failed to send effect at ${timestamp}ms")
+                    Log.w("[LedControlManager] Failed to send effect at ${timestamp}ms")
                     break
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error sending effect at ${timestamp}ms: ${e.message}")
+                Log.e("[LedControlManager] Error sending effect at ${timestamp}ms: ${e.message}")
                 break
             }
         }
@@ -311,7 +309,7 @@ internal class LedControlManager(
         if (transmittedCount > 0) {
             val rangeStart = lastSentIndex - transmittedCount + 1
             val rangeEnd = lastSentIndex
-            Log.d(TAG, "Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, effectIndex=$currentEffectIndex)")
+            Log.d("[LedControlManager] Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, effectIndex=$currentEffectIndex)")
         }
     }
 

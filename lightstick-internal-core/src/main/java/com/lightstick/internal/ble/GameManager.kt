@@ -2,7 +2,7 @@ package com.lightstick.internal.ble
 
 import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
-import android.util.Log
+import com.lightstick.internal.util.Log
 import androidx.annotation.RequiresPermission
 
 /**
@@ -54,7 +54,6 @@ import androidx.annotation.RequiresPermission
 internal class GameManager(private val gattClient: GattClient) {
 
     companion object {
-        private const val TAG = "GameManager"
         private const val MSG_TYPE_GAME_MODE = 1
         const val CMD_READY            = 1
         const val CMD_STOP             = 3
@@ -92,25 +91,24 @@ internal class GameManager(private val gattClient: GattClient) {
         onResult: (subIndex: Int, cmdIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
     ) {
         gattClient.addNotificationListener(UuidConstants.LCS_GAME_RESULT) { bytes ->
-            Log.d(TAG, "FF04 RX [${bytes.size}B] raw : ${bytes.toHex()}")
+            Log.d("[GameManager] FF04 RX [${bytes.size}B] raw : ${bytes.toHex()}")
 
             val parsed = parseResult(bytes)
             if (parsed == null) {
-                Log.w(TAG, "FF04 RX parse failed (size=${bytes.size}, need >=11)")
+                Log.w("[GameManager] FF04 RX parse failed (size=${bytes.size}, need >=11)")
                 return@addNotificationListener
             }
             val (si, ci, r, b, t, w) = parsed
             Log.d(
-                TAG,
-                "FF04 RX parsed : subIndex=$si cmdIndex=$ci redScore=$r blueScore=$b totalCount=$t wandId=0x%04X"
+                "[GameManager] FF04 RX parsed : subIndex=$si cmdIndex=$ci redScore=$r blueScore=$b totalCount=$t wandId=0x%04X"
                     .format(w)
             )
-            if (si !in 1..4) Log.w(TAG, "FF04 RX unexpected subIndex=$si (expected 1~4)")
+            if (si !in 1..4) Log.w("[GameManager] FF04 RX unexpected subIndex=$si (expected 1~4)")
             if (ci != CMD_RESULT && ci != CMD_TEAM_CONFIRM) {
-                Log.w(TAG, "FF04 RX unexpected cmdIndex=$ci (expected RESULT=5 or TEAM_CONFIRM=8)")
+                Log.w("[GameManager] FF04 RX unexpected cmdIndex=$ci (expected RESULT=5 or TEAM_CONFIRM=8)")
             }
             if (ci == CMD_RESULT && (w == 0x0000 || w == 0xFFFF)) {
-                Log.w(TAG, "FF04 RX wandId=0x%04X is invalid sentinel".format(w))
+                Log.w("[GameManager] FF04 RX wandId=0x%04X is invalid sentinel".format(w))
             }
             onResult(si, ci, r, b, t, w)
         }
@@ -119,8 +117,8 @@ internal class GameManager(private val gattClient: GattClient) {
             charUuid    = UuidConstants.LCS_GAME_RESULT,
             enable      = true,
             onResult    = { result ->
-                result.onSuccess { Log.d(TAG, "FF04 CCCD subscribe OK") }
-                result.onFailure { Log.w(TAG, "FF04 CCCD subscribe FAILED: ${it.message}") }
+                result.onSuccess { Log.d("[GameManager] FF04 CCCD subscribe OK") }
+                result.onFailure { Log.w("[GameManager] FF04 CCCD subscribe FAILED: ${it.message}") }
             }
         )
     }
@@ -136,30 +134,30 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendReady(subIndex: Int, level: Int, option: Int): Boolean {
         val payload = buildPayload(subIndex, CMD_READY, level, option)
-        Log.d(TAG, "FF03 TX READY subIndex=$subIndex level=$level option=0x%02X".format(option))
-        Log.d(TAG, "FF03 TX raw : ${payload.toHex()}")
+        Log.d("[GameManager] FF03 TX READY subIndex=$subIndex level=$level option=0x%02X".format(option))
+        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
         return writeGameCmd(payload)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendStop(): Boolean {
         val payload = buildPayload(0, CMD_STOP, 0, 0)
-        Log.d(TAG, "FF03 TX STOP raw : ${payload.toHex()}")
+        Log.d("[GameManager] FF03 TX STOP raw : ${payload.toHex()}")
         return writeGameCmd(payload)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendClear(): Boolean {
         val payload = buildPayload(0, CMD_CLEAR, 0, 0)
-        Log.d(TAG, "FF03 TX CLEAR raw : ${payload.toHex()}")
+        Log.d("[GameManager] FF03 TX CLEAR raw : ${payload.toHex()}")
         return writeGameCmd(payload)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendWinner(subIndex: Int, winnerWandId: Int): Boolean {
         val payload = buildWinnerPayload(subIndex, winnerWandId)
-        Log.d(TAG, "FF03 TX WINNER subIndex=$subIndex winnerWandId=0x%04X".format(winnerWandId))
-        Log.d(TAG, "FF03 TX raw : ${payload.toHex()}")
+        Log.d("[GameManager] FF03 TX WINNER subIndex=$subIndex winnerWandId=0x%04X".format(winnerWandId))
+        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
         return writeGameCmd(payload)
     }
 
@@ -170,8 +168,8 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendTeamAssign(teamId: Int): Boolean {
         val payload = buildPayload(SUB_INDEX_TEAM_SIMULTANEOUS, CMD_TEAM_ASSIGN, teamId, 0)
-        Log.d(TAG, "FF03 TX TEAM_ASSIGN teamId=$teamId")
-        Log.d(TAG, "FF03 TX raw : ${payload.toHex()}")
+        Log.d("[GameManager] FF03 TX TEAM_ASSIGN teamId=$teamId")
+        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
         return writeGameCmd(payload)
     }
 
@@ -183,8 +181,8 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendTeamAssignEnd(teamId: Int): Boolean {
         val payload = buildPayload(SUB_INDEX_TEAM_SIMULTANEOUS, CMD_TEAM_ASSIGN_END, teamId, 0)
-        Log.d(TAG, "FF03 TX TEAM_ASSIGN_END teamId=$teamId")
-        Log.d(TAG, "FF03 TX raw : ${payload.toHex()}")
+        Log.d("[GameManager] FF03 TX TEAM_ASSIGN_END teamId=$teamId")
+        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
         return writeGameCmd(payload)
     }
 
