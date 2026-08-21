@@ -377,19 +377,18 @@ object EfxSamples {
     @JvmStatic
     fun sampleBuildPayload(): LSEffectPayload {
         val payload = LSEffectPayload(
-            mode = LSEffectPayload.MODE_EFFECT_PAYLOAD,
-            ledMask = 0x00FF,           // First 8 LEDs
+            msgType = com.lightstick.types.MsgType.EFFECT,
+            groupMask = 0L,             // 0 = single/all (ignore group membership)
             color = Colors.RED,
             backgroundColor = Colors.BLUE,
             effectType = com.lightstick.types.EffectType.STROBE,
-            durationMs = 5000,
             period = 20,                // 200ms period
             spf = 100,
             randomColor = 1,            // Enable random color
             randomDelay = 10,           // Max 100ms random delay
             fade = 80,
             broadcasting = 1,           // Broadcast to nearby devices
-            syncIndex = 0
+            effectIndex = 0
         )
         println("Payload built: effectType=${payload.effectType}, period=${payload.period}")
         return payload
@@ -458,12 +457,12 @@ object EfxSamples {
             transit = 30,
             randomColor = 0,
             randomDelay = 0,
-            mode = LSEffectPayload.MODE_EFFECT_PAYLOAD,
-            ledMask = 0x00FF,      // First 8 LEDs only
+            msgType = com.lightstick.types.MsgType.EFFECT,
+            groupMask = 0L,         // 0 = single/all (ignore group membership)
             spf = 100,
             fade = 80,
             broadcasting = 1,       // Broadcast to nearby
-            syncIndex = 0
+            effectIndex = 0
         )
 
         // BREATH with random features

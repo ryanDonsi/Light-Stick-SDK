@@ -8,7 +8,7 @@ import android.util.Log as AndroidLog
  * @since 1.0.0
  */
 internal object Log {
-    var enabled: Boolean = true
+    var enabled: Boolean = false
     var tag: String = "Lightstick"
 
     fun d(msg: String) { if (enabled) AndroidLog.d(tag, msg) }

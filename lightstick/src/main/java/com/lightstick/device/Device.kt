@@ -4,14 +4,19 @@ import android.Manifest
 import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
-import com.lightstick.internal.api.Facade
-import com.lightstick.types.Color
-import com.lightstick.types.LSEffectPayload
-import com.lightstick.game.GameLevel
+import com.lightstick.device.DeviceInfo
+import com.lightstick.game.GameCmd
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
+import com.lightstick.internal.api.Facade
 import com.lightstick.ota.OtaManager
-import com.lightstick.device.DeviceInfo
+import com.lightstick.types.Color
+import com.lightstick.types.Colors
+import com.lightstick.types.EffectType
+import com.lightstick.types.Group
+import com.lightstick.types.GroupPalette
+import com.lightstick.types.LSEffectPayload
+import com.lightstick.types.MsgType
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.parcelize.Parcelize
 
@@ -234,12 +239,33 @@ data class Device(
     }
 
     /**
-     * Sends a 20-byte effect payload to THIS device.
+     * Sends a 20-byte effect payload to THIS device — including group-targeted control.
+     * There is no separate group-control method: a group (or "everyone") target is just
+     * [LSEffectPayload.groupMask] on an ordinary payload — see [Group] for the
+     * `GRP1`..`GRP32` / `ALL_SINGLE` / `ALL_GROUPS` mask constants.
      *
      * @param payload 20-byte structured effect payload.
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected or an error prevented enqueuing.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // Group 1 + group 3 together, in one simultaneous packet.
+     * device.sendEffect(
+     *     LSEffectPayload(Group.GRP1 or Group.GRP3, EffectType.ON, Colors.WHITE)
+     * )
+     *
+     * // "Wave" (파도타기): sequencing groups 1..N is the app's responsibility — send once
+     * // per group, spaced by your own visual-pacing interval (recommended 200-1000ms).
+     * for (groupId in 1..groupCount) {
+     *     device.sendEffect(LSEffectPayload(1L shl (groupId - 1), EffectType.BLINK, Colors.WHITE))
+     *     delay(waveIntervalMs)
+     * }
+     *
+     * // Every connected lightstick, regardless of group assignment (groupMask omitted -> ALL_SINGLE).
+     * device.sendEffect(LSEffectPayload(effectType = EffectType.OFF, color = Colors.WHITE))
+     * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffect(payload: LSEffectPayload): Boolean {
@@ -280,8 +306,9 @@ data class Device(
      * Loads an EFX timeline for music-synchronized playback.
      *
      * The SDK automatically:
-     * - Recalculates effectIndex to be sequential (1, 2, 3, ...)
-     * - Increments syncIndex for new playback session
+     * - Pins every frame's msgType to EFFECT, so a frame accidentally built as Game/Group
+     *   never collides with those message types during playback
+     * - Increments effectIndex for new playback session
      * - Manages timeline state internally
      *
      * @param frames Timeline entries [(timestampMs, 20B payload), ...]
@@ -361,7 +388,7 @@ data class Device(
     /**
      * Resumes effect transmission.
      *
-     * The SDK automatically increments syncIndex for device resynchronization.
+     * The SDK automatically increments effectIndex for device resynchronization.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -635,50 +662,27 @@ data class Device(
 
 
     /**
-     * Subscribes to FF04 game result Notify and sends a READY command (FF03) to start a game.
+     * Enables FF04 game result Notify. Sends no command by itself — pair with
+     * [sendGameCmd]`(GameCmd.START, ...)` to actually start a game, or with
+     * [sendGameCmd]`(GameCmd.TEAM_ASSIGN_END, ...)` to receive that command's aggregated
+     * confirmation (Mode 4). [onResult] fires once per Notify; check [GameResult.cmdIndex] to
+     * tell a real result ([GameResult.CMD_RESULT]) apart from a Mode 4 team-assignment
+     * confirmation ([GameResult.CMD_TEAM_CONFIRM]).
      *
-     * The relay / master wand broadcasts READY via 802.15.4; wands auto-start ~2 s later.
-     * [onResult] is called once per wand result packet received (up to 2 s after game ends).
-     *
-     * Typical usage:
-     * ```kotlin
-     * device.startGame(GameMode.SPEED_REACTION, GameLevel.NORMAL) { result ->
-     *     if (result.isWandIdValid && result.redScore == 5) {
-     *         // wand result.wandId finished first
-     *     }
-     * }
-     * ```
-     * For Mode 3 use [GAME_OPTION_RANDOM_TEAM] as [option] to randomise team assignment:
-     * ```kotlin
-     * device.startGame(GameMode.TEAM_BATTLE, GameLevel.EASY, Device.GAME_OPTION_RANDOM_TEAM) { result ->
-     *     val winner = if (result.redScore > result.blueScore) "Red" else "Blue"
-     * }
-     * ```
-     *
-     * @param mode     Game mode to start.
-     * @param level    Difficulty level (default: [GameLevel.NORMAL]).
-     * @param option   Extra option byte: use [GAME_OPTION_RANDOM_TEAM] for Mode 3 random team
-     *                 assignment, 0 for Mode 1 / Mode 2.
      * @param onResult Called for each [GameResult] Notify received from the relay.
-     * @return `true` if both the subscribe and READY write were submitted; `false` otherwise.
+     * @return `true` if the CCCD write was submitted; `false` if not connected.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun startGame(
-        mode: GameMode,
-        level: GameLevel = GameLevel.NORMAL,
-        option: Int = 0,
-        onResult: (GameResult) -> Unit
-    ): Boolean {
+    fun setNotifyGameResults(onResult: (GameResult) -> Unit): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.subscribeGameResults(mac) { subIndex, redScore, blueScore, totalCount, wandId ->
-                // 펌웨어가 결과 패킷의 subIndex를 0 또는 다른 값으로 내려보낼 수 있다.
-                // 이 경우 startGame()에 전달된 mode를 fallback으로 사용한다.
-                val gameMode = GameMode.fromSubIndex(subIndex) ?: mode
+            Facade.subscribeGameResults(mac) { subIndex, cmdIndex, redScore, blueScore, totalCount, wandId ->
+                val gameMode = GameMode.fromSubIndex(subIndex) ?: return@subscribeGameResults
                 onResult(
                     GameResult(
                         mode       = gameMode,
+                        cmdIndex   = cmdIndex,
                         redScore   = redScore,
                         blueScore  = blueScore,
                         totalCount = totalCount,
@@ -686,81 +690,154 @@ data class Device(
                     )
                 )
             }
-            Facade.sendGameReady(mac, mode.subIndex, level.value, option)
+            true
         } catch (_: Throwable) {
             false
         }
     }
 
     /**
-     * Sends a STOP command (cmdIndex=3) to FF03 to abort a running game immediately.
+     * Sends a game command to FF03. Single entry point for every game command — which
+     * parameters matter depends on [cmd]:
+     * - [GameCmd.START]: [mode] + [level] (difficulty, or Mode 4 round count 1~3) + [option]
+     *   (use [GAME_OPTION_RANDOM_TEAM] for Mode 3 random team, or Mode 4's per-round measure
+     *   time in ms).
+     * - [GameCmd.WINNER]: [mode] (Mode 1/2 only — [GameMode.TEAM_BATTLE] returns `false`) +
+     *   [wandId].
+     * - [GameCmd.TEAM_ASSIGN] / [GameCmd.TEAM_ASSIGN_END]: [level] as the team id (0=RED/1=BLUE);
+     *   `mode` is ignored (always Mode 4).
+     * - [GameCmd.STOP] / [GameCmd.CLEAR]: no extra params.
      *
-     * @return `true` if the command was enqueued; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun stopGame(): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.sendGameStop(mac)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Sends a CLEAR command (cmdIndex=4) to FF03 to reset the device to idle.
+     * Pass [onResult] to (re-)enable FF04 Notify before sending, exactly like the old
+     * `startGame` did — harmless to pass on more than one call (e.g. every Mode 4 step), since
+     * it just re-registers the same listener. Omit it on calls where the subscription from an
+     * earlier [sendGameCmd] call (or a standalone [setNotifyGameResults]) is already active.
      *
-     * Call this after a game ends to prepare for the next round. Unsubscribes game result
-     * notifications automatically.
+     * Typical usage — single call, just like `startGame` before:
+     * ```kotlin
+     * device.sendGameCmd(GameCmd.START, mode = GameMode.SPEED_REACTION, level = GameLevel.NORMAL.value) { result ->
+     *     if (result.cmdIndex == GameResult.CMD_RESULT && result.isWandIdValid && result.redScore == 5) {
+     *         // wand result.wandId finished first
+     *     }
+     * }
+     * ```
+     * Mode 4 team assignment — subscribe once on the first call, reuse it after:
+     * ```kotlin
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 0) { result -> ... }  // RED starts, subscribes
+     * // ... wands lock in as their buttons are pressed ...
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN_END, level = 0)   // RED ends -> aggregated Notify
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN, level = 1)       // BLUE starts
+     * device.sendGameCmd(GameCmd.TEAM_ASSIGN_END, level = 1)   // BLUE ends -> aggregated Notify
+     * device.sendGameCmd(GameCmd.START, mode = GameMode.TEAM_SIMULTANEOUS, level = 3, option = 5000)
+     * ```
      *
-     * @return `true` if the command was enqueued; `false` otherwise.
-     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun clearGame(): Boolean {
-        return try {
-            if (!isConnected()) return false
-            Facade.unsubscribeGameResults(mac)
-            Facade.sendGameClear(mac)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Sends a WINNER command (cmdIndex=6) to FF03 to announce the winning wand.
-     *
-     * Only valid for [GameMode.SPEED_REACTION] (Mode 1) and [GameMode.TEMPO] (Mode 2).
-     * [GameMode.TEAM_BATTLE] is not supported; returns `false` without sending.
-     *
-     * @param mode         Game mode that just concluded (must be Mode 1 or Mode 2).
-     * @param winnerWandId Wand ID of the winner, written at payload offset 14–15 (LE).
-     * @return `true` if the command was enqueued; `false` if not connected, mode is unsupported,
+     * @param cmd      Command to send.
+     * @param mode     Game mode; required for [GameCmd.START] / [GameCmd.WINNER], ignored otherwise.
+     * @param level    Meaning depends on [cmd] — see above. Default 0.
+     * @param option   Meaning depends on [cmd] — see above. Default 0.
+     * @param wandId   Winner's wand id; only used by [GameCmd.WINNER]. Default 0.
+     * @param onResult If non-null, calls [setNotifyGameResults] with it before sending [cmd].
+     * @return `true` if the command was enqueued; `false` if not connected, the Notify
+     *         (re-)subscription failed, [GameCmd.WINNER] was requested for an unsupported mode,
      *         or an error prevented submission.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendWinner(mode: GameMode, winnerWandId: Int): Boolean {
-        if (mode == GameMode.TEAM_BATTLE) return false
+    fun sendGameCmd(
+        cmd: GameCmd,
+        mode: GameMode? = null,
+        level: Int = 0,
+        option: Int = 0,
+        wandId: Int = 0,
+        onResult: ((GameResult) -> Unit)? = null
+    ): Boolean {
+        if (cmd == GameCmd.WINNER && mode == GameMode.TEAM_BATTLE) return false
         return try {
             if (!isConnected()) return false
-            Facade.sendGameWinner(mac, mode.subIndex, winnerWandId)
+            if (onResult != null && !setNotifyGameResults(onResult)) return false
+            when (cmd) {
+                GameCmd.START -> Facade.sendGameReady(mac, mode?.subIndex ?: 0, level, option)
+                GameCmd.STOP -> Facade.sendGameStop(mac)
+                GameCmd.CLEAR -> Facade.sendGameClear(mac)
+                GameCmd.WINNER -> Facade.sendGameWinner(mac, mode?.subIndex ?: 0, wandId)
+                GameCmd.TEAM_ASSIGN -> Facade.sendGameTeamAssign(mac, level)
+                GameCmd.TEAM_ASSIGN_END -> Facade.sendGameTeamAssignEnd(mac, level)
+            }
         } catch (_: Throwable) {
             false
         }
     }
 
     /**
-     * Cancels the FF04 Notify subscription without sending any command to the device.
+     * Disables FF04 game result Notify without sending any command to the device.
      *
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun unsubscribeGameResults() {
+    fun clearNotifyGameResults() {
         try {
             Facade.unsubscribeGameResults(mac)
         } catch (_: Throwable) { }
+    }
+
+    // ------------------------------------------------------------------------
+    // Group Setting (Glowsync group mapping spec v2.0)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Broadcasts the **GroupSetup** ([MsgType.GROUP_SETUP]) "join group [groupId]" beacon while
+     * the organizer holds the group screen open.
+     *
+     * This bypasses [sendEffect]'s timeline-stop / msgType-forcing behavior — required because
+     * a GroupSetup frame's msgType must survive unmodified, which [sendEffect] would otherwise
+     * stamp back to [MsgType.EFFECT]. Group *control* has no such requirement (it's an ordinary
+     * [MsgType.EFFECT] frame with `groupMask` set) so it needs no separate method — just call
+     * [sendEffect] like any other effect.
+     *
+     * Unassigned lightsticks blink [GroupPalette.colorFor] while this is being broadcast;
+     * pressing the lightstick's button locks it to this group. There is no explicit "stop"
+     * message — call this again with the next [groupId] when the organizer moves on.
+     *
+     * @param groupId Group to advertise (1..20 — see [GroupPalette] for the palette's current
+     *        range).
+     * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
+     *         device is not connected.
+     * @throws IllegalArgumentException If [groupId] is outside 1..20.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     *
+     * @sample
+     * ```kotlin
+     * // Organizer holds "join group N" open; app advances to the next group when ready.
+     * for (groupId in 1..groupCount) {
+     *     device.sendGroupSetting(groupId)
+     *     delay(setupWindowMs)
+     * }
+     * ```
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGroupSetting(groupId: Int): Boolean {
+        require(groupId in GroupPalette.MIN_GROUP_ID..GroupPalette.MAX_GROUP_ID) {
+            "groupId must be within ${GroupPalette.MIN_GROUP_ID}..${GroupPalette.MAX_GROUP_ID} for GroupSetup"
+        }
+        val payload = LSEffectPayload(
+            groupMask = 1L shl (groupId - 1),
+            effectType = EffectType.BLINK,
+            color = GroupPalette.colorFor(groupId),
+            backgroundColor = Colors.BLACK,
+            msgType = MsgType.GROUP_SETUP,
+            period = 6,
+            spf = 100,
+            randomColor = 0,
+            randomDelay = 1,
+            fade = 0,
+            broadcasting = 0
+        )
+        return try {
+            if (!isConnected()) return false
+            Facade.sendGroupSettingTo(mac, payload.toByteArray())
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -769,8 +846,9 @@ data class Device(
 
     companion object {
         /**
-         * Pass as the `option` argument of [startGame] for [GameMode.TEAM_BATTLE] to let the
-         * relay assign Red / Blue teams randomly (spec §5, option = 0xFF).
+         * Pass as the `option` argument of [sendGameCmd]`(GameCmd.START, ...)` for
+         * [GameMode.TEAM_BATTLE] to let the relay assign Red / Blue teams randomly
+         * (spec §5, option = 0xFF).
          */
         const val GAME_OPTION_RANDOM_TEAM: Int = 0xFF
     }

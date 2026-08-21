@@ -3,7 +3,7 @@ package com.lightstick.internal.ble
 import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
 import android.os.SystemClock
-import android.util.Log
+import com.lightstick.internal.util.Log
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.*
@@ -17,7 +17,7 @@ import kotlinx.coroutines.sync.withLock
  * - 타임라인 기반 이펙트 재생 (나노초 정확도)
  * - 음악 재생 위치 동기화
  * - Effect 전송 ON/OFF 제어
- * - syncIndex 자동 관리 (사용자 투명)
+ * - effectIndex 자동 관리 (사용자 투명)
  * - Seek 자동 감지
  */
 internal class LedControlManager(
@@ -25,14 +25,17 @@ internal class LedControlManager(
 ) : AutoCloseable {
 
     companion object {
-        private const val TAG = "LedControlManager"
+        // LSEffectPayload byte[0] (protocol v2.0): msgType, the sole message-type discriminator.
+        // Effect/timeline sends through this manager are always "Effect" — this includes
+        // group-targeted control (msgType=EFFECT + groupMask), which is an ordinary effect
+        // payload. Only GroupSetup frames bypass this class entirely (see GroupControlManager),
+        // since a GroupSetup frame's msgType (GROUP_SETUP) must survive unmodified.
+        private const val MSG_TYPE_BYTE_POSITION = 0
+        const val MSG_TYPE_EFFECT = 0
 
-        // LSEffectPayload bytes[0-1] (u16 Little Endian): 동작 모드
-        private const val MODE_BYTE_POSITION = 0
-        const val MODE_EFFECT_PAYLOAD = 1  // 일반 이펙트 페이로드
-        const val MODE_GAME = 5            // 게임 모드
-
-        private const val SYNC_INDEX_BYTE_POSITION = 19  // LSEffectPayload의 syncIndex 위치
+        // LSEffectPayload byte[18-19] (protocol v3, u16 LE): effectIndex — pure dedup/sequence
+        // number, uninvolved in message-type discrimination (that moved to byte[0] in v3).
+        private const val EFFECT_INDEX_BYTE_POSITION = 18
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
     }
 
@@ -50,7 +53,7 @@ internal class LedControlManager(
 
     // =========== Effect 전송 제어 ===========
     @Volatile private var isEffectTransmissionEnabled: Boolean = true
-    @Volatile private var currentSyncIndex: Int = 1
+    @Volatile private var currentEffectIndex: Int = 1
 
     // =========== 재생 Job ===========
     @Volatile private var monitorJob: Job? = null
@@ -118,7 +121,7 @@ internal class LedControlManager(
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = setMode(bytes20, MODE_EFFECT_PAYLOAD),
+            data = setMsgType(bytes20, MSG_TYPE_EFFECT),
             coalesceKey = "LCS:PAYLOAD"
         )
     }
@@ -145,7 +148,7 @@ internal class LedControlManager(
                     val ok = sendNoResponseCoalesced(
                         serviceUuid = UuidConstants.LCS_SERVICE,
                         charUuid = UuidConstants.LCS_PAYLOAD,
-                        data = setMode(frame, MODE_EFFECT_PAYLOAD),
+                        data = setMsgType(frame, MSG_TYPE_EFFECT),
                         coalesceKey = "LCS:PAYLOAD"
                     )
                     if (!ok) {
@@ -171,8 +174,8 @@ internal class LedControlManager(
      * EFX 타임라인을 로드합니다.
      *
      * 로드와 동시에:
-     * 1. 모든 프레임의 mode를 MODE_EFFECT_PAYLOAD(1)로 설정 (게임모드 충돌 방지)
-     * 2. syncIndex가 자동으로 증가 (새로운 재생 세션 시작)
+     * 1. 모든 프레임의 msgType을 MSG_TYPE_EFFECT(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
+     * 2. effectIndex가 자동으로 증가 (새로운 재생 세션 시작)
      *
      * @param frames 타임라인 엔트리 리스트 (timestampMs, 20B payload)
      */
@@ -185,9 +188,9 @@ internal class LedControlManager(
 
         val sortedFrames = frames.sortedBy { it.first }
 
-        // 모든 프레임을 MODE_EFFECT_PAYLOAD(1)로 고정 (게임모드=5 충돌 방지)
+        // 모든 프레임을 MSG_TYPE_EFFECT(0)으로 고정 (그룹/게임 msgType 충돌 방지)
         timeline = sortedFrames.map { (timestamp, frame) ->
-            timestamp to setMode(frame, MODE_EFFECT_PAYLOAD)
+            timestamp to setMsgType(frame, MSG_TYPE_EFFECT)
         }
 
         lastSentIndex = -1
@@ -196,10 +199,10 @@ internal class LedControlManager(
         lastProcessedPositionMs = -1
         isEffectTransmissionEnabled = true
 
-        // ✅ 새 타임라인 로드 시 syncIndex 자동 증가
-        currentSyncIndex = (currentSyncIndex % 255) + 1
+        // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
+        currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
 
-        Log.d(TAG, "Timeline loaded: ${timeline.size} frames, mode=MODE_EFFECT_PAYLOAD, syncIndex=$currentSyncIndex")
+        Log.d("[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
 
         startMonitor()
     }
@@ -283,22 +286,22 @@ internal class LedControlManager(
             lastSentIndex++
 
             try {
-                val frameWithSync = insertSyncIndex(frame, currentSyncIndex)
+                val frameWithIndex = insertEffectIndex(frame, currentEffectIndex)
 
                 val ok = sendTimelineFrame(
                     serviceUuid = UuidConstants.LCS_SERVICE,
                     charUuid = UuidConstants.LCS_PAYLOAD,
-                    data = frameWithSync
+                    data = frameWithIndex
                 )
 
                 if (ok) {
                     transmittedCount++
                 } else {
-                    Log.w(TAG, "Failed to send effect at ${timestamp}ms")
+                    Log.w("[LedControlManager] Failed to send effect at ${timestamp}ms")
                     break
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error sending effect at ${timestamp}ms: ${e.message}")
+                Log.e("[LedControlManager] Error sending effect at ${timestamp}ms: ${e.message}")
                 break
             }
         }
@@ -306,7 +309,7 @@ internal class LedControlManager(
         if (transmittedCount > 0) {
             val rangeStart = lastSentIndex - transmittedCount + 1
             val rangeEnd = lastSentIndex
-            Log.d(TAG, "Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, syncIndex=$currentSyncIndex)")
+            Log.d("[LedControlManager] Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, effectIndex=$currentEffectIndex)")
         }
     }
 
@@ -324,12 +327,12 @@ internal class LedControlManager(
     /**
      * 이펙트 전송을 재개합니다.
      *
-     * 내부적으로 syncIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
+     * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
      */
     @MainThread
     fun resumeEffects() {
         if (isEffectTransmissionEnabled) return
-        currentSyncIndex = (currentSyncIndex % 255) + 1
+        currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
     }
 
@@ -364,30 +367,27 @@ internal class LedControlManager(
     // ============================================================================================
 
     /**
-     * LSEffectPayload의 bytes[0-1](mode)를 설정합니다.
-     * MODE_EFFECT_PAYLOAD(1) 또는 MODE_GAME(5)
-     *
-     * mode는 Little Endian u16으로 저장됩니다.
+     * LSEffectPayload의 byte[0](msgType, protocol v3)을 설정합니다.
      */
-    private fun setMode(frame: ByteArray, mode: Int): ByteArray {
+    private fun setMsgType(frame: ByteArray, msgType: Int): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }
-        require(mode in 0..0xFFFF) { "mode must be 0-65535" }
+        require(msgType in 0..0xFF) { "msgType must be 0-255" }
 
         return frame.copyOf().apply {
-            this[MODE_BYTE_POSITION] = (mode and 0xFF).toByte()
-            this[MODE_BYTE_POSITION + 1] = ((mode shr 8) and 0xFF).toByte()
+            this[MSG_TYPE_BYTE_POSITION] = msgType.toByte()
         }
     }
 
     /**
-     * LSEffectPayload의 19번째 바이트(syncIndex)를 교체
+     * LSEffectPayload의 byte[18-19](effectIndex, protocol v3, u16 LE)를 교체합니다.
      */
-    private fun insertSyncIndex(frame: ByteArray, syncIndex: Int): ByteArray {
+    private fun insertEffectIndex(frame: ByteArray, effectIndex: Int): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }
-        require(syncIndex in 0..255) { "syncIndex must be 0-255" }
+        require(effectIndex in 0..0xFFFF) { "effectIndex must be 0-65535" }
 
         return frame.copyOf().apply {
-            this[SYNC_INDEX_BYTE_POSITION] = syncIndex.toByte()
+            this[EFFECT_INDEX_BYTE_POSITION] = (effectIndex and 0xFF).toByte()
+            this[EFFECT_INDEX_BYTE_POSITION + 1] = ((effectIndex shr 8) and 0xFF).toByte()
         }
     }
 

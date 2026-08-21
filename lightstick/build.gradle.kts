@@ -11,6 +11,9 @@ plugins {
     alias(libs.plugins.maven.publish)
 }
 
+group = "com.lightstick"
+version = "2.0.0"
+
 android {
     namespace = "com.lightstick"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -103,7 +106,7 @@ publishing {
 
             groupId = "com.lightstick"
             artifactId = "lightstick"
-            version = "1.4.0"
+            version = project.version.toString()
         }
     }
     repositories {

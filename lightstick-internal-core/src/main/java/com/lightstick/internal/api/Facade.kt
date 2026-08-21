@@ -57,6 +57,11 @@ object Facade {
         check(::appContext.isInitialized) { "Facade.initialize(context) must be called first." }
     }
 
+    /** Toggles debug logging (packet TX/RX, connection/OTA diagnostics) across the BLE layer. */
+    fun setDebugLoggingEnabled(enabled: Boolean) {
+        com.lightstick.internal.util.Log.enabled = enabled
+    }
+
     @MainThread
     fun initialize(
         context: Context,
@@ -119,7 +124,8 @@ object Facade {
         val led: LedControlManager,
         val deviceInfo: DeviceInfoManager,
         val ota: OtaManager?,
-        val game: GameManager
+        val game: GameManager,
+        val group: GroupControlManager
     ) {
         fun cleanup() {
             runCatching { ota?.abort() }
@@ -307,7 +313,8 @@ object Facade {
                 val led = LedControlManager(gatt)
                 val deviceInfo = DeviceInfoManager(gatt)
                 val game = GameManager(gatt)
-                sessions[mac] = Session(gatt, led, deviceInfo, null, game)
+                val group = GroupControlManager(gatt)
+                sessions[mac] = Session(gatt, led, deviceInfo, null, game, group)
                 disReadyMap[mac] = CompletableDeferred()
 
                 deviceStateManager.updateConnectionState(
@@ -702,7 +709,7 @@ object Facade {
     /**
      * 이펙트 전송을 재개합니다.
      *
-     * 내부적으로 syncIndex가 자동 증가하여 재동기화가 처리됩니다.
+     * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */
@@ -755,13 +762,15 @@ object Facade {
     /**
      * Subscribes to FF04 game result Notify on the given device.
      *
-     * The callback parameters map directly to the 20-byte result packet (spec §2.3 / §7.1):
-     * subIndex, redScore, blueScore, totalCount, wandId.
+     * The callback parameters map directly to the 20-byte result packet
+     * (`GameMode_Spec_v2_7.docx` §2.4, unified with FF03's msgType/effectIndex shape):
+     * subIndex, cmdIndex (RESULT=5 or TEAM_CONFIRM=8 — see [GameManager] for how field meaning
+     * depends on this), redScore, blueScore, totalCount, wandId.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun subscribeGameResults(
         mac: String,
-        onResult: (subIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
+        onResult: (subIndex: Int, cmdIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
     ): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
@@ -804,6 +813,43 @@ object Facade {
         requireInit()
         if (!isConnected(mac)) return false
         return requireSession(mac).game.sendWinner(subIndex, winnerWandId)
+    }
+
+    /** Mode 4 only: sends TEAM_ASSIGN (cmdIndex=7) to FF03 to start assigning [teamId]. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameTeamAssign(mac: String, teamId: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendTeamAssign(teamId)
+    }
+
+    /**
+     * Mode 4 only: sends TEAM_ASSIGN_END (cmdIndex=9) to FF03 to end assignment for [teamId].
+     * Triggers an aggregated TEAM_CONFIRM(8) Notify on FF04 with that team's confirmed headcount.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGameTeamAssignEnd(mac: String, teamId: Int): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).game.sendTeamAssignEnd(teamId)
+    }
+
+    // ============================================================================================
+    // Group Setting (Glowsync group mapping spec v2.0)
+    // ============================================================================================
+
+    /**
+     * Writes a raw 20-byte GroupSetup frame (LSEffectPayload.toByteArray(), msgType=GROUP_SETUP)
+     * to FF02, bypassing [LedControlManager]'s msgType rewrite and coalescing. Group *control*
+     * frames (msgType=EFFECT + groupMask) are ordinary effect payloads and go through
+     * [sendEffectTo] instead — this method exists only for `Device.sendGroupSetting`.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendGroupSettingTo(mac: String, bytes20: ByteArray): Boolean {
+        requireInit()
+        require(bytes20.size == 20) { "Group payload must be 20 bytes" }
+        if (!isConnected(mac)) return false
+        return requireSession(mac).group.sendPayload(bytes20)
     }
 
     // ============================================================================================
