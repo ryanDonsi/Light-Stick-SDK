@@ -184,7 +184,7 @@ class GroupProtocolTest {
             period = 6,
             spf = 100,
             randomColor = 0,
-            randomDelay = 1,
+            randomDelay = 0,
             fade = 0,
             broadcasting = 0
         )
@@ -203,7 +203,7 @@ class GroupProtocolTest {
         assertEquals(6, bytes[12].toInt())  // period
         assertEquals(100, bytes[13].toInt() and 0xFF) // spf
         assertEquals(0, bytes[14].toInt())  // randomColor fixed 0
-        assertEquals(1, bytes[15].toInt())  // randomDelay fixed 1
+        assertEquals(0, bytes[15].toInt())  // randomDelay fixed 0
         assertEquals(0, bytes[16].toInt())  // fadeValue fixed 0
         assertEquals(0, bytes[17].toInt())  // broadcasting fixed 0
     }
@@ -223,7 +223,7 @@ class GroupProtocolTest {
             period = 6,
             spf = 100,
             randomColor = 0,
-            randomDelay = 1,
+            randomDelay = 0,
             fade = 0,
             broadcasting = 0
         )

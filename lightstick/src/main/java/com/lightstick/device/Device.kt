@@ -828,7 +828,7 @@ data class Device(
             period = 6,
             spf = 100,
             randomColor = 0,
-            randomDelay = 1,
+            randomDelay = 0,
             fade = 0,
             broadcasting = 0
         )
