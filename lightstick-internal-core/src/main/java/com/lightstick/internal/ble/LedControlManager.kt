@@ -117,7 +117,7 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
-        releaseTimeline()  // 타임라인 재생 중단
+        stopTimeline()  // 타임라인 재생 중단
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
@@ -171,9 +171,9 @@ internal class LedControlManager(
     // ============================================================================================
 
     /**
-     * EFX 타임라인을 로드합니다.
+     * EFX 타임라인을 시작합니다.
      *
-     * 로드와 동시에:
+     * 시작과 동시에:
      * 1. 모든 프레임의 msgType을 MSG_TYPE_EFFECT(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
      * 2. effectIndex가 자동으로 증가 (새로운 재생 세션 시작)
      *
@@ -181,10 +181,10 @@ internal class LedControlManager(
      */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun loadTimeline(frames: List<Pair<Long, ByteArray>>) {
+    fun playTimeline(frames: List<Pair<Long, ByteArray>>) {
         require(frames.all { it.second.size == 20 }) { "All frames must be 20 bytes" }
 
-        releaseTimeline()
+        stopTimeline()
 
         val sortedFrames = frames.sortedBy { it.first }
 
@@ -314,36 +314,36 @@ internal class LedControlManager(
     }
 
     /**
-     * 이펙트 전송을 일시정지합니다 (loadTimeline()으로 로드한 타임라인 전용).
+     * 이펙트 전송을 일시정지합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
      * 타임라인 추적은 계속되지만 BLE 전송만 중단됩니다.
      */
     @MainThread
-    fun pauseLoadedTimeline() {
+    fun pauseTimeline() {
         if (!isEffectTransmissionEnabled) return
         isEffectTransmissionEnabled = false
     }
 
     /**
-     * 이펙트 전송을 재개합니다 (loadTimeline()으로 로드한 타임라인 전용).
+     * 이펙트 전송을 재개합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
      * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
      */
     @MainThread
-    fun resumeLoadedTimeline() {
+    fun resumeTimeline() {
         if (isEffectTransmissionEnabled) return
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
     }
 
     /**
-     * 로드된 타임라인을 해제합니다 — 재생 중단 + timeline 데이터 자체를 비웁니다.
+     * 시작된 타임라인을 중단합니다 — 재생 중단 + timeline 데이터 자체를 비웁니다.
      *
-     * 재개하려면 loadTimeline()을 처음부터 다시 호출해야 합니다. (playJob 기반
+     * 재개하려면 playTimeline()을 처음부터 다시 호출해야 합니다. (playJob 기반
      * play()/stop()과는 완전히 독립된 상태라 서로 영향 없음.)
      */
     @MainThread
-    fun releaseTimeline() {
+    fun stopTimeline() {
         monitorJob?.cancel()
         monitorJob = null
 
@@ -396,7 +396,7 @@ internal class LedControlManager(
     // ============================================================================================
 
     override fun close() {
-        releaseTimeline()
+        stopTimeline()
         stop()
         scope.cancel()
     }

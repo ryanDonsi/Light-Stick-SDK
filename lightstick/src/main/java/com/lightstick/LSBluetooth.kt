@@ -296,7 +296,7 @@ object LSBluetooth {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun broadcastFrames(frames: List<Pair<Long, LSEffectPayload>>) {
         val converted = frames.map { (ts, payload) -> ts to payload.toByteArray() }
-        Facade.playAllEntries(converted)
+        Facade.playAllEffects(converted)
     }
 
     // ============================================================================================
