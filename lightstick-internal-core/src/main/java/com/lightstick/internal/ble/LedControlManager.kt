@@ -117,7 +117,7 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
-        stopTimeline()  // 타임라인 재생 중단
+        releaseTimeline()  // 타임라인 재생 중단
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
@@ -184,7 +184,7 @@ internal class LedControlManager(
     fun loadTimeline(frames: List<Pair<Long, ByteArray>>) {
         require(frames.all { it.second.size == 20 }) { "All frames must be 20 bytes" }
 
-        stopTimeline()
+        releaseTimeline()
 
         val sortedFrames = frames.sortedBy { it.first }
 
@@ -314,36 +314,36 @@ internal class LedControlManager(
     }
 
     /**
-     * 이펙트 전송을 일시정지합니다.
+     * 이펙트 전송을 일시정지합니다 (loadTimeline()으로 로드한 타임라인 전용).
      *
      * 타임라인 추적은 계속되지만 BLE 전송만 중단됩니다.
      */
     @MainThread
-    fun pauseEffects() {
+    fun pauseLoadedTimeline() {
         if (!isEffectTransmissionEnabled) return
         isEffectTransmissionEnabled = false
     }
 
     /**
-     * 이펙트 전송을 재개합니다.
+     * 이펙트 전송을 재개합니다 (loadTimeline()으로 로드한 타임라인 전용).
      *
      * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
      */
     @MainThread
-    fun resumeEffects() {
+    fun resumeLoadedTimeline() {
         if (isEffectTransmissionEnabled) return
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
     }
 
     /**
-     * 타임라인 재생을 완전히 중단합니다.
+     * 로드된 타임라인을 해제합니다 — 재생 중단 + timeline 데이터 자체를 비웁니다.
      *
-     * 타임라인이 클리어되고 처음부터 다시 시작하려면
-     * loadTimeline()을 다시 호출해야 합니다.
+     * 재개하려면 loadTimeline()을 처음부터 다시 호출해야 합니다. (playJob 기반
+     * play()/stop()과는 완전히 독립된 상태라 서로 영향 없음.)
      */
     @MainThread
-    fun stopTimeline() {
+    fun releaseTimeline() {
         monitorJob?.cancel()
         monitorJob = null
 
@@ -396,7 +396,7 @@ internal class LedControlManager(
     // ============================================================================================
 
     override fun close() {
-        stopTimeline()
+        releaseTimeline()
         stop()
         scope.cancel()
     }

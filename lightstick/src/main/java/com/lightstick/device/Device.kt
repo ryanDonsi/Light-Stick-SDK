@@ -279,7 +279,10 @@ data class Device(
     }
 
     /**
-     * Streams timestamped frames to THIS device (legacy API).
+     * Plays a canned sequence of timestamped frames on THIS device, on the SDK's own clock —
+     * no external position sync needed (contrast [loadTimeline], which tracks an external music
+     * position via [updatePlaybackPosition]). Runs once through and stops; call [stopTimeline]
+     * to cancel it mid-sequence.
      *
      * Each frame is (timestampMs, 20B payload).
      *
@@ -288,10 +291,28 @@ data class Device(
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun play(frames: List<Pair<Long, ByteArray>>): Boolean {
+    fun playTimeline(frames: List<Pair<Long, ByteArray>>): Boolean {
         return try {
             if (!isConnected()) return false
             Facade.playEntries(mac = mac, frames = frames)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Cancels a [playTimeline] sequence currently in progress. Has no effect on a timeline
+     * loaded via [loadTimeline] — use [releaseTimeline] for that.
+     *
+     * @return `true` if the cancel was submitted; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun stopTimeline(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.stopPlayEntries(mac)
             true
         } catch (_: Throwable) {
             false
@@ -360,7 +381,8 @@ data class Device(
     }
 
     /**
-     * Pauses effect transmission.
+     * Pauses effect transmission for the timeline loaded via [loadTimeline]. Has no effect on
+     * a [playTimeline] sequence — see [stopTimeline] for that.
      *
      * Timeline tracking continues internally, but BLE transmission is suspended.
      * When resumed, the SDK will automatically resync with the device.
@@ -371,14 +393,14 @@ data class Device(
      * @sample
      * ```kotlin
      * // User toggles effects OFF
-     * device.pauseEffects()
+     * device.pauseLoadedTimeline()
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun pauseEffects(): Boolean {
+    fun pauseLoadedTimeline(): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.pauseEffects(mac)
+            Facade.pauseLoadedTimeline(mac)
             true
         } catch (_: Throwable) {
             false
@@ -386,7 +408,8 @@ data class Device(
     }
 
     /**
-     * Resumes effect transmission.
+     * Resumes effect transmission for the timeline loaded via [loadTimeline], after
+     * [pauseLoadedTimeline].
      *
      * The SDK automatically increments effectIndex for device resynchronization.
      *
@@ -396,14 +419,14 @@ data class Device(
      * @sample
      * ```kotlin
      * // User toggles effects ON
-     * device.resumeEffects()
+     * device.resumeLoadedTimeline()
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun resumeEffects(): Boolean {
+    fun resumeLoadedTimeline(): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.resumeEffects(mac)
+            Facade.resumeLoadedTimeline(mac)
             true
         } catch (_: Throwable) {
             false
@@ -411,7 +434,8 @@ data class Device(
     }
 
     /**
-     * Stops timeline playback completely and clears the timeline.
+     * Releases the timeline loaded via [loadTimeline]: stops playback and clears the loaded
+     * data. Has no effect on a [playTimeline] sequence — see [stopTimeline] for that.
      *
      * To restart, call [loadTimeline] again.
      *
@@ -419,10 +443,10 @@ data class Device(
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun stopTimeline(): Boolean {
+    fun releaseTimeline(): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.stopTimeline(mac)
+            Facade.releaseTimeline(mac)
             true
         } catch (_: Throwable) {
             false

@@ -641,6 +641,14 @@ object Facade {
         requireSession(mac).led.play(frames)
     }
 
+    /** Cancels an in-progress [playEntries] sequence (playJob), if any. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun stopPlayEntries(mac: String) {
+        requireInit()
+        if (!isConnected(mac)) return
+        requireSession(mac).led.stop()
+    }
+
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendColorPacket(packet4: ByteArray) {
         requireInit()
@@ -695,41 +703,42 @@ object Facade {
     }
 
     /**
-     * 이펙트 전송을 일시정지합니다.
+     * loadTimeline()으로 로드한 타임라인의 이펙트 전송을 일시정지합니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun pauseEffects(mac: String) {
+    fun pauseLoadedTimeline(mac: String) {
         requireInit()
         if (!isConnected(mac)) return
-        requireSession(mac).led.pauseEffects()
+        requireSession(mac).led.pauseLoadedTimeline()
     }
 
     /**
-     * 이펙트 전송을 재개합니다.
+     * loadTimeline()으로 로드한 타임라인의 이펙트 전송을 재개합니다.
      *
      * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun resumeEffects(mac: String) {
+    fun resumeLoadedTimeline(mac: String) {
         requireInit()
         if (!isConnected(mac)) return
-        requireSession(mac).led.resumeEffects()
+        requireSession(mac).led.resumeLoadedTimeline()
     }
 
     /**
-     * 타임라인 재생을 완전히 중단합니다.
+     * loadTimeline()으로 로드한 타임라인을 해제합니다 — 재생 중단 + timeline 데이터 자체를
+     * 비웁니다. 재개하려면 loadTimeline()을 다시 호출해야 합니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun stopTimeline(mac: String) {
+    fun releaseTimeline(mac: String) {
         requireInit()
         if (!isConnected(mac)) return
-        requireSession(mac).led.stopTimeline()
+        requireSession(mac).led.releaseTimeline()
     }
 
     /**

@@ -46,7 +46,7 @@ object DeviceSamples {
                     0L to LSEffectPayload.Effects.on(Colors.WHITE).toByteArray(),
                     250L to LSEffectPayload.Effects.strobe(4, Colors.CYAN).toByteArray()
                 )
-                device.play(frames)
+                device.playTimeline(frames)
 
                 device.requestMtu(247)
 
@@ -188,9 +188,9 @@ object DeviceSamples {
         Log.d("Sample", "sendEffect submitted=$ok")
     }
 
-    /** Sample: Play timestamped frames via Device helper. */
+    /** Sample: Play a canned frame sequence via Device helper. */
     @JvmStatic
-    fun samplePlayFrames(context: Context) {
+    fun samplePlayTimeline(context: Context) {
         LSBluetooth.initialize(context)
         val device = Device(mac = "AA:BB:CC:DD:EE:FF")
         if (!device.isConnected()) {
@@ -201,8 +201,21 @@ object DeviceSamples {
             200L to LSEffectPayload.Effects.blink(4, Colors.BLUE).toByteArray(),
             400L to LSEffectPayload.Effects.off().toByteArray()
         )
-        val ok = device.play(frames)
-        Log.d("Sample", "play submitted=$ok")
+        val ok = device.playTimeline(frames)
+        Log.d("Sample", "playTimeline submitted=$ok")
+    }
+
+    /** Sample: Cancel a [samplePlayTimeline] sequence mid-flight. */
+    @JvmStatic
+    fun sampleStopTimeline(context: Context) {
+        LSBluetooth.initialize(context)
+        val device = Device(mac = "AA:BB:CC:DD:EE:FF")
+        if (!device.isConnected()) {
+            Log.w("Sample", "Not connected"); return
+        }
+
+        val ok = device.stopTimeline()
+        Log.d("Sample", "stopTimeline submitted=$ok")
     }
 
     // --------------------------------------------------------------------------------------------
@@ -241,43 +254,43 @@ object DeviceSamples {
         Log.d("Sample", "updatePlaybackPosition submitted=$ok")
     }
 
-    /** Sample: Pause effects. */
+    /** Sample: Pause the loaded timeline. */
     @JvmStatic
-    fun samplePauseEffects(context: Context) {
+    fun samplePauseLoadedTimeline(context: Context) {
         LSBluetooth.initialize(context)
         val device = Device(mac = "AA:BB:CC:DD:EE:FF")
         if (!device.isConnected()) {
             Log.w("Sample", "Not connected"); return
         }
 
-        val ok = device.pauseEffects()
-        Log.d("Sample", "pauseEffects submitted=$ok")
+        val ok = device.pauseLoadedTimeline()
+        Log.d("Sample", "pauseLoadedTimeline submitted=$ok")
     }
 
-    /** Sample: Resume effects. */
+    /** Sample: Resume the loaded timeline. */
     @JvmStatic
-    fun sampleResumeEffects(context: Context) {
+    fun sampleResumeLoadedTimeline(context: Context) {
         LSBluetooth.initialize(context)
         val device = Device(mac = "AA:BB:CC:DD:EE:FF")
         if (!device.isConnected()) {
             Log.w("Sample", "Not connected"); return
         }
 
-        val ok = device.resumeEffects()
-        Log.d("Sample", "resumeEffects submitted=$ok")
+        val ok = device.resumeLoadedTimeline()
+        Log.d("Sample", "resumeLoadedTimeline submitted=$ok")
     }
 
-    /** Sample: Stop timeline. */
+    /** Sample: Release the loaded timeline. */
     @JvmStatic
-    fun sampleStopTimeline(context: Context) {
+    fun sampleReleaseTimeline(context: Context) {
         LSBluetooth.initialize(context)
         val device = Device(mac = "AA:BB:CC:DD:EE:FF")
         if (!device.isConnected()) {
             Log.w("Sample", "Not connected"); return
         }
 
-        val ok = device.stopTimeline()
-        Log.d("Sample", "stopTimeline submitted=$ok")
+        val ok = device.releaseTimeline()
+        Log.d("Sample", "releaseTimeline submitted=$ok")
     }
 
     /** Sample: Check if timeline is playing. */
