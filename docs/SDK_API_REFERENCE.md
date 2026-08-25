@@ -466,15 +466,16 @@ data class OtaResult(val ok: Boolean, val message: String? = null)  // OtaManage
 
 ---
 
-## 9. 부록: 알려진 미사용/데드 코드
+## 9. 부록: 정리된 미사용/데드 코드
 
-문서 정확성을 위해 존재하지만 실제로는 연결되지 않은 공개 타입을 명시한다 — 사용하지 말 것.
+아래는 이전에 발견되어 제거/수정된 항목의 기록. 현재 코드베이스에는 존재하지 않는다.
 
-| 타입 | 위치 | 상태 |
-|---|---|---|
-| `com.lightstick.config.InitConfig` / `InitResult` | `config/InitConfig.kt` | KDoc이 `LSBluetooth.initializeAsync`를 참조하지만 그런 메서드는 존재하지 않음 — 어디에서도 참조/사용되지 않는 미완성 타입 |
-| `com.lightstick.ota.OtaProgress` / `com.lightstick.ota.OtaResult` (최상위) | `ota/OtaProgress.kt`, `ota/OtaResult.kt` | `OtaManager` 안의 **중첩** `OtaProgress`/`OtaResult`와 이름이 같아 혼동되기 쉬우나, 실제 `OtaManager.startOta`/`Device.startOta` 콜백은 전부 중첩 타입을 사용 — 최상위 버전은 어디에서도 참조되지 않음 |
-| `com.lightstick.efx.Efx` KDoc의 `com.lightstick.device.Controller.play` 언급 | `efx/Efx.kt` | 그런 클래스 없음(연혁상 남은 표현) — 실제로는 `Device.playEffects`/`Device.playTimeline`을 사용 |
+| 항목 | 조치 |
+|---|---|
+| `com.lightstick.config.InitConfig` / `InitResult` | 삭제 — 어디에서도 참조되지 않던 미완성 타입 (KDoc이 가리키던 `LSBluetooth.initializeAsync`도 존재한 적 없음) |
+| `com.lightstick.ota.OtaProgress` / `com.lightstick.ota.OtaResult` (최상위) | 삭제 — `OtaManager` 안의 중첩 `OtaProgress`/`OtaResult`와 이름이 같아 혼동만 유발하던 미사용 중복 타입 |
+| `com.lightstick.efx.Efx` KDoc의 `com.lightstick.device.Controller.play` 언급 | 수정 — 존재한 적 없는 클래스 참조를 `Device.playEffects`/`Device.playTimeline`으로 정정 |
+| `lightstick/src/androidTest/.../LightStickBleIntegrationTest.kt`, `SimpleBleTest.kt` | 삭제 — 현재 존재하지 않는 `Controller` 타입과 옛 `connect(onConnected: (controller) -> Unit)` 시그니처를 참조하고 있어 컴파일 자체가 불가능했던 계측 테스트 |
 
 ---
 

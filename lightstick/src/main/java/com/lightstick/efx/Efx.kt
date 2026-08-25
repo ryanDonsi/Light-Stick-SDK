@@ -11,7 +11,7 @@ import java.io.File
  * - [body]: list of (timestamp_ms, 20B LED payload) pairs
  *
  * The EFX binary can be read from or written to files, then played on devices via
- * [com.lightstick.device.Controller.play].
+ * [com.lightstick.device.Device.playEffects] or [com.lightstick.device.Device.playTimeline].
  *
  * @property header Metadata describing the EFX file.
  * @property body   Timeline of effect entries.
