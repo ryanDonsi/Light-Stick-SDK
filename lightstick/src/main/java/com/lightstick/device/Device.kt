@@ -56,7 +56,7 @@ data class Device(
      * Connects to this device.
      *
      * After a successful connection, you can use all Device methods like
-     * [sendColor], [sendEffect], [loadTimeline], [updatePlaybackPosition], etc.
+     * [sendColor], [sendEffect], [playTimeline], [updatePlaybackPosition], etc.
      *
      * @param onConnected Invoked on successful connection.
      * @param onFailed    Invoked with the encountered [Throwable] on failure.
@@ -279,7 +279,10 @@ data class Device(
     }
 
     /**
-     * Streams timestamped frames to THIS device (legacy API).
+     * Plays a canned sequence of timestamped frames on THIS device, on the SDK's own clock —
+     * no external position sync needed (contrast [playTimeline], which tracks an external music
+     * position via [updatePlaybackPosition]). Runs once through and stops; call [stopEffects]
+     * to cancel it mid-sequence.
      *
      * Each frame is (timestampMs, 20B payload).
      *
@@ -288,10 +291,28 @@ data class Device(
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun play(frames: List<Pair<Long, ByteArray>>): Boolean {
+    fun playEffects(frames: List<Pair<Long, ByteArray>>): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.playEntries(mac = mac, frames = frames)
+            Facade.playEffects(mac = mac, frames = frames)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Cancels a [playEffects] sequence currently in progress. Has no effect on a timeline
+     * started via [playTimeline] — use [stopTimeline] for that.
+     *
+     * @return `true` if the cancel was submitted; `false` otherwise.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun stopEffects(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.stopEffects(mac)
             true
         } catch (_: Throwable) {
             false
@@ -303,7 +324,11 @@ data class Device(
     // ------------------------------------------------------------------------
 
     /**
-     * Loads an EFX timeline for music-synchronized playback.
+     * Starts an EFX timeline on THIS device, optionally synced to an external music position
+     * via [updatePlaybackPosition]. If [updatePlaybackPosition] is never called, the timeline
+     * free-runs on the SDK's own clock from the moment this is called — contrast [playEffects],
+     * which has no external sync, pause, or effectIndex-based resync, but sends with
+     * nanosecond-precision per-frame timing and no dedup index.
      *
      * The SDK automatically:
      * - Pins every frame's msgType to EFFECT, so a frame accidentally built as Game/Group
@@ -318,14 +343,14 @@ data class Device(
      * @sample
      * ```kotlin
      * val efx = Efx.read(musicFile)
-     * device.loadTimeline(efx.body.toFrames())
+     * device.playTimeline(efx.body.toFrames())
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun loadTimeline(frames: List<Pair<Long, ByteArray>>): Boolean {
+    fun playTimeline(frames: List<Pair<Long, ByteArray>>): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.loadTimeline(mac, frames)
+            Facade.playTimeline(mac, frames)
             true
         } catch (_: Throwable) {
             false
@@ -360,7 +385,8 @@ data class Device(
     }
 
     /**
-     * Pauses effect transmission.
+     * Pauses effect transmission for the timeline started via [playTimeline]. Has no effect on
+     * a [playEffects] sequence — see [stopEffects] for that.
      *
      * Timeline tracking continues internally, but BLE transmission is suspended.
      * When resumed, the SDK will automatically resync with the device.
@@ -371,14 +397,14 @@ data class Device(
      * @sample
      * ```kotlin
      * // User toggles effects OFF
-     * device.pauseEffects()
+     * device.pauseTimeline()
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun pauseEffects(): Boolean {
+    fun pauseTimeline(): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.pauseEffects(mac)
+            Facade.pauseTimeline(mac)
             true
         } catch (_: Throwable) {
             false
@@ -386,7 +412,8 @@ data class Device(
     }
 
     /**
-     * Resumes effect transmission.
+     * Resumes effect transmission for the timeline started via [playTimeline], after
+     * [pauseTimeline].
      *
      * The SDK automatically increments effectIndex for device resynchronization.
      *
@@ -396,14 +423,14 @@ data class Device(
      * @sample
      * ```kotlin
      * // User toggles effects ON
-     * device.resumeEffects()
+     * device.resumeTimeline()
      * ```
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun resumeEffects(): Boolean {
+    fun resumeTimeline(): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.resumeEffects(mac)
+            Facade.resumeTimeline(mac)
             true
         } catch (_: Throwable) {
             false
@@ -411,9 +438,10 @@ data class Device(
     }
 
     /**
-     * Stops timeline playback completely and clears the timeline.
+     * Stops the timeline started via [playTimeline]: halts playback and clears the loaded
+     * data. Has no effect on a [playEffects] sequence — see [stopEffects] for that.
      *
-     * To restart, call [loadTimeline] again.
+     * To restart, call [playTimeline] again.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -828,7 +856,7 @@ data class Device(
             period = 6,
             spf = 100,
             randomColor = 0,
-            randomDelay = 1,
+            randomDelay = 0,
             fade = 0,
             broadcasting = 0
         )

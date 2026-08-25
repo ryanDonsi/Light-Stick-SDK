@@ -635,30 +635,18 @@ object Facade {
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun playEntries(mac: String, frames: List<Pair<Long, ByteArray>>) {
+    fun playEffects(mac: String, frames: List<Pair<Long, ByteArray>>) {
         requireInit()
         if (!isConnected(mac)) error("Not connected: $mac")
         requireSession(mac).led.play(frames)
     }
 
+    /** Cancels an in-progress [playEffects] sequence (playJob), if any. */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendColorPacket(packet4: ByteArray) {
+    fun stopEffects(mac: String) {
         requireInit()
-        require(packet4.size == 4) { "Color packet must be 4 bytes [R,G,B,transition]" }
-        sessions.keys.forEach { m -> runCatching { sendColorTo(m, packet4) } }
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendEffectPayload(bytes20: ByteArray) {
-        requireInit()
-        require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
-        sessions.keys.forEach { m -> runCatching { sendEffectTo(m, bytes20) } }
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun playAllEntries(frames: List<Pair<Long, ByteArray>>) {
-        requireInit()
-        sessions.keys.forEach { m -> runCatching { playEntries(m, frames) } }
+        if (!isConnected(mac)) return
+        requireSession(mac).led.stop()
     }
 
     // ============================================================================================
@@ -666,16 +654,16 @@ object Facade {
     // ============================================================================================
 
     /**
-     * 타임라인을 로드합니다.
+     * 타임라인을 시작합니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      * @param frames 타임라인 엔트리 [(timestampMs, 20B payload), ...]
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun loadTimeline(mac: String, frames: List<Pair<Long, ByteArray>>) {
+    fun playTimeline(mac: String, frames: List<Pair<Long, ByteArray>>) {
         requireInit()
         if (!isConnected(mac)) error("Not connected: $mac")
-        requireSession(mac).led.loadTimeline(frames)
+        requireSession(mac).led.playTimeline(frames)
     }
 
     /**
@@ -695,33 +683,34 @@ object Facade {
     }
 
     /**
-     * 이펙트 전송을 일시정지합니다.
+     * playTimeline()으로 시작한 타임라인의 이펙트 전송을 일시정지합니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun pauseEffects(mac: String) {
+    fun pauseTimeline(mac: String) {
         requireInit()
         if (!isConnected(mac)) return
-        requireSession(mac).led.pauseEffects()
+        requireSession(mac).led.pauseTimeline()
     }
 
     /**
-     * 이펙트 전송을 재개합니다.
+     * playTimeline()으로 시작한 타임라인의 이펙트 전송을 재개합니다.
      *
      * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun resumeEffects(mac: String) {
+    fun resumeTimeline(mac: String) {
         requireInit()
         if (!isConnected(mac)) return
-        requireSession(mac).led.resumeEffects()
+        requireSession(mac).led.resumeTimeline()
     }
 
     /**
-     * 타임라인 재생을 완전히 중단합니다.
+     * playTimeline()으로 시작한 타임라인을 중단합니다 — 재생 중단 + timeline 데이터 자체를
+     * 비웁니다. 재개하려면 playTimeline()을 다시 호출해야 합니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */

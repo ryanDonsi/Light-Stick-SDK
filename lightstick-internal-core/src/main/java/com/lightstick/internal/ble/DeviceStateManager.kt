@@ -163,6 +163,7 @@ internal class DeviceStateManager(
     }
 
     private fun rebuildAndEmitDeviceStates() {
+        val previous = _deviceStates.value
         val unified = connectionStatesMap
             .filter { (mac, _) ->
                 val name = deviceNamesMap[mac] ?: deviceInfoMap[mac]?.modelName
@@ -170,15 +171,26 @@ internal class DeviceStateManager(
                 deviceFilter?.invoke(mac, name, rssi) ?: true
             }
             .mapValues { (mac, connectionState) ->
-                InternalDeviceState(
-                    macAddress = mac,
-                    connectionState = connectionState,
-                    deviceInfo = resolveDeviceInfo(mac, connectionState),
-                    lastSeenTimestamp = System.currentTimeMillis()
-                )
+                val info = resolveDeviceInfo(mac, connectionState)
+                val prior = previous[mac]
+                // lastSeenTimestamp always ticks forward, which would defeat the equality
+                // check below on every call (e.g. RSSI churn from an ongoing scan) even when
+                // nothing meaningful changed. Reuse the prior entry (timestamp included) when
+                // connectionState/deviceInfo are unchanged, so the StateFlow only re-emits on
+                // an actual state change.
+                if (prior != null && prior.connectionState == connectionState && prior.deviceInfo == info) {
+                    prior
+                } else {
+                    InternalDeviceState(
+                        macAddress = mac,
+                        connectionState = connectionState,
+                        deviceInfo = info,
+                        lastSeenTimestamp = System.currentTimeMillis()
+                    )
+                }
             }
 
-        if (_deviceStates.value != unified) {
+        if (previous != unified) {
             _deviceStates.value = unified
         }
     }
