@@ -13,8 +13,6 @@ import com.lightstick.device.DeviceInfoResult
 import com.lightstick.device.DeviceState
 import com.lightstick.device.TypeMappers
 import com.lightstick.internal.api.Facade
-import com.lightstick.types.Color
-import com.lightstick.types.LSEffectPayload
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -247,57 +245,6 @@ object LSBluetooth {
     @JvmStatic
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun bondedCount(): Int = Facade.bondedCount()
-
-    // ============================================================================================
-    // Broadcast Helpers
-    // ============================================================================================
-
-    /**
-     * Sends the same color to all currently connected devices.
-     *
-     * @param color RGB color.
-     * @param transition Transition time parameter (firmware-specific).
-     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
-     */
-    @JvmStatic
-    @MainThread
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun broadcastColor(color: Color, transition: Int) {
-        val packet = byteArrayOf(
-            color.r.toByte(),
-            color.g.toByte(),
-            color.b.toByte(),
-            transition.toByte()
-        )
-        Facade.sendColorPacket(packet)
-    }
-
-    /**
-     * Sends the same effect payload to all currently connected devices.
-     *
-     * @param payload 20-byte effect payload.
-     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
-     */
-    @JvmStatic
-    @MainThread
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun broadcastEffect(payload: LSEffectPayload) {
-        Facade.sendEffectPayload(payload.toByteArray())
-    }
-
-    /**
-     * Plays the same timestamped frames on all currently connected devices.
-     *
-     * @param frames List of (timestampMs, 20-byte payload) pairs.
-     * @throws SecurityException If BLUETOOTH_CONNECT permission is not granted.
-     */
-    @JvmStatic
-    @MainThread
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun broadcastFrames(frames: List<Pair<Long, LSEffectPayload>>) {
-        val converted = frames.map { (ts, payload) -> ts to payload.toByteArray() }
-        Facade.playAllEffects(converted)
-    }
 
     // ============================================================================================
     // State Observation

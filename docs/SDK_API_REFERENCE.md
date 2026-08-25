@@ -53,15 +53,7 @@
 | `bondedDevices(): List<Device>` | 시스템 페어링된 기기 목록 (rssi=null) |
 | `bondedCount(): Int` | 페어링된 기기 수 |
 
-### 1.4 브로드캐스트 (연결된 전체 기기 대상)
-
-| 메서드 | 설명 |
-|---|---|
-| `broadcastColor(color: Color, transition: Int)` | 연결된 모든 기기에 FF01 컬러 패킷 |
-| `broadcastEffect(payload: LSEffectPayload)` | 연결된 모든 기기에 FF02 이펙트 페이로드 |
-| `broadcastFrames(frames: List<Pair<Long, LSEffectPayload>>)` | 연결된 모든 기기에 프레임 시퀀스 재생 (`Device.playEffects`와 동일한 playJob 메커니즘을 전체 대상으로 실행) |
-
-### 1.5 상태 관찰
+### 1.4 상태 관찰
 
 | 메서드 | 반환 | 설명 |
 |---|---|---|
@@ -72,7 +64,7 @@
 
 > ⚠️ **RSSI 관련 알려진 특성**: `DeviceState.deviceInfo.rssi`는 스캔이 계속 진행 중이면 매우 자주 바뀌는 값이라, 신호세기를 실시간으로 추적하려는 용도로 `observeDeviceStates()`를 쓰면 원치 않게 자주 재발행될 수 있다. RSSI 전용 별도 스트림은 아직 없음(논의 중) — 현재는 `observeDeviceStates()`가 유일한 경로.
 
-### 1.6 종료
+### 1.5 종료
 
 | 메서드 | 설명 |
 |---|---|

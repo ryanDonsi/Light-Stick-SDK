@@ -330,50 +330,6 @@ class LightStickBleIntegrationTest {
     }
 
     // ===========================================================================================
-    // 브로드캐스트 테스트 (여러 디바이스)
-    // ===========================================================================================
-
-    @Test
-    fun testBroadcastColor() {
-        // 최소 1개 이상의 디바이스 연결
-        val device = findAndConnectDevice()
-        assertNotNull("At least one device should be connected", device)
-
-        try {
-            // 모든 연결된 디바이스에 색상 브로드캐스트
-            LSBluetooth.broadcastColor(Colors.YELLOW, transition = 15)
-            Log.d(TAG, "Broadcasted YELLOW color to all devices")
-
-            Thread.sleep(1000)
-
-            LSBluetooth.broadcastColor(Colors.MAGENTA, transition = 15)
-            Log.d(TAG, "Broadcasted MAGENTA color to all devices")
-
-            Log.d(TAG, "✓ Broadcast color successful")
-        } catch (e: Exception) {
-            fail("Error broadcasting color: ${e.message}")
-        }
-    }
-
-    @Test
-    fun testBroadcastEffect() {
-        val device = findAndConnectDevice()
-        assertNotNull("At least one device should be connected", device)
-
-        try {
-            val breathEffect = LSEffectPayload.Effects.breath(Colors.CYAN, period = 15)
-            LSBluetooth.broadcastEffect(breathEffect)
-            Log.d(TAG, "Broadcasted BREATH effect to all devices")
-
-            Thread.sleep(3000) // 이펙트 관찰
-
-            Log.d(TAG, "✓ Broadcast effect successful")
-        } catch (e: Exception) {
-            fail("Error broadcasting effect: ${e.message}")
-        }
-    }
-
-    // ===========================================================================================
     // 연결 상태 조회 테스트
     // ===========================================================================================
 

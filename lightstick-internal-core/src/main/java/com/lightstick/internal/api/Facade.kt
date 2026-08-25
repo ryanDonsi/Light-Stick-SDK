@@ -649,26 +649,6 @@ object Facade {
         requireSession(mac).led.stop()
     }
 
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendColorPacket(packet4: ByteArray) {
-        requireInit()
-        require(packet4.size == 4) { "Color packet must be 4 bytes [R,G,B,transition]" }
-        sessions.keys.forEach { m -> runCatching { sendColorTo(m, packet4) } }
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun sendEffectPayload(bytes20: ByteArray) {
-        requireInit()
-        require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
-        sessions.keys.forEach { m -> runCatching { sendEffectTo(m, bytes20) } }
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun playAllEffects(frames: List<Pair<Long, ByteArray>>) {
-        requireInit()
-        sessions.keys.forEach { m -> runCatching { playEffects(m, frames) } }
-    }
-
     // ============================================================================================
     // 타임라인 재생 API (기존 Facade.kt에 추가)
     // ============================================================================================
