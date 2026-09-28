@@ -43,6 +43,28 @@ internal class DeviceInfoManager(
         }
 
     // ============================================================================================
+    // LCS (Device Mode, FF06)
+    // ============================================================================================
+
+    /**
+     * Returns true if the connected device exposes the FF06 Device Mode characteristic
+     * under LCS_SERVICE. Safe to call from any thread after service discovery; returns
+     * false if not connected.
+     */
+    fun isDeviceModeSupported(): Boolean =
+        gattClient.hasCharacteristic(UuidConstants.LCS_SERVICE, UuidConstants.LCS_DEVICE_MODE)
+
+    /**
+     * FF06: current operating mode (0=relay/중계기, 1=BLE Only), per spec v2.8 §2.1.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    suspend fun readDeviceMode(): Result<Int> =
+        readBytes(UuidConstants.LCS_SERVICE, UuidConstants.LCS_DEVICE_MODE).mapCatching { bytes ->
+            if (bytes.isEmpty()) error("Empty device mode value")
+            bytes[0].toInt() and 0xFF
+        }
+
+    // ============================================================================================
     // DIS (Device Information Service)
     // ============================================================================================
 

@@ -36,6 +36,8 @@ internal object UuidConstants {
     val LCS_GAME_CMD: UUID = UUID.fromString("0001ff03-0000-1000-8000-00805f9800c4")
     /** FF04 — Game Result: Notify 20-byte result packets from relay (spec §2.3 / §7.1). */
     val LCS_GAME_RESULT: UUID = UUID.fromString("0001ff04-0000-1000-8000-00805f9800c4")
+    /** FF06 — Device Mode: Read-only, 1 byte (0=relay/중계기, 1=BLE Only) (spec v2.8 §2.1). */
+    val LCS_DEVICE_MODE: UUID = UUID.fromString("0001ff06-0000-1000-8000-00805f9800c4")
 
     // ===== Generic Access Profile (Standard) =====================================
     /** Generic Access Profile (GAP) service. Device Name (0x2A00) lives here, not in DIS. */
