@@ -480,8 +480,12 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
             val cb = pendingConnect.remove(address)
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                val serviceUuids = gatt.services.map { it.uuid.toString().takeLast(8) }
-                Log.d("[GattClient] 서비스 디스커버리 완료: $address 서비스=${serviceUuids}")
+                val serviceUuids = gatt.services.map { it.uuid.toString() }
+                Log.d("[GattClient] 서비스 디스커버리 완료: $address 서비스(${serviceUuids.size}개)=${serviceUuids}")
+                gatt.services.forEach { service ->
+                    val charUuids = service.characteristics.map { it.uuid.toString() }
+                    Log.d("[GattClient]   └ 서비스=${service.uuid} 캐릭터리스틱(${charUuids.size}개)=${charUuids}")
+                }
                 cb?.onConnected?.invoke()
             } else {
                 Log.w("[GattClient] 서비스 디스커버리 실패: $address status=$status")

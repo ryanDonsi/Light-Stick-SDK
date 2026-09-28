@@ -604,6 +604,30 @@ object Facade {
         return true
     }
 
+    /**
+     * Returns true if [mac]'s firmware exposes the FF06 Device Mode characteristic (spec v2.8 §2.1).
+     * Must be called after the device is connected (service discovery complete).
+     * Returns false if not connected or the characteristic is absent.
+     */
+    fun supportsDeviceMode(mac: String): Boolean {
+        requireInit()
+        return sessions[mac]?.deviceInfo?.isDeviceModeSupported() ?: false
+    }
+
+    /**
+     * Reads FF06: current operating mode (0=relay/중계기, 1=BLE Only) from [mac].
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readDeviceMode(mac: String, onResult: (Result<Int>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            val result = requireSession(mac).deviceInfo.readDeviceMode()
+            onResult(result)
+        }
+        return true
+    }
+
     // ============================================================================================
     // MTU
     // ============================================================================================

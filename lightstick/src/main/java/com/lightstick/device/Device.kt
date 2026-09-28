@@ -558,6 +558,33 @@ data class Device(
         submitReadWithResult({ cb -> Facade.readBattery(mac, cb) }, onResult)
 
     /**
+     * Returns `true` if this device's firmware exposes the FF06 Device Mode characteristic
+     * under LCS_SERVICE (spec v2.8 §2.1).
+     *
+     * Must be called after a successful [connect] (service discovery complete).
+     * Returns `false` if the device is not connected or the characteristic is absent.
+     * Use this to guard [readDeviceMode] calls.
+     *
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsDeviceMode(): Boolean = Facade.supportsDeviceMode(mac)
+
+    /**
+     * Reads FF06: this device's current operating mode from THIS device.
+     *
+     * Per spec, apps should read this once right after connecting and disable group-control
+     * and [com.lightstick.game.GameMode.TEAM_SIMULTANEOUS] (Mode 4) menus when the result is
+     * [DeviceMode.BLE].
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readDeviceMode(onResult: (Result<DeviceMode>) -> Unit): Boolean =
+        submitReadWithResult(
+            { cb -> Facade.readDeviceMode(mac, cb) },
+            { result -> onResult(result.mapCatching { DeviceMode.fromValue(it) ?: error("Unknown device mode value: $it") }) }
+        )
+
+    /**
      * Reads multiple device info fields in parallel and returns aggregated DeviceInfo.
      *
      * @param onResult Callback invoked once all reads have completed.

@@ -139,6 +139,8 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `supportsBattery(): Boolean` | BAS 0x2A19 지원 여부 (연결 후 서비스 디스커버리 완료 후 호출) |
 | `readBattery(onResult: (Result<Int>) -> Unit): Boolean` | 배터리 잔량 (0..100) 단건 조회 — DIS는 건드리지 않음 |
 | `fetchDeviceInfo(onResult: (DeviceInfo) -> Unit): Boolean` | 위 4개 DIS 필드를 병렬로 읽어 취합한 콜백 1회 |
+| `supportsDeviceMode(): Boolean` | FF06 지원 여부 (spec v2.8 §2.1) |
+| `readDeviceMode(onResult: (Result<DeviceMode>) -> Unit): Boolean` | 현재 응원봉 동작 모드 조회 (`DeviceMode.RELAY`=중계기 / `DeviceMode.BLE`=BLE Only). BLE Only 모드는 그룹 제어·게임모드4를 지원하지 않으므로 앱이 이 값으로 해당 메뉴를 비활성화해야 함 |
 
 > 배터리만 주기적으로 갱신하고 싶다면 `readBattery`만 앱 쪽 타이머로 반복 호출하면 된다 — SDK가 자동으로 폴링하지 않는다.
 
