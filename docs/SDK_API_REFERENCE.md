@@ -112,8 +112,8 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 |---|---|
 | `playTimeline(frames: List<Pair<Long, ByteArray>>): Boolean` | 타임라인 시작. `updatePlaybackPosition()`을 안 부르면 로드 시점부터 자체 시계로 free-run. |
 | `updatePlaybackPosition(currentPositionMs: Long): Boolean` | 외부 음악 재생 위치와 동기화 (권장 100ms 주기 호출). 뒤로 1초 이상/앞으로 10초 이상 점프 시 자동 seek 감지. |
-| `pauseTimeline(): Boolean` | 전송 일시정지 (내부 시계는 계속 흐름 — 정지 중 지난 프레임은 재생되지 않고 스킵됨) |
-| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화). 일시정지 중 `sendEffect()`가 호출되어 기기 LED 상태가 어긋나 있었다면, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해 상태를 맞춤. 이미 전송 활성 상태면 no-op. |
+| `pauseTimeline(): Boolean` | 전송 일시정지. 이 순간의 재생 위치를 고정 — 일시정지 중에는 벽시계 시간이 얼마나 지나든 내부 보간 위치가 더 이상 흐르지 않음(과거 "내부 시계는 계속 흐름" 동작은 버그로 확인되어 수정됨). |
+| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화). 고정해뒀던 위치에서 정확히 이어서 재개 — 일시정지 동안 지난 시간만큼 위치가 튀거나 프레임이 유실되지 않음. 일시정지 중 `sendEffect()`가 호출되어 기기 LED 상태가 어긋나 있었다면, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해 상태를 맞춤. 이미 전송 활성 상태면 no-op. |
 | `stopTimeline(): Boolean` | 타임라인 중단 + 데이터 클리어. 재개하려면 `playTimeline()` 재호출 |
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
 | `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |

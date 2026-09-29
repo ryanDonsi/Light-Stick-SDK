@@ -145,6 +145,8 @@ internal class LedControlManager(
         playJob = null
 
         if (timeline.isNotEmpty()) {
+            anchorPositionMs = interpolatedPositionMs()
+            anchorSystemMs = SystemClock.elapsedRealtime()
             isEffectTransmissionEnabled = false
             pendingResyncAfterManualEffect = true
         }
@@ -266,8 +268,16 @@ internal class LedControlManager(
     /**
      * 보간된 현재 재생 위치를 계산합니다.
      * 마지막 보고 이후 경과한 시스템 시간을 더해 연속적인 위치를 추정합니다.
+     *
+     * 전송이 비활성 상태([isEffectTransmissionEnabled]=false, 즉 [pauseTimeline]이나
+     * [sendEffectPayload]로 일시정지된 상태)일 때는 시간 경과에 따라 계속 증가시키지
+     * 않고 [anchorPositionMs]에 고정한다 — 그렇지 않으면 updatePlaybackPosition() 호출이
+     * 끊긴 채로 오래 일시정지될 경우(음악은 멈춰있는데 벽시계 시간만 흐름), 보간 위치가
+     * 실제 재생 위치보다 한참 앞서 나가버려 lastSentIndex가 잘못 전진하고, 재개 후 실제
+     * 위치가 그 지점까지 따라잡을 때까지 전송이 멈춘 것처럼 보이는 문제가 생긴다.
      */
     private fun interpolatedPositionMs(): Long {
+        if (!isEffectTransmissionEnabled) return anchorPositionMs
         val elapsed = SystemClock.elapsedRealtime() - anchorSystemMs
         return anchorPositionMs + elapsed
     }
@@ -341,11 +351,15 @@ internal class LedControlManager(
     /**
      * 이펙트 전송을 일시정지합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
-     * 타임라인 추적은 계속되지만 BLE 전송만 중단됩니다.
+     * 이 순간의 보간 위치를 고정시킵니다 — 일시정지 중에는 벽시계 시간이 얼마나
+     * 지나든 재생 위치가 더 이상 흐르지 않으며, 재개 시 멈췄던 지점부터 정확히
+     * 이어집니다(스킵되는 프레임 없음).
      */
     @MainThread
     fun pauseTimeline() {
         if (!isEffectTransmissionEnabled) return
+        anchorPositionMs = interpolatedPositionMs()
+        anchorSystemMs = SystemClock.elapsedRealtime()
         isEffectTransmissionEnabled = false
     }
 
@@ -353,6 +367,9 @@ internal class LedControlManager(
      * 이펙트 전송을 재개합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
      * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
+     * 보간 기준 시각을 지금 이 순간으로 다시 맞춰서, 일시정지 동안 흐른 벽시계 시간이
+     * 재생 위치에 합산되지 않도록 한다 — [pauseTimeline]/[sendEffectPayload]가 고정해둔
+     * 위치에서 정확히 이어서 재개된다.
      *
      * 일시정지 도중 [sendEffectPayload]가 호출되어 기기 LED 상태가 타임라인과 어긋난
      * 경우, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해
@@ -363,6 +380,7 @@ internal class LedControlManager(
     fun resumeTimeline() {
         if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
+        anchorSystemMs = SystemClock.elapsedRealtime()
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
 

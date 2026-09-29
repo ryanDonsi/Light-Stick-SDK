@@ -397,8 +397,9 @@ data class Device(
      * Pauses effect transmission for the timeline started via [playTimeline]. Has no effect on
      * a [playEffects] sequence — see [stopEffects] for that.
      *
-     * Timeline tracking continues internally, but BLE transmission is suspended.
-     * When resumed, the SDK will automatically resync with the device.
+     * BLE transmission stops and the timeline's playback position is frozen at this instant —
+     * it does not keep advancing with wall-clock time while paused, no matter how long the
+     * pause lasts. [resumeTimeline] picks up from exactly that frozen position.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -425,10 +426,11 @@ data class Device(
      * [pauseTimeline] — or after [sendEffect] paused it, in which case call this once more
      * to resume (see [sendEffect]'s doc). Idempotent: a no-op if transmission is already on.
      *
-     * The SDK automatically increments effectIndex for device resynchronization. If the LED
-     * was left showing a one-shot [sendEffect] payload from during the pause, this also
-     * immediately resends the current timeline frame so the device doesn't wait for the next
-     * frame boundary to show the right thing again.
+     * The SDK automatically increments effectIndex for device resynchronization, and resumes
+     * exactly from the position [pauseTimeline] froze — no jump or skipped frames from time
+     * spent paused. If the LED was left showing a one-shot [sendEffect] payload from during
+     * the pause, this also immediately resends the current timeline frame so the device
+     * doesn't wait for the next frame boundary to show the right thing again.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
