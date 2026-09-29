@@ -758,6 +758,19 @@ object Facade {
         return requireSession(mac).led.isTimelinePlaying()
     }
 
+    /**
+     * 타임라인 데이터 적재 여부를 조회합니다 (전송 활성/비활성과 무관).
+     *
+     * @param mac 대상 디바이스 MAC 주소
+     * @return true if a timeline is loaded, whether playing or paused
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun isTimelineLoaded(mac: String): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        return requireSession(mac).led.isTimelineLoaded()
+    }
+
     // ============================================================================================
     // Game Mode
     // ============================================================================================

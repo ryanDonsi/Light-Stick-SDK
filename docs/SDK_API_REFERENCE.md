@@ -95,7 +95,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | 메서드 | 설명 |
 |---|---|
 | `sendColor(color: Color, transition: Int): Boolean` | FF01 4바이트 컬러 패킷 전송 |
-| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). |
+| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). 진행 중이던 `playEffects`는 취소되고(재개하려면 재호출), 진행 중이던 `playTimeline`은 **일시정지**됨(데이터는 보존 — 재개하려면 `resumeTimeline()` 호출). 로드된 타임라인이 없으면 타임라인 상태에 영향 없음. |
 
 ### 2.3 이펙트 재생 — `playEffects`/`stopEffects` (자체 시계, 원샷)
 
@@ -116,10 +116,11 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화) |
 | `stopTimeline(): Boolean` | 타임라인 중단 + 데이터 클리어. 재개하려면 `playTimeline()` 재호출 |
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
+| `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |
 
 특징: 10ms tick 배치 디스패치 · 드랍 없음(coalesce 안 함, 순서·개수 보장) · 세션마다 effectIndex 찍음(기기 dedup) · pause/resume 지원.
 
-> `playEffects`/`stopEffects`와 `playTimeline`/`stopTimeline`은 서로 다른 내부 재생 잡(playJob/monitorJob)이라 상호 취소하지 않는다 — 동시에 호출하면 두 메커니즘이 FF02에 동시에 쓸 수 있으므로 앱에서 하나만 쓰거나 명시적으로 순서를 맞춰야 한다.
+> `playEffects`/`stopEffects`와 `playTimeline`/`stopTimeline`은 서로 다른 내부 재생 잡(playJob/monitorJob)이라 서로를 취소하지 않는다 — 동시에 호출하면 두 메커니즘이 FF02에 동시에 쓸 수 있으므로 앱에서 하나만 쓰거나 명시적으로 순서를 맞춰야 한다. 단, `sendEffect()`(그룹 컨트롤 포함)는 예외적으로 둘 다 선점한다 — 진행 중인 `playEffects`는 취소하고, 진행 중인 `playTimeline`은 데이터를 보존한 채 일시정지한다(§2.2 참고).
 
 ### 2.5 MTU
 

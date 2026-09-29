@@ -117,13 +117,30 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
-        stopTimeline()  // 타임라인 재생 중단
+        suspendBackgroundProducers()
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
             data = setMsgType(bytes20, MSG_TYPE_EFFECT),
             coalesceKey = "LCS:PAYLOAD"
         )
+    }
+
+    /**
+     * FF02(LCS_PAYLOAD)를 공유하는 백그라운드 생산자를 단발성 전송 앞에서 물러나게 한다.
+     *
+     * - [play] 시퀀스(`playJob`)는 완전히 취소한다 — 재개하려면 [play]를 다시 호출해야 한다.
+     * - [playTimeline] 타임라인은 데이터([timeline], `lastSentIndex`)를 보존한 채 전송만
+     *   일시정지한다 — 재개하려면 [resumeTimeline]을 호출해야 한다. 타임라인이 로드되어
+     *   있지 않으면 아무 것도 건드리지 않는다.
+     */
+    private fun suspendBackgroundProducers() {
+        playJob?.cancel()
+        playJob = null
+
+        if (timeline.isNotEmpty()) {
+            isEffectTransmissionEnabled = false
+        }
     }
 
     @MainThread
@@ -331,6 +348,7 @@ internal class LedControlManager(
      */
     @MainThread
     fun resumeTimeline() {
+        if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
@@ -360,6 +378,17 @@ internal class LedControlManager(
     @MainThread
     fun isTimelinePlaying(): Boolean {
         return timeline.isNotEmpty() && isEffectTransmissionEnabled
+    }
+
+    /**
+     * 타임라인 데이터 적재 여부를 조회한다 (전송 활성/비활성과 무관).
+     *
+     * [isTimelinePlaying]과 달리 일시정지 중에도 타임라인이 로드되어 있으면 true를 반환한다 —
+     * [sendEffectPayload] 호출 후 [resumeTimeline]을 불러야 하는 상태인지 앱이 판별할 때 사용한다.
+     */
+    @MainThread
+    fun isTimelineLoaded(): Boolean {
+        return timeline.isNotEmpty()
     }
 
     // ============================================================================================
