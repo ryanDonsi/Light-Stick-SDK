@@ -719,9 +719,13 @@ object Facade {
     }
 
     /**
-     * playTimeline()으로 시작한 타임라인의 이펙트 전송을 재개합니다.
+     * playTimeline()으로 시작한 타임라인의 이펙트 전송을 재개합니다 (pauseTimeline() 또는
+     * sendEffectTo()에 의한 일시정지 모두 대상 — sendEffectTo() 이후엔 반드시 마지막으로
+     * 호출해야 함).
      *
-     * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다.
+     * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다. 일시정지 중
+     * sendEffectTo()가 호출되어 기기 LED 상태가 어긋난 경우, 다음 프레임 시점을 기다리지
+     * 않고 현재 프레임을 즉시 재전송해 상태를 맞춥니다.
      *
      * @param mac 대상 디바이스 MAC 주소
      */

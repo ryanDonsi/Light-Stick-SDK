@@ -95,7 +95,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | 메서드 | 설명 |
 |---|---|
 | `sendColor(color: Color, transition: Int): Boolean` | FF01 4바이트 컬러 패킷 전송 |
-| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). 진행 중이던 `playEffects`는 취소되고(재개하려면 재호출), 진행 중이던 `playTimeline`은 **일시정지**됨(데이터는 보존 — 재개하려면 `resumeTimeline()` 호출). 로드된 타임라인이 없으면 타임라인 상태에 영향 없음. |
+| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). 진행 중이던 `playEffects`는 취소되고(재개하려면 재호출), 진행 중이던 `playTimeline`은 **호출할 때마다 매번 일시정지**됨(데이터는 보존 — 재개하려면 반드시 마지막으로 `resumeTimeline()`을 한 번 더 호출). 로드된 타임라인이 없으면 타임라인 상태에 영향 없음. ⚠️ 재생 중 `resumeTimeline()` → `sendEffect()` 순서로 호출하고 그 뒤로 `resumeTimeline()`을 다시 안 부르면 타임라인이 영구 정지함 — 재생 중 sendEffect를 쓰는 흐름에서는 항상 **가장 마지막에** `resumeTimeline()`을 호출할 것. |
 
 ### 2.3 이펙트 재생 — `playEffects`/`stopEffects` (자체 시계, 원샷)
 
@@ -113,7 +113,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `playTimeline(frames: List<Pair<Long, ByteArray>>): Boolean` | 타임라인 시작. `updatePlaybackPosition()`을 안 부르면 로드 시점부터 자체 시계로 free-run. |
 | `updatePlaybackPosition(currentPositionMs: Long): Boolean` | 외부 음악 재생 위치와 동기화 (권장 100ms 주기 호출). 뒤로 1초 이상/앞으로 10초 이상 점프 시 자동 seek 감지. |
 | `pauseTimeline(): Boolean` | 전송 일시정지 (내부 시계는 계속 흐름 — 정지 중 지난 프레임은 재생되지 않고 스킵됨) |
-| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화) |
+| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화). 일시정지 중 `sendEffect()`가 호출되어 기기 LED 상태가 어긋나 있었다면, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해 상태를 맞춤. 이미 전송 활성 상태면 no-op. |
 | `stopTimeline(): Boolean` | 타임라인 중단 + 데이터 클리어. 재개하려면 `playTimeline()` 재호출 |
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
 | `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |

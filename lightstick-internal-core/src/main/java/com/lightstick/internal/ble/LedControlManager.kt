@@ -55,6 +55,12 @@ internal class LedControlManager(
     @Volatile private var isEffectTransmissionEnabled: Boolean = true
     @Volatile private var currentEffectIndex: Int = 1
 
+    // sendEffectPayload()가 타임라인을 일시정지시키는 동안 기기 LED 상태가 타임라인과
+    // 어긋났음을 표시한다. resumeTimeline()이 이 플래그를 보고 재개 시 현재 프레임을
+    // 재전송해 상태를 맞춘다 — pauseTimeline()에 의한 "정상" 일시정지에는 관여하지 않는다
+    // (그땐 기기 상태가 어긋나지 않았으므로 재전송이 불필요한 애니메이션 재시작만 유발함).
+    @Volatile private var pendingResyncAfterManualEffect: Boolean = false
+
     // =========== 재생 Job ===========
     @Volatile private var monitorJob: Job? = null
     @Volatile private var playJob: Job? = null  // 기존 play() 용
@@ -140,6 +146,7 @@ internal class LedControlManager(
 
         if (timeline.isNotEmpty()) {
             isEffectTransmissionEnabled = false
+            pendingResyncAfterManualEffect = true
         }
     }
 
@@ -215,6 +222,7 @@ internal class LedControlManager(
         anchorSystemMs = SystemClock.elapsedRealtime()
         lastProcessedPositionMs = -1
         isEffectTransmissionEnabled = true
+        pendingResyncAfterManualEffect = false
 
         // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
@@ -345,13 +353,40 @@ internal class LedControlManager(
      * 이펙트 전송을 재개합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
      * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
+     *
+     * 일시정지 도중 [sendEffectPayload]가 호출되어 기기 LED 상태가 타임라인과 어긋난
+     * 경우, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해
+     * 기기 상태를 맞춘다. 순수 [pauseTimeline] 이후의 재개에는 영향 없음(재전송 없음).
      */
     @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun resumeTimeline() {
         if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
+
+        if (pendingResyncAfterManualEffect) {
+            pendingResyncAfterManualEffect = false
+            resendCurrentFrame()
+        }
+    }
+
+    /** 기기 LED 상태를 [lastSentIndex]가 가리키는 프레임으로 강제로 재전송한다. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun resendCurrentFrame() {
+        val idx = lastSentIndex
+        if (idx !in timeline.indices) return
+
+        val (_, frame) = timeline[idx]
+        val ok = sendTimelineFrame(
+            serviceUuid = UuidConstants.LCS_SERVICE,
+            charUuid = UuidConstants.LCS_PAYLOAD,
+            data = insertEffectIndex(frame, currentEffectIndex)
+        )
+        if (!ok) {
+            Log.w("[LedControlManager] Failed to resync current frame at index $idx")
+        }
     }
 
     /**
@@ -370,6 +405,7 @@ internal class LedControlManager(
         anchorPositionMs = 0
         anchorSystemMs = SystemClock.elapsedRealtime()
         lastProcessedPositionMs = -1
+        pendingResyncAfterManualEffect = false
     }
 
     /**
