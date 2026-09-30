@@ -244,6 +244,15 @@ data class Device(
      * [LSEffectPayload.groupMask] on an ordinary payload — see [Group] for the
      * `GRP1`..`GRP32` / `ALL_SINGLE` / `ALL_GROUPS` mask constants.
      *
+     * Preempts whatever else is currently driving the LED: an in-progress [playEffects]
+     * sequence is cancelled outright (call [playEffects] again to restart it), and an active
+     * [playTimeline] is paused — its loaded data is kept, but [resumeTimeline] must be called
+     * to resume dispatch. This pause happens on **every** call, even if the timeline was just
+     * resumed a moment ago — so if you call this one or more times during playback,
+     * [resumeTimeline] must be your last call afterward, or the timeline stays paused for good.
+     * Calling this while no timeline is loaded has no effect on timeline state. Use
+     * [isTimelineLoaded] beforehand if you need to know which case you're in.
+     *
      * @param payload 20-byte structured effect payload.
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected or an error prevented enqueuing.
@@ -388,8 +397,9 @@ data class Device(
      * Pauses effect transmission for the timeline started via [playTimeline]. Has no effect on
      * a [playEffects] sequence — see [stopEffects] for that.
      *
-     * Timeline tracking continues internally, but BLE transmission is suspended.
-     * When resumed, the SDK will automatically resync with the device.
+     * BLE transmission stops and the timeline's playback position is frozen at this instant —
+     * it does not keep advancing with wall-clock time while paused, no matter how long the
+     * pause lasts. [resumeTimeline] picks up from exactly that frozen position.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -413,9 +423,14 @@ data class Device(
 
     /**
      * Resumes effect transmission for the timeline started via [playTimeline], after
-     * [pauseTimeline].
+     * [pauseTimeline] — or after [sendEffect] paused it, in which case call this once more
+     * to resume (see [sendEffect]'s doc). Idempotent: a no-op if transmission is already on.
      *
-     * The SDK automatically increments effectIndex for device resynchronization.
+     * The SDK automatically increments effectIndex for device resynchronization, and resumes
+     * exactly from the position [pauseTimeline] froze — no jump or skipped frames from time
+     * spent paused. If the LED was left showing a one-shot [sendEffect] payload from during
+     * the pause, this also immediately resends the current timeline frame so the device
+     * doesn't wait for the next frame boundary to show the right thing again.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -468,6 +483,25 @@ data class Device(
         return try {
             if (!isConnected()) return false
             Facade.isTimelinePlaying(mac)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Checks if a timeline is loaded, regardless of whether transmission is currently
+     * paused or active. Unlike [isTimelinePlaying], this stays `true` while paused — including
+     * a pause caused by calling [sendEffect] during playback — so it can tell you whether
+     * [resumeTimeline] is the right call.
+     *
+     * @return true if a timeline is loaded, false otherwise.
+     * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun isTimelineLoaded(): Boolean {
+        return try {
+            if (!isConnected()) return false
+            Facade.isTimelineLoaded(mac)
         } catch (_: Throwable) {
             false
         }

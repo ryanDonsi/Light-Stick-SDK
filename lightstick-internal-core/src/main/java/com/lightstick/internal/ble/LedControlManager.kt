@@ -55,6 +55,12 @@ internal class LedControlManager(
     @Volatile private var isEffectTransmissionEnabled: Boolean = true
     @Volatile private var currentEffectIndex: Int = 1
 
+    // sendEffectPayload()가 타임라인을 일시정지시키는 동안 기기 LED 상태가 타임라인과
+    // 어긋났음을 표시한다. resumeTimeline()이 이 플래그를 보고 재개 시 현재 프레임을
+    // 재전송해 상태를 맞춘다 — pauseTimeline()에 의한 "정상" 일시정지에는 관여하지 않는다
+    // (그땐 기기 상태가 어긋나지 않았으므로 재전송이 불필요한 애니메이션 재시작만 유발함).
+    @Volatile private var pendingResyncAfterManualEffect: Boolean = false
+
     // =========== 재생 Job ===========
     @Volatile private var monitorJob: Job? = null
     @Volatile private var playJob: Job? = null  // 기존 play() 용
@@ -117,13 +123,33 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendEffectPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Effect payload must be 20 bytes" }
-        stopTimeline()  // 타임라인 재생 중단
+        suspendBackgroundProducers()
         return sendNoResponseCoalesced(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
             data = setMsgType(bytes20, MSG_TYPE_EFFECT),
             coalesceKey = "LCS:PAYLOAD"
         )
+    }
+
+    /**
+     * FF02(LCS_PAYLOAD)를 공유하는 백그라운드 생산자를 단발성 전송 앞에서 물러나게 한다.
+     *
+     * - [play] 시퀀스(`playJob`)는 완전히 취소한다 — 재개하려면 [play]를 다시 호출해야 한다.
+     * - [playTimeline] 타임라인은 데이터([timeline], `lastSentIndex`)를 보존한 채 전송만
+     *   일시정지한다 — 재개하려면 [resumeTimeline]을 호출해야 한다. 타임라인이 로드되어
+     *   있지 않으면 아무 것도 건드리지 않는다.
+     */
+    private fun suspendBackgroundProducers() {
+        playJob?.cancel()
+        playJob = null
+
+        if (timeline.isNotEmpty()) {
+            anchorPositionMs = interpolatedPositionMs()
+            anchorSystemMs = SystemClock.elapsedRealtime()
+            isEffectTransmissionEnabled = false
+            pendingResyncAfterManualEffect = true
+        }
     }
 
     @MainThread
@@ -198,6 +224,7 @@ internal class LedControlManager(
         anchorSystemMs = SystemClock.elapsedRealtime()
         lastProcessedPositionMs = -1
         isEffectTransmissionEnabled = true
+        pendingResyncAfterManualEffect = false
 
         // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
@@ -241,8 +268,16 @@ internal class LedControlManager(
     /**
      * 보간된 현재 재생 위치를 계산합니다.
      * 마지막 보고 이후 경과한 시스템 시간을 더해 연속적인 위치를 추정합니다.
+     *
+     * 전송이 비활성 상태([isEffectTransmissionEnabled]=false, 즉 [pauseTimeline]이나
+     * [sendEffectPayload]로 일시정지된 상태)일 때는 시간 경과에 따라 계속 증가시키지
+     * 않고 [anchorPositionMs]에 고정한다 — 그렇지 않으면 updatePlaybackPosition() 호출이
+     * 끊긴 채로 오래 일시정지될 경우(음악은 멈춰있는데 벽시계 시간만 흐름), 보간 위치가
+     * 실제 재생 위치보다 한참 앞서 나가버려 lastSentIndex가 잘못 전진하고, 재개 후 실제
+     * 위치가 그 지점까지 따라잡을 때까지 전송이 멈춘 것처럼 보이는 문제가 생긴다.
      */
     private fun interpolatedPositionMs(): Long {
+        if (!isEffectTransmissionEnabled) return anchorPositionMs
         val elapsed = SystemClock.elapsedRealtime() - anchorSystemMs
         return anchorPositionMs + elapsed
     }
@@ -316,11 +351,15 @@ internal class LedControlManager(
     /**
      * 이펙트 전송을 일시정지합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
-     * 타임라인 추적은 계속되지만 BLE 전송만 중단됩니다.
+     * 이 순간의 보간 위치를 고정시킵니다 — 일시정지 중에는 벽시계 시간이 얼마나
+     * 지나든 재생 위치가 더 이상 흐르지 않으며, 재개 시 멈췄던 지점부터 정확히
+     * 이어집니다(스킵되는 프레임 없음).
      */
     @MainThread
     fun pauseTimeline() {
         if (!isEffectTransmissionEnabled) return
+        anchorPositionMs = interpolatedPositionMs()
+        anchorSystemMs = SystemClock.elapsedRealtime()
         isEffectTransmissionEnabled = false
     }
 
@@ -328,12 +367,44 @@ internal class LedControlManager(
      * 이펙트 전송을 재개합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
      * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
+     * 보간 기준 시각을 지금 이 순간으로 다시 맞춰서, 일시정지 동안 흐른 벽시계 시간이
+     * 재생 위치에 합산되지 않도록 한다 — [pauseTimeline]/[sendEffectPayload]가 고정해둔
+     * 위치에서 정확히 이어서 재개된다.
+     *
+     * 일시정지 도중 [sendEffectPayload]가 호출되어 기기 LED 상태가 타임라인과 어긋난
+     * 경우, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해
+     * 기기 상태를 맞춘다. 순수 [pauseTimeline] 이후의 재개에는 영향 없음(재전송 없음).
      */
     @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun resumeTimeline() {
+        if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
+        anchorSystemMs = SystemClock.elapsedRealtime()
         currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
         isEffectTransmissionEnabled = true
+
+        if (pendingResyncAfterManualEffect) {
+            pendingResyncAfterManualEffect = false
+            resendCurrentFrame()
+        }
+    }
+
+    /** 기기 LED 상태를 [lastSentIndex]가 가리키는 프레임으로 강제로 재전송한다. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun resendCurrentFrame() {
+        val idx = lastSentIndex
+        if (idx !in timeline.indices) return
+
+        val (_, frame) = timeline[idx]
+        val ok = sendTimelineFrame(
+            serviceUuid = UuidConstants.LCS_SERVICE,
+            charUuid = UuidConstants.LCS_PAYLOAD,
+            data = insertEffectIndex(frame, currentEffectIndex)
+        )
+        if (!ok) {
+            Log.w("[LedControlManager] Failed to resync current frame at index $idx")
+        }
     }
 
     /**
@@ -352,6 +423,7 @@ internal class LedControlManager(
         anchorPositionMs = 0
         anchorSystemMs = SystemClock.elapsedRealtime()
         lastProcessedPositionMs = -1
+        pendingResyncAfterManualEffect = false
     }
 
     /**
@@ -360,6 +432,17 @@ internal class LedControlManager(
     @MainThread
     fun isTimelinePlaying(): Boolean {
         return timeline.isNotEmpty() && isEffectTransmissionEnabled
+    }
+
+    /**
+     * 타임라인 데이터 적재 여부를 조회한다 (전송 활성/비활성과 무관).
+     *
+     * [isTimelinePlaying]과 달리 일시정지 중에도 타임라인이 로드되어 있으면 true를 반환한다 —
+     * [sendEffectPayload] 호출 후 [resumeTimeline]을 불러야 하는 상태인지 앱이 판별할 때 사용한다.
+     */
+    @MainThread
+    fun isTimelineLoaded(): Boolean {
+        return timeline.isNotEmpty()
     }
 
     // ============================================================================================

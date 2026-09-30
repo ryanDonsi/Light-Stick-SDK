@@ -95,7 +95,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | 메서드 | 설명 |
 |---|---|
 | `sendColor(color: Color, transition: Int): Boolean` | FF01 4바이트 컬러 패킷 전송 |
-| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). |
+| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). 진행 중이던 `playEffects`는 취소되고(재개하려면 재호출), 진행 중이던 `playTimeline`은 **호출할 때마다 매번 일시정지**됨(데이터는 보존 — 재개하려면 반드시 마지막으로 `resumeTimeline()`을 한 번 더 호출). 로드된 타임라인이 없으면 타임라인 상태에 영향 없음. ⚠️ 재생 중 `resumeTimeline()` → `sendEffect()` 순서로 호출하고 그 뒤로 `resumeTimeline()`을 다시 안 부르면 타임라인이 영구 정지함 — 재생 중 sendEffect를 쓰는 흐름에서는 항상 **가장 마지막에** `resumeTimeline()`을 호출할 것. |
 
 ### 2.3 이펙트 재생 — `playEffects`/`stopEffects` (자체 시계, 원샷)
 
@@ -112,14 +112,15 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 |---|---|
 | `playTimeline(frames: List<Pair<Long, ByteArray>>): Boolean` | 타임라인 시작. `updatePlaybackPosition()`을 안 부르면 로드 시점부터 자체 시계로 free-run. |
 | `updatePlaybackPosition(currentPositionMs: Long): Boolean` | 외부 음악 재생 위치와 동기화 (권장 100ms 주기 호출). 뒤로 1초 이상/앞으로 10초 이상 점프 시 자동 seek 감지. |
-| `pauseTimeline(): Boolean` | 전송 일시정지 (내부 시계는 계속 흐름 — 정지 중 지난 프레임은 재생되지 않고 스킵됨) |
-| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화) |
+| `pauseTimeline(): Boolean` | 전송 일시정지. 이 순간의 재생 위치를 고정 — 일시정지 중에는 벽시계 시간이 얼마나 지나든 내부 보간 위치가 더 이상 흐르지 않음(과거 "내부 시계는 계속 흐름" 동작은 버그로 확인되어 수정됨). |
+| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화). 고정해뒀던 위치에서 정확히 이어서 재개 — 일시정지 동안 지난 시간만큼 위치가 튀거나 프레임이 유실되지 않음. 일시정지 중 `sendEffect()`가 호출되어 기기 LED 상태가 어긋나 있었다면, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해 상태를 맞춤. 이미 전송 활성 상태면 no-op. |
 | `stopTimeline(): Boolean` | 타임라인 중단 + 데이터 클리어. 재개하려면 `playTimeline()` 재호출 |
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
+| `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |
 
 특징: 10ms tick 배치 디스패치 · 드랍 없음(coalesce 안 함, 순서·개수 보장) · 세션마다 effectIndex 찍음(기기 dedup) · pause/resume 지원.
 
-> `playEffects`/`stopEffects`와 `playTimeline`/`stopTimeline`은 서로 다른 내부 재생 잡(playJob/monitorJob)이라 상호 취소하지 않는다 — 동시에 호출하면 두 메커니즘이 FF02에 동시에 쓸 수 있으므로 앱에서 하나만 쓰거나 명시적으로 순서를 맞춰야 한다.
+> `playEffects`/`stopEffects`와 `playTimeline`/`stopTimeline`은 서로 다른 내부 재생 잡(playJob/monitorJob)이라 서로를 취소하지 않는다 — 동시에 호출하면 두 메커니즘이 FF02에 동시에 쓸 수 있으므로 앱에서 하나만 쓰거나 명시적으로 순서를 맞춰야 한다. 단, `sendEffect()`(그룹 컨트롤 포함)는 예외적으로 둘 다 선점한다 — 진행 중인 `playEffects`는 취소하고, 진행 중인 `playTimeline`은 데이터를 보존한 채 일시정지한다(§2.2 참고).
 
 ### 2.5 MTU
 
