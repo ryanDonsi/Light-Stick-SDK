@@ -1,4 +1,4 @@
-# Light-Stick SDK API 레퍼런스 (v2.0.0)
+# Light-Stick SDK API 레퍼런스 (v2.1.0)
 
 `com.lightstick` 패키지(모듈: `lightstick`, `lightstick-internal-core`, 배포 아티팩트: `lightstick-sdk`)가 제공하는
 **공개(public) Kotlin API**를 모두 정리한 문서. 순수 BLE 와이어 프로토콜은 [`BLE_PROTOCOL.md`](./BLE_PROTOCOL.md)를 참고.
@@ -474,4 +474,4 @@ data class OtaResult(val ok: Boolean, val message: String? = null)  // OtaManage
 
 ## 9. 버전
 
-`lightstick` / `lightstick-internal-core` / `lightstick-sdk` 세 모듈 모두 `group="com.lightstick"`, `version="2.0.0"`으로 통일 배포.
+`lightstick` / `lightstick-internal-core` / `lightstick-sdk` 세 모듈 모두 `group="com.lightstick"`, `version="2.1.0"`으로 통일 배포.

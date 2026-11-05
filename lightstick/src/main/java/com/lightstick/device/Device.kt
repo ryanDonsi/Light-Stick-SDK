@@ -625,6 +625,8 @@ data class Device(
      *
      * Wands bonded with older firmware may need a GATT cache refresh to expose FF09 — the SDK
      * refreshes the cache automatically when connecting to a bonded device.
+     *
+     * @since 2.1.0
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun supportsBroadcasting(): Boolean = Facade.supportsBroadcasting(mac)
@@ -632,6 +634,8 @@ data class Device(
     /**
      * Reads FF09: whether a BLE-mode master wand relays Effect/GroupSetup frames to nearby wands
      * (`true`, the default) or only reacts itself (`false`).
+     *
+     * @since 2.1.0
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun readBroadcasting(onResult: (Result<Boolean>) -> Unit): Boolean =
@@ -645,6 +649,8 @@ data class Device(
      * connect if you need `false`. Applies to FF02 (Effect/GroupSetup) only — game commands
      * (FF03) are always relayed. Only use on BLE-mode wands; returns `false` if the device is
      * not connected or has no FF09 (e.g. a relay).
+     *
+     * @since 2.1.0
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun setBroadcasting(enabled: Boolean): Boolean =
