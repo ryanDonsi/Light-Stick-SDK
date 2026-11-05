@@ -185,8 +185,7 @@ class GroupProtocolTest {
             spf = 100,
             randomColor = 0,
             randomDelay = 0,
-            fade = 0,
-            broadcasting = 0
+            fade = 0
         )
         val bytes = payload.toByteArray()
 
@@ -205,7 +204,8 @@ class GroupProtocolTest {
         assertEquals(0, bytes[14].toInt())  // randomColor fixed 0
         assertEquals(0, bytes[15].toInt())  // randomDelay fixed 0
         assertEquals(0, bytes[16].toInt())  // fadeValue fixed 0
-        assertEquals(0, bytes[17].toInt())  // broadcasting fixed 0
+        assertEquals(0, bytes[17].toInt())  // effectIndex (u8) default 0
+        assertEquals(0, bytes[18].toInt()); assertEquals(0, bytes[19].toInt()) // duration 0 = until next command
     }
 
     // ===========================================================================================
@@ -224,8 +224,7 @@ class GroupProtocolTest {
             spf = 100,
             randomColor = 0,
             randomDelay = 0,
-            fade = 0,
-            broadcasting = 0
+            fade = 0
         )
         val decoded = LSEffectPayload.fromByteArray(original.toByteArray())
 

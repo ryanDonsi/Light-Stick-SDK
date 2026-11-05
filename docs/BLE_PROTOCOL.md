@@ -17,7 +17,7 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 
 | 서비스 | UUID | 종류 | 용도 |
 |---|---|---|---|
-| LED Control Service (LCS) | `0001fe01-0000-1000-8000-00805f9800c4` | Custom | 색상/이펙트/그룹/게임 제어/모드 조회 (FF01~FF04, FF06) |
+| LED Control Service (LCS) | `0001fe01-0000-1000-8000-00805f9800c4` | Custom | 색상/이펙트/그룹/게임 제어 (FF01~FF04), 설정/조회 (FF06, FF09) |
 | GAP | `00001800-0000-1000-8000-00805f9b34fb` | Standard | Device Name (0x2A00) |
 | DIS (Device Information) | `0000180a-0000-1000-8000-00805f9b34fb` | Standard | 모델명/펌웨어버전/제조사 |
 | BAS (Battery Service) | `0000180f-0000-1000-8000-00805f9b34fb` | Standard | 배터리 잔량 |
@@ -29,7 +29,7 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 
 ## 2. LED Control Service (LCS) — `0001fe01`
 
-응원봉 제어의 핵심 서비스. FF01~FF04, FF06 캐릭터리스틱이 모두 이 서비스 하나에 속한다.
+응원봉 제어의 핵심 서비스. FF01~FF04, FF06, FF09 캐릭터리스틱이 모두 이 서비스 하나에 속한다.
 
 | 캐릭터리스틱 | UUID | Property | 크기 | 용도 |
 |---|---|---|---|---|
@@ -38,6 +38,7 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 | FF03 (Game Cmd) | `0001ff03-...-00805f9800c4` | Write | 20B | 게임 모드 명령 |
 | FF04 (Game Result) | `0001ff04-...-00805f9800c4` | Notify | ≥11B (20B 프레임) | 게임 결과 통지 |
 | FF06 (Device Mode) | `0001ff06-...-00805f9800c4` | Read | 1B | 현재 모드 (0=중계기/1=BLE Only), spec v2.8 §2.1 |
+| FF09 (Broadcasting) | `0001ff09-...-00805f9800c4` | Read / Write | 1B | BLE 모드 전용 — Effect 주변 전파 여부 (0=싱글/1=전파, 기본 1), §2.6 |
 
 ### 2.1 FF01 — Color Packet (4바이트)
 
@@ -50,7 +51,7 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 | 2 | B | u8 | 0~255 |
 | 3 | transition | u8 | 전환 파라미터 (펌웨어 종속) |
 
-### 2.2 FF02 — Effect Payload (20바이트, `LE_LED_PATLOAD_T`, protocol v2.0)
+### 2.2 FF02 — Effect Payload (20바이트, `LE_LED_PATLOAD_T`, protocol v2.1)
 
 `msgType`(offset 0) 하나가 프레임 전체의 **유일한 메시지 종류 판별자**다. `EFFECT`와 `GROUP_SETUP`은 아래와 동일한 레이아웃(레이아웃 A)을 공유하고, `GAME_MODE`는 FF03/FF04 전용의 다른 레이아웃(레이아웃 B, §3)을 사용한다 — 즉 msgType=1(GAME_MODE)인 프레임은 FF02가 아니라 FF03/FF04에서만 등장한다.
 
@@ -66,8 +67,12 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 | 14 | randomColor | u8 | `0`=비활성, `1`=활성 |
 | 15 | randomDelay | u8 | 0=없음, 1~255 = 10ms 단위 최대 랜덤 지연 |
 | 16 | fade | u8 | 0~255, 페이드 파라미터 |
-| 17 | broadcasting | u8 | `0`=단일 기기, `1`=주변 기기로 브로드캐스트 |
-| 18-19 | effectIndex | u16 LE | 순수 dedup/시퀀스 번호. 메시지 종류 판별에는 관여하지 않음 |
+| 17 | effectIndex | u8 | 순수 dedup/시퀀스 번호(0~255, 순환). 메시지 종류 판별에는 관여하지 않음 (v2.0: u16, offset 18-19) |
+| 18-19 | duration | u16 LE | 이펙트 지속 시간. 1=10ms (최대 65,535 ≈ 655초). `0`=다음 명령이 올 때까지 유지 (v2.1 재추가) |
+
+**duration (v2.1)**: 이펙트 시작 후 `duration × 10ms`가 지나면 응원봉이 LED를 끈다. `0`이면 타이머 없이 다음 명령까지 유지(v2.0 동작). 새 Effect/GroupSetup/게임 명령이 도착하면 이전 타이머는 취소되고 새 명령의 duration으로 다시 시작된다. 타임라인처럼 프레임을 연속 전송할 때는 프레임 간격보다 짧은 duration이 프레임 사이에 LED를 끄므로 `0`을 권장한다 (SDK 타임라인 재생은 항상 0으로 고정).
+
+**broadcasting 삭제 (v2.1)**: 페이로드에서 broadcasting 필드가 삭제되어 항상 브로드캐스트로 동작한다. BLE 모드에서 전파를 끄려면 FF09(§2.6)에 `0`을 쓴다.
 
 **groupMask와 GroupControl**: 그룹 대상 제어는 별도의 msgType이 없다 — `msgType=EFFECT` + `groupMask`만으로 "특정 그룹", "여러 그룹 조합(OR)", "전체 기기"를 모두 표현한다.
 
@@ -84,8 +89,9 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 | 4-5 | option | u16 LE | Mode3 랜덤팀 지정 시 `0xFF`. Mode4 READY: 라운드당 측정시간(ms) |
 | 6-8 | (미사용) | — | `0` |
 | 9-10 | wandId | u16 LE | `cmdIndex=WINNER`일 때만 사용 — 우승 완드 id |
-| 11-17 | (미사용) | — | `0` |
-| 18-19 | effectIndex | u16 LE | 하향 dedup용, 펌웨어가 메시지 판별에 사용하지 않음(0 가능) |
+| 11-16 | (미사용) | — | `0` |
+| 17 | effectIndex | u8 | 하향 dedup용, 펌웨어가 메시지 판별에 사용하지 않음(0 가능). v2.1: u16(18-19) → u8(17) |
+| 18-19 | (예약) | — | `0` (레이아웃 A의 duration 자리, 게임 명령에서는 미사용) |
 
 **cmdIndex 명령 코드**
 
@@ -111,8 +117,9 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 | 5-6 | blueScore | u16 LE | RESULT: Mode1/2 항상 0 / Mode3-4 BLUE팀 합계. TEAM_CONFIRM: 미사용(0) |
 | 7-8 | totalCount | u16 LE | RESULT: 지금까지 보고한 누적 완드 수(Mode1/2). TEAM_CONFIRM: TEAM_ASSIGN_END로 방금 종료된 팀의 확정 인원수 |
 | 9-10 | wandId | u16 LE | RESULT: Mode1/2 보고 완드 id (Mode3/4는 0). TEAM_CONFIRM: 팀 id로 재해석 (0=RED/1=BLUE) |
-| 11-17 | (예약) | — | — |
-| 18-19 | effectIndex | u16 LE | 이 경로에서는 미사용(신뢰성 있는 1회성 Notify), 항상 0 |
+| 11-16 | (예약) | — | — |
+| 17 | effectIndex | u8 | 이 경로에서는 미사용(신뢰성 있는 1회성 Notify), 항상 0. v2.1: u16(18-19) → u8(17) |
+| 18-19 | (예약) | — | — |
 
 > **TEAM_CONFIRM(8)의 특성**: 개별 완드의 팀 락인은 802.15.4 상에서 각자 자신의 TEAM_CONFIRM으로 오르지만, 릴레이가 이를 내부적으로 집계만 하고 있다가 앱이 `TEAM_ASSIGN_END(9)`를 보낸 뒤 **팀당 1회, 집계된 인원수**로 FF04에 통지한다.
 
@@ -123,6 +130,20 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 | 0 | mode | u8 | `0`=중계기 모드 / `1`=BLE Only 모드 |
 
 앱은 연결 직후 1회 Read해서 현재 응원봉이 어느 모드로 동작 중인지 확인한다. BLE Only 모드는 홈파티·소규모 모임을 대상으로 하며 그룹 제어(1~20그룹)와 게임모드 4(수동 팀배정+라운드제)를 지원하지 않으므로, 앱은 이 값에 따라 해당 메뉴를 비활성화해야 한다(spec §1.3).
+
+### 2.6 FF09 — Broadcasting 설정 (1바이트, v2.1 신규)
+
+| 항목 | 내용 |
+|---|---|
+| UUID | `0001ff09-0000-1000-8000-00805f9800c4` (서비스 `0001fe01`) |
+| Property | Read / Write (Write With Response) |
+| 값 | `0`=싱글(연결된 응원봉만 반응), `1`=주변 전파 (기본값). 0/1 이외의 값은 1로 처리 |
+| 존재하는 기기 | BLE 모드 응원봉(Master)만. 중계기에는 없다(항상 802.15.4 브로드캐스트) |
+
+- 앱은 FF06이 1(BLE 모드)일 때만 FF09를 사용한다.
+- 응원봉은 연결될 때마다 기본값 1로 시작하고 연결이 끊기면 1로 돌아간다(RAM만). 0이 필요하면 **연결할 때마다 다시 써야 한다**.
+- FF02(Effect/GroupSetup) 전파에만 적용된다. 게임 명령(FF03)은 항상 전파된다.
+- 새 characteristic이 추가되었으므로 이전 펌웨어와 본딩된 기기는 GATT 캐시를 갱신(서비스 재탐색)해야 FF09가 보인다 — SDK는 본딩된 기기에 연결할 때 `BluetoothGatt.refresh()`를 호출한 뒤 서비스를 탐색한다.
 
 ---
 
@@ -195,7 +216,8 @@ Android ── Write FF02 (frame 0, effectIndex=K) [No Response] ──▶
         ── Write FF02 (frame N, effectIndex=K) [No Response] ──▶
 ```
 - 모든 프레임은 msgType=EFFECT로 고정 전송된다.
-- 같은 재생 세션 내 모든 프레임은 동일한 `effectIndex` 값을 사용 — 새 세션(재로드/재개) 시작 시 값이 증가하여 응원봉이 이전 세션 프레임과 새 세션 프레임을 구분(dedup)할 수 있게 한다.
+- 프레임의 `duration`은 0(다음 프레임/명령까지 유지)으로 고정한다.
+- 같은 재생 세션 내 모든 프레임은 동일한 `effectIndex` 값(u8, 1~255 순환)을 사용 — 새 세션(재로드/재개) 시작 시 값이 증가하여 응원봉이 이전 세션 프레임과 새 세션 프레임을 구분(dedup)할 수 있게 한다.
 - 프레임은 coalesce(치환) 대상에서 제외되어 순서와 개수가 보존된다.
 
 ### 4.5 게임 모드 시퀀스
@@ -305,8 +327,9 @@ Android                                              응원봉
 
 ## 5. 부록: 공통 규약
 
-- **Write Type**: FF01/FF02/OTA PDU는 `Write Without Response`, FF03(게임 명령)은 `Write With Response(Default)`, DIS/BAS/MAC은 `Read`.
+- **Write Type**: FF01/FF02/OTA PDU는 `Write Without Response`, FF03(게임 명령)과 FF09(Broadcasting)는 `Write With Response(Default)`, DIS/BAS/MAC/FF05/FF06은 `Read`.
 - **CCCD 값**: Notify 활성화 `01 00`, 비활성화 `00 00` (Indication은 `02 00`, 본 서비스들에서는 미사용).
 - **Little-Endian**: 모든 멀티바이트 정수 필드(u16/u32)는 LE.
 - **msgType의 위상**: FF02/FF03/FF04 세 캐릭터리스틱 모두 offset 0에 `msgType`을 두는 동일한 설계 원칙을 따르되, FF02는 레이아웃 A(EFFECT/GROUP_SETUP 공용), FF03/FF04는 레이아웃 B(GAME_MODE 전용)를 사용 — 두 레이아웃은 offset 1 이후 필드 배치가 서로 다르다.
-- **effectIndex의 위상**: 모든 20바이트 프레임 공통으로 offset 18-19에 위치하지만, 순수 dedup/시퀀스 용도일 뿐 메시지 종류 판별에는 전혀 관여하지 않는다.
+- **effectIndex의 위상**: 모든 20바이트 프레임(레이아웃 A/B, FF04) 공통으로 offset 17, u8에 위치하며(v2.1, v2.0은 u16 offset 18-19), 순수 dedup/시퀀스 용도일 뿐 메시지 종류 판별에는 관여하지 않는다. offset 18-19는 레이아웃 A에서 duration(u16), 레이아웃 B/FF04에서는 예약이다.
+- **v2.0 → v2.1 호환성**: 구조체 크기(20바이트)는 같지만 offset 17 이후 의미가 바뀌었다 — 앱/응원봉/중계기를 함께 갱신해야 한다.

@@ -387,7 +387,7 @@ object EfxSamples {
             randomColor = 1,            // Enable random color
             randomDelay = 10,           // Max 100ms random delay
             fade = 80,
-            broadcasting = 1,           // Broadcast to nearby devices
+            duration = 0,               // 0 = hold until next command (1 = 10ms)
             effectIndex = 0
         )
         println("Payload built: effectType=${payload.effectType}, period=${payload.period}")
@@ -461,7 +461,7 @@ object EfxSamples {
             groupMask = 0L,         // 0 = single/all (ignore group membership)
             spf = 100,
             fade = 80,
-            broadcasting = 1,       // Broadcast to nearby
+            duration = 300,         // LED turns off after 3 s
             effectIndex = 0
         )
 
@@ -470,8 +470,7 @@ object EfxSamples {
             color = Colors.CYAN,
             period = 100,
             randomColor = 1,        // Enable random color
-            randomDelay = 20,       // Max 200ms random delay
-            broadcasting = 1
+            randomDelay = 20        // Max 200ms random delay
         )
 
         println("Advanced effects created")

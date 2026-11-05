@@ -619,6 +619,38 @@ data class Device(
         )
 
     /**
+     * Returns `true` if this device exposes the FF09 Broadcasting characteristic
+     * (BLE protocol v2.1 §2.5). Only BLE-mode wands ([DeviceMode.BLE]) have it; relays do not,
+     * so call this (or check [readDeviceMode]) before [readBroadcasting] / [setBroadcasting].
+     *
+     * Wands bonded with older firmware may need a GATT cache refresh to expose FF09 — the SDK
+     * refreshes the cache automatically when connecting to a bonded device.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsBroadcasting(): Boolean = Facade.supportsBroadcasting(mac)
+
+    /**
+     * Reads FF09: whether a BLE-mode master wand relays Effect/GroupSetup frames to nearby wands
+     * (`true`, the default) or only reacts itself (`false`).
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readBroadcasting(onResult: (Result<Boolean>) -> Unit): Boolean =
+        submitReadWithResult({ cb -> Facade.readBroadcasting(mac, cb) }, onResult)
+
+    /**
+     * Writes FF09 (Write With Response): `true` = relay effects to nearby wands (default),
+     * `false` = only the connected wand reacts.
+     *
+     * The wand resets this to `true` on every new connection, so call it again after each
+     * connect if you need `false`. Applies to FF02 (Effect/GroupSetup) only — game commands
+     * (FF03) are always relayed. Only use on BLE-mode wands; returns `false` if the device is
+     * not connected or has no FF09 (e.g. a relay).
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun setBroadcasting(enabled: Boolean): Boolean =
+        try { isConnected() && Facade.setBroadcasting(mac, enabled) } catch (_: Throwable) { false }
+
+    /**
      * Reads multiple device info fields in parallel and returns aggregated DeviceInfo.
      *
      * @param onResult Callback invoked once all reads have completed.
@@ -918,8 +950,7 @@ data class Device(
             spf = 100,
             randomColor = 0,
             randomDelay = 0,
-            fade = 0,
-            broadcasting = 0
+            fade = 0
         )
         return try {
             if (!isConnected()) return false

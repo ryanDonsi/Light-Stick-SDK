@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Structured LightStick Effect payload (protocol v2.0, `LE_LED_PATLOAD_T`) that encodes to an
+ * Structured LightStick Effect payload (protocol v2.1, `LE_LED_PATLOAD_T`) that encodes to an
  * exact **20-byte** frame written to FF02.
  *
  * Byte layout (indices in brackets, little-endian for multi-byte fields). Shared by
@@ -22,9 +22,15 @@ import java.nio.ByteOrder
  *  [14]     randomColor    (u8)   – 0 or 1 only (0=disabled, 1=enabled)
  *  [15]     randomDelay    (u8)   – 0~255: max random delay time (0=none, 1~255 = delay in units of 10ms)
  *  [16]     fade           (u8)
- *  [17]     broadcasting   (u8)   – 0 or 1 only (0=single device, 1=broadcast to nearby devices)
- *  [18..19] effectIndex    (u16)  – Pure dedup/sequence number. Uninvolved in message-type
- *                                   discrimination.
+ *  [17]     effectIndex    (u8)   – Pure dedup/sequence number (0..255, wraps). Uninvolved in
+ *                                   message-type discrimination. (v2.0: u16 at offset 18-19)
+ *  [18..19] duration       (u16)  – Effect duration, 1 = 10 ms (max 65,535 ≈ 655 s). The wand
+ *                                   turns its LED off after `duration x 10 ms`; 0 = hold until
+ *                                   the next command arrives (v2.0 behaviour).
+ *
+ * The v2.0 `broadcasting` field no longer exists: payloads are always broadcast. Whether a
+ * BLE-mode master wand relays an effect to nearby wands is a per-connection setting on the
+ * FF09 characteristic — see `Device.setBroadcasting`.
  *
  * `groupMask` (a 32-bit bitmask) is what makes a payload group-targeted — there is no separate
  * "GroupControl" msgType. Single-device and group control are the exact same call shape, just a
@@ -53,8 +59,9 @@ import java.nio.ByteOrder
  * @param randomColor Random color flag (0=disabled, 1=enabled), default: 0.
  * @param randomDelay Random delay time in units of 10ms (0=none, 1~255=10ms~2550ms), default: 0.
  * @param fade Unsigned byte (0–255), firmware-specific fade parameter, default: 100.
- * @param broadcasting Broadcasting flag (0=single device, 1=broadcast to nearby devices), default: 0.
- * @param effectIndex Unsigned 16-bit dedup/sequence number (0–65535), default: 0.
+ * @param duration Effect duration in units of 10ms (0..65535, 1=10ms). 0 = keep until the next
+ *        command. Default: 0.
+ * @param effectIndex Unsigned 8-bit dedup/sequence number (0–255), default: 0.
  *
  * @throws IllegalArgumentException If any argument violates the documented ranges.
  * @since 1.0.0
@@ -72,13 +79,14 @@ data class LSEffectPayload(
     val randomColor: Int = 0,
     val randomDelay: Int = 0,
     val fade: Int = 100,
-    val broadcasting: Int = 0,
+    val duration: Int = 0,
     val effectIndex: Int = 0
 ) {
 
     init {
         require(groupMask in 0L..0xFFFFFFFFL) { "groupMask must be within 0..0xFFFFFFFF" }
-        require(effectIndex in 0..0xFFFF) { "effectIndex must be within 0..65535" }
+        require(effectIndex in 0..0xFF) { "effectIndex must be within 0..255" }
+        require(duration in 0..0xFFFF) { "duration must be within 0..65535" }
 
         // 0~255 범위 체크
         for ((name, v) in listOf(
@@ -90,7 +98,6 @@ data class LSEffectPayload(
 
         // 0 or 1만 허용
         require(randomColor in 0..1) { "randomColor must be 0 or 1 (got $randomColor)" }
-        require(broadcasting in 0..1) { "broadcasting must be 0 or 1 (got $broadcasting)" }
 
         require(color.r in 0..255 && color.g in 0..255 && color.b in 0..255) {
             "Color components must be 0..255"
@@ -128,15 +135,16 @@ data class LSEffectPayload(
         out[8] = u8(backgroundColor.r); out[9] = u8(backgroundColor.g); out[10] = u8(backgroundColor.b)
         // [11] effectType code
         out[11] = u8(effectType.code)
-        // [12..17] tail fields
+        // [12..16] tail fields
         out[12] = u8(period)
         out[13] = u8(spf)
         out[14] = u8(randomColor)
         out[15] = u8(randomDelay)
         out[16] = u8(fade)
-        out[17] = u8(broadcasting)
-        // [18..19] effectIndex
-        u16le(effectIndex).copyInto(out, 18)
+        // [17] effectIndex (u8)
+        out[17] = u8(effectIndex)
+        // [18..19] duration (u16 LE)
+        u16le(duration).copyInto(out, 18)
         return out
     }
 
@@ -163,8 +171,8 @@ data class LSEffectPayload(
          * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
-         * @param effectIndex Dedup/sequence number (default: 0).
+         * @param duration Effect duration in units of 10ms, 0 = until next command (default: 0).
+         * @param effectIndex Dedup/sequence number, 0..255 (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.ON].
          */
@@ -179,7 +187,7 @@ data class LSEffectPayload(
             groupMask: Long = Group.ALL_SINGLE,
             spf: Int = 100,
             fade: Int = 100,
-            broadcasting: Int = 0,
+            duration: Int = 0,
             effectIndex: Int = 0
         ) = LSEffectPayload(
             msgType = msgType,
@@ -191,7 +199,7 @@ data class LSEffectPayload(
             randomColor = randomColor,
             randomDelay = randomDelay,
             fade = fade,
-            broadcasting = broadcasting,
+            duration = duration,
             effectIndex = effectIndex
         )
 
@@ -207,8 +215,8 @@ data class LSEffectPayload(
          * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
-         * @param effectIndex Dedup/sequence number (default: 0).
+         * @param duration Effect duration in units of 10ms, 0 = until next command (default: 0).
+         * @param effectIndex Dedup/sequence number, 0..255 (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.OFF].
          */
@@ -221,7 +229,7 @@ data class LSEffectPayload(
             groupMask: Long = Group.ALL_SINGLE,
             spf: Int = 100,
             fade: Int = 100,
-            broadcasting: Int = 0,
+            duration: Int = 0,
             effectIndex: Int = 0,
         ) = LSEffectPayload(
             msgType = msgType,
@@ -232,7 +240,7 @@ data class LSEffectPayload(
             spf = spf,
             randomDelay = randomDelay,
             fade = fade,
-            broadcasting = broadcasting,
+            duration = duration,
             effectIndex = effectIndex
         )
 
@@ -249,10 +257,10 @@ data class LSEffectPayload(
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
-         * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param effectIndex Dedup/sequence number (default: 0).
+         * @param duration Effect duration in units of 10ms, 0 = until next command (default: 0).
+         * @param effectIndex Dedup/sequence number, 0..255 (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.STROBE].
          */
@@ -265,7 +273,7 @@ data class LSEffectPayload(
             randomColor: Int = 0,
             randomDelay: Int = 0,
             msgType: MsgType = MsgType.EFFECT,
-            broadcasting: Int = 0,
+            duration: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             effectIndex: Int = 0,
@@ -281,7 +289,7 @@ data class LSEffectPayload(
             randomColor = randomColor,
             randomDelay = randomDelay,
             fade = fade,
-            broadcasting = broadcasting,
+            duration = duration,
             effectIndex = effectIndex
         )
 
@@ -298,10 +306,10 @@ data class LSEffectPayload(
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
-         * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param effectIndex Dedup/sequence number (default: 0).
+         * @param duration Effect duration in units of 10ms, 0 = until next command (default: 0).
+         * @param effectIndex Dedup/sequence number, 0..255 (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.BLINK].
          */
@@ -314,7 +322,7 @@ data class LSEffectPayload(
             randomColor: Int = 0,
             randomDelay: Int = 0,
             msgType: MsgType = MsgType.EFFECT,
-            broadcasting: Int = 0,
+            duration: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             effectIndex: Int = 0,
@@ -330,7 +338,7 @@ data class LSEffectPayload(
             randomColor = randomColor,
             randomDelay = randomDelay,
             fade = fade,
-            broadcasting = broadcasting,
+            duration = duration,
             effectIndex = effectIndex
         )
 
@@ -347,10 +355,10 @@ data class LSEffectPayload(
          * **Advanced Parameters** (optional):
          * @param msgType Message type (default: [MsgType.EFFECT]).
          * @param groupMask Group bitmask; default [Group.ALL_SINGLE]. See [Group].
-         * @param broadcasting Broadcasting flag (0=single device, 1=broadcast, default: 0).
          * @param spf Samples per frame (default: 100).
          * @param fade Fade parameter (default: 100).
-         * @param effectIndex Dedup/sequence number (default: 0).
+         * @param duration Effect duration in units of 10ms, 0 = until next command (default: 0).
+         * @param effectIndex Dedup/sequence number, 0..255 (default: 0).
          *
          * @return A new [LSEffectPayload] configured for [EffectType.BREATH].
          */
@@ -363,7 +371,7 @@ data class LSEffectPayload(
             randomColor: Int = 0,
             randomDelay: Int = 0,
             msgType: MsgType = MsgType.EFFECT,
-            broadcasting: Int = 0,
+            duration: Int = 0,
             spf: Int = 100,
             fade: Int = 100,
             effectIndex: Int = 0,
@@ -379,7 +387,7 @@ data class LSEffectPayload(
             randomColor = randomColor,
             randomDelay = randomDelay,
             fade = fade,
-            broadcasting = broadcasting,
+            duration = duration,
             effectIndex = effectIndex
         )
     }
@@ -420,8 +428,8 @@ data class LSEffectPayload(
             val randomColor = u8()
             val randomDelay = u8()
             val fade = u8()
-            val broadcasting = u8()
-            val effectIndex = u16()
+            val effectIndex = u8()
+            val duration = u16()
 
             return LSEffectPayload(
                 msgType = msgType,
@@ -434,7 +442,7 @@ data class LSEffectPayload(
                 randomColor = randomColor,
                 randomDelay = randomDelay,
                 fade = fade,
-                broadcasting = broadcasting,
+                duration = duration,
                 effectIndex = effectIndex
             )
         }

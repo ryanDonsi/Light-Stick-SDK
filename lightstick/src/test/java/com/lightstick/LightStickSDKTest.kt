@@ -110,15 +110,42 @@ class LightStickSDKTest {
     }
 
     @Test
-    fun testEffectIndexRoundTripsAtOffset18() {
-        // protocol v3: effectIndex(offset 18-19, u16 LE)는 순수 중복 검사/시퀀스 번호 용도.
-        val payload = LSEffectPayload.Effects.on(Colors.RED, effectIndex = 0x1234)
+    fun testEffectIndexRoundTripsAtOffset17() {
+        // protocol v2.1: effectIndex is u8 at offset 17 (was u16 at 18-19 in v2.0).
+        val payload = LSEffectPayload.Effects.on(Colors.RED, effectIndex = 0xAB)
         val bytes = payload.toByteArray()
+        assertEquals(0xAB, bytes[17].toInt() and 0xFF)
+        assertEquals(0, bytes[18].toInt()); assertEquals(0, bytes[19].toInt())
+
+        val decoded = LSEffectPayload.fromByteArray(bytes)
+        assertEquals(0xAB, decoded.effectIndex)
+    }
+
+    @Test
+    fun testEffectIndexRejectsOver255() {
+        assertThrows(IllegalArgumentException::class.java) {
+            LSEffectPayload(effectIndex = 256)
+        }
+    }
+
+    @Test
+    fun testDurationRoundTripsAtOffset18() {
+        // protocol v2.1: duration is u16 LE at offset 18-19, 1 = 10 ms.
+        val payload = LSEffectPayload.Effects.on(Colors.RED, duration = 0x1234, effectIndex = 7)
+        val bytes = payload.toByteArray()
+        assertEquals(7, bytes[17].toInt())
         assertEquals(0x34, bytes[18].toInt() and 0xFF)
         assertEquals(0x12, bytes[19].toInt() and 0xFF)
 
         val decoded = LSEffectPayload.fromByteArray(bytes)
-        assertEquals(0x1234, decoded.effectIndex)
+        assertEquals(0x1234, decoded.duration)
+        assertEquals(7, decoded.effectIndex)
+    }
+
+    @Test
+    fun testDurationRejectsOutOfRange() {
+        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload(duration = 0x10000) }
+        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload(duration = -1) }
     }
 
     @Test

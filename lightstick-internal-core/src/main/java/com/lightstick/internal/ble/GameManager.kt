@@ -7,9 +7,8 @@ import androidx.annotation.RequiresPermission
 
 /**
  * Game command sender and result parser for the relay/master wand game protocol
- * (`GameMode_Spec_v2_7.docx` — protocol structs unified: FF03/FF04/§7.1 all share the same
- * msgType(offset 0) single discriminator + effectIndex(offset 18-19) shape, replacing the old
- * per-struct `effectIndex=0x0005` sentinel and 16-bit fields).
+ * (`GameMode_Spec_v2_9.docx` / BLE protocol v2.1 — FF03/FF04 share the msgType(offset 0)
+ * single discriminator + effectIndex(u8, offset 17) shape; offset 18-19 is reserved here).
  *
  * Writes 20-byte command payloads to FF03 (LCS_GAME_CMD) and subscribes to
  * FF04 (LCS_GAME_RESULT) Notify to receive game results.
@@ -23,10 +22,12 @@ import androidx.annotation.RequiresPermission
  *   Offset 3     level     (u8)      – Mode1/2/3 difficulty; Mode4 TEAM_ASSIGN/END: team id
  *                                       (0=RED/1=BLUE); Mode4 READY: round count (1~3)
  *   Offset 4-5   option    (u16 LE)  – Mode3 random team (0xFF), Mode4 READY measure ms
- *   Offset 6-17  unused in this SDK (result/msgId/wandId/reserved — 0; WINNER sets wandId
+ *   Offset 6-16  unused in this SDK (result/msgId/wandId/reserved — 0; WINNER sets wandId
  *                                     at offset 9-10)
- *   Offset 18-19 effectIndex (u16 LE) – downlink dedup/sequence only, not parsed by firmware
- *                                        for message-type discrimination (0 is fine)
+ *   Offset 17    effectIndex (u8)     – downlink dedup/sequence only, not parsed by firmware
+ *                                        for message-type discrimination (0 is fine).
+ *                                        v2.1: moved from u16 at offset 18-19
+ *   Offset 18-19 reserved (0)         – duration slot of layout A, unused by game commands
  *
  * FF04 result Notify payload (§2.4 — now the *same* struct shape as FF03, unlike pre-v2.7):
  *   Offset 0     msgType     (u8)     – always 1 (MSG_TYPE_GAMEMODE)
@@ -42,9 +43,10 @@ import androidx.annotation.RequiresPermission
  *                                        team that was just ended via TEAM_ASSIGN_END
  *   Offset 9-10  wandId      (u16 LE) – RESULT: Mode1/2 reporting wand's id, Mode3-4 = 0.
  *                                        TEAM_CONFIRM: reinterpreted as team id (0=RED/1=BLUE)
- *   Offset 11-17 reserved
- *   Offset 18-19 effectIndex (u16 LE) – unused on this path (FF04 is a reliable one-shot
+ *   Offset 11-16 reserved
+ *   Offset 17    effectIndex (u8)     – unused on this path (FF04 is a reliable one-shot
  *                                        Notify), always 0
+ *   Offset 18-19 reserved
  *
  * TEAM_CONFIRM(8) is only ever a *relay-aggregated* Notify from the SDK's point of view: each
  * wand's individual team-lock press goes out over 802.15.4 as its own TEAM_CONFIRM, but the
