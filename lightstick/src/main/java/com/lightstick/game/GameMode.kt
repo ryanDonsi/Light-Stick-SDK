@@ -9,7 +9,7 @@ enum class GameMode(val subIndex: Int) {
     /** Mode 1 — LED ON → shake fast. First to 5 wins. */
     SPEED_REACTION(1),
 
-    /** Mode 2 — Match the LED tempo. 5 consecutive hits within 20 s wins. */
+    /** Mode 2 — Match the LED tempo. 5 consecutive hits within the level's time limit (easy 20 s / normal 15 s / hard 10 s) wins. */
     TEMPO(2),
 
     /** Mode 3 — Red vs Blue team battle over 5 rounds. */
@@ -45,11 +45,15 @@ enum class GameMode(val subIndex: Int) {
      */
     fun resultTimeoutMs(level: GameLevel): Long = when (this) {
         SPEED_REACTION -> when (level) {
-            GameLevel.EASY   -> 64_000L   // 2 + 60 + 2
-            GameLevel.NORMAL -> 44_000L   // 2 + 40 + 2
+            GameLevel.EASY   -> 34_000L   // 2 + 30 + 2  (spec v2.9: 30 s)
+            GameLevel.NORMAL -> 29_000L   // 2 + 25 + 2  (spec v2.9: 25 s)
             GameLevel.HARD   -> 24_000L   // 2 + 20 + 2
         }
-        TEMPO -> 24_000L                  // 2 + 20 + 2 (level-independent)
+        TEMPO -> when (level) {
+            GameLevel.EASY   -> 24_000L   // 2 + 20 + 2  (spec v2.9: 20 s)
+            GameLevel.NORMAL -> 19_000L   // 2 + 15 + 2  (spec v2.9: 15 s)
+            GameLevel.HARD   -> 14_000L   // 2 + 10 + 2  (spec v2.9: 10 s)
+        }
         TEAM_BATTLE -> when (level) {
             GameLevel.EASY   -> 36_000L   // 2 + 30 + 2 + 2
             GameLevel.NORMAL -> 31_000L   // 2 + 25 + 2 + 2
@@ -71,7 +75,7 @@ enum class GameLevel(val value: Int) {
 }
 
 /**
- * Parsed game result received via FF04 Notify from the relay (`GameMode_Spec_v2_7.docx` §2.4).
+ * Parsed game result received via FF04 Notify from the relay (`GameMode_Spec_v2_9.docx` §2.4).
  *
  * FF04 carries two different notifications sharing this one shape, told apart by [cmdIndex]:
  * - [CMD_RESULT] (5): a real game result. For Mode 1/2, [redScore] is the individual score

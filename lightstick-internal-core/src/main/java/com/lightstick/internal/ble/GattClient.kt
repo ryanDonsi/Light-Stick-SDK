@@ -427,6 +427,19 @@ internal class GattClient(private val context: Context) : AutoCloseable {
         }
     }
 
+    /**
+     * 시스템 GATT 서비스 캐시를 비운다 (`BluetoothGatt.refresh()` — 비공개 API, 리플렉션).
+     * 실패해도 연결 흐름에는 영향 없음(캐시된 서비스 목록 그대로 사용).
+     */
+    private fun refreshGattCache(g: BluetoothGatt) {
+        try {
+            val ok = g.javaClass.getMethod("refresh").invoke(g) as? Boolean
+            Log.d("[GattClient] GATT cache refresh: $ok")
+        } catch (e: Throwable) {
+            Log.w("[GattClient] GATT cache refresh unavailable: ${e.message}")
+        }
+    }
+
     // ============================================================================================
     // GATT Callback
     // ============================================================================================
@@ -447,6 +460,10 @@ internal class GattClient(private val context: Context) : AutoCloseable {
             connectionStateListener?.invoke(address, newState, status)
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                // 본딩된 기기는 안드로이드가 GATT 서비스 목록을 캐시한다. 펌웨어 업데이트로
+                // FF09 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5)
+                // 서비스 재탐색 전에 캐시를 비운다.
+                if (gatt.device.bondState == BluetoothDevice.BOND_BONDED) refreshGattCache(gatt)
                 Log.d("[GattClient] 서비스 디스커버리 시작: $address")
                 try {
                     gatt.discoverServices()

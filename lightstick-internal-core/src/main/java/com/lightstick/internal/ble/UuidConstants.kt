@@ -39,6 +39,12 @@ internal object UuidConstants {
     /** FF06 — Device Mode: Read-only, 1 byte (0=relay/중계기, 1=BLE Only) (spec v2.8 §2.1). */
     val LCS_DEVICE_MODE: UUID = UUID.fromString("0001ff06-0000-1000-8000-00805f9800c4")
 
+    /**
+     * FF09 — Broadcasting: Read/Write (with response), 1 byte (0=single, 1=relay to nearby wands,
+     * default 1). BLE-mode wands only; absent on relays (BLE protocol v2.1 §2.5).
+     */
+    val LCS_BROADCASTING: UUID = UUID.fromString("0001ff09-0000-1000-8000-00805f9800c4")
+
     // ===== Generic Access Profile (Standard) =====================================
     /** Generic Access Profile (GAP) service. Device Name (0x2A00) lives here, not in DIS. */
     val GAP_SERVICE: UUID = UUID.fromString("00001800-0000-1000-8000-00805f9b34fb")

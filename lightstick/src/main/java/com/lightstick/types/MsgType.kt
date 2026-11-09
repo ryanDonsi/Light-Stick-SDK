@@ -6,8 +6,8 @@ package com.lightstick.types
  *
  * This is the **single, sole discriminator** for the whole frame — every message (single/group
  * effect control, GameMode, GroupSetup) shares one 20-byte layout that starts with this byte
- * and ends with a 16-bit `effectIndex` (offset 18-19, pure dedup/sequence number, uninvolved
- * in message-type discrimination).
+ * and carries an 8-bit `effectIndex` at offset 17 (pure dedup/sequence number, uninvolved
+ * in message-type discrimination; protocol v2.1). Layout A also ends with a `duration` u16.
  *
  * There is no longer a separate "GroupControl" msgType: targeting one group, an arbitrary
  * combination of groups, or every connected lightstick is now expressed by [EFFECT] plus the

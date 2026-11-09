@@ -1,4 +1,4 @@
-# Light-Stick SDK API 레퍼런스 (v2.0.0)
+# Light-Stick SDK API 레퍼런스 (v2.1.0)
 
 `com.lightstick` 패키지(모듈: `lightstick`, `lightstick-internal-core`, 배포 아티팩트: `lightstick-sdk`)가 제공하는
 **공개(public) Kotlin API**를 모두 정리한 문서. 순수 BLE 와이어 프로토콜은 [`BLE_PROTOCOL.md`](./BLE_PROTOCOL.md)를 참고.
@@ -141,6 +141,9 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `readBattery(onResult: (Result<Int>) -> Unit): Boolean` | 배터리 잔량 (0..100) 단건 조회 — DIS는 건드리지 않음 |
 | `fetchDeviceInfo(onResult: (DeviceInfo) -> Unit): Boolean` | 위 4개 DIS 필드를 병렬로 읽어 취합한 콜백 1회 |
 | `supportsDeviceMode(): Boolean` | FF06 지원 여부 (spec v2.8 §2.1) |
+| `supportsBroadcasting(): Boolean` | FF09 지원 여부 (BLE 모드 응원봉만 true, 중계기 false) |
+| `readBroadcasting(onResult: (Result<Boolean>) -> Unit): Boolean` | FF09 조회 (true=주변 전파, 기본 / false=싱글) |
+| `setBroadcasting(enabled: Boolean): Boolean` | FF09 설정 (Write With Response). 응원봉은 연결마다 true로 초기화되므로 연결할 때마다 다시 호출. FF02에만 적용, 게임 명령은 항상 전파 |
 | `readDeviceMode(onResult: (Result<DeviceMode>) -> Unit): Boolean` | 현재 응원봉 동작 모드 조회 (`DeviceMode.RELAY`=중계기 / `DeviceMode.BLE`=BLE Only). BLE Only 모드는 그룹 제어·게임모드4를 지원하지 않으므로 앱이 이 값으로 해당 메뉴를 비활성화해야 함 |
 
 > 배터리만 주기적으로 갱신하고 싶다면 `readBattery`만 앱 쪽 타이머로 반복 호출하면 된다 — SDK가 자동으로 폴링하지 않는다.
@@ -328,13 +331,13 @@ data class LSEffectPayload(
     val randomColor: Int = 0,
     val randomDelay: Int = 0,
     val fade: Int = 100,
-    val broadcasting: Int = 0,
-    val effectIndex: Int = 0
+    val duration: Int = 0,      // 10ms 단위, 0 = 다음 명령까지 유지 (protocol v2.1)
+    val effectIndex: Int = 0    // 0..255 (u8)
 )
 fun toByteArray(): ByteArray                       // 20바이트 인코딩
 companion fun fromByteArray(bytes: ByteArray): LSEffectPayload  // 디코딩 (msgType=GAME_MODE면 예외)
 ```
-정확한 바이트 오프셋/범위는 [`BLE_PROTOCOL.md` §2.2](./BLE_PROTOCOL.md#22-ff02--effect-payload-20바이트-le_led_patload_t-protocol-v20)참고.
+정확한 바이트 오프셋/범위는 [`BLE_PROTOCOL.md` §2.2](./BLE_PROTOCOL.md#22-ff02--effect-payload-20바이트-le_led_patload_t-protocol-v21)참고.
 
 **`LSEffectPayload.Effects`** — 자주 쓰는 이펙트 팩토리:
 | 함수 | 설명 |
@@ -345,7 +348,7 @@ companion fun fromByteArray(bytes: ByteArray): LSEffectPayload  // 디코딩 (ms
 | `Effects.blink(period, color, backgroundColor=BLACK, ...)` | 블링크 |
 | `Effects.breath(period, color, backgroundColor=BLACK, ...)` | 브레스 |
 
-모두 `msgType`/`groupMask`/`spf`/`fade`/`broadcasting`/`effectIndex`를 선택 파라미터로 받아 `LSEffectPayload`를 반환한다.
+모두 `msgType`/`groupMask`/`spf`/`fade`/`duration`/`effectIndex`를 선택 파라미터로 받아 `LSEffectPayload`를 반환한다.
 
 ---
 
@@ -362,7 +365,7 @@ enum class GameCmd(val cmdIndex: Int) {
 | 값 | subIndex | 설명 |
 |---|---|---|
 | SPEED_REACTION | 1 | LED ON 후 빠르게 흔들기, 5선승 |
-| TEMPO | 2 | LED 템포에 맞춰 20초 내 5회 연속 |
+| TEMPO | 2 | LED 템포에 맞춰 제한시간 내 5회 연속 (easy 20초 / normal 15초 / hard 10초) |
 | TEAM_BATTLE | 3 | RED/BLUE 5라운드 팀전 |
 | TEAM_SIMULTANEOUS | 4 | 수동 팀배정(§2.8) 후 1~3라운드 동시 흔들기 |
 
@@ -471,4 +474,4 @@ data class OtaResult(val ok: Boolean, val message: String? = null)  // OtaManage
 
 ## 9. 버전
 
-`lightstick` / `lightstick-internal-core` / `lightstick-sdk` 세 모듈 모두 `group="com.lightstick"`, `version="2.0.0"`으로 통일 배포.
+`lightstick` / `lightstick-internal-core` / `lightstick-sdk` 세 모듈 모두 `group="com.lightstick"`, `version="2.1.0"`으로 통일 배포.

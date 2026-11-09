@@ -1,6 +1,7 @@
 package com.lightstick.internal.ble
 
 import android.Manifest
+import android.bluetooth.BluetoothGattCharacteristic
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.state.InternalDeviceInfo
@@ -63,6 +64,39 @@ internal class DeviceInfoManager(
             if (bytes.isEmpty()) error("Empty device mode value")
             bytes[0].toInt() and 0xFF
         }
+
+    // ============================================================================================
+    // LCS (Broadcasting, FF09)
+    // ============================================================================================
+
+    /**
+     * Returns true if the connected device exposes the FF09 Broadcasting characteristic
+     * (BLE-mode wands only; relays do not have it).
+     */
+    fun isBroadcastingSupported(): Boolean =
+        gattClient.hasCharacteristic(UuidConstants.LCS_SERVICE, UuidConstants.LCS_BROADCASTING)
+
+    /** FF09: true = effects are relayed to nearby wands (1, default), false = single (0). */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    suspend fun readBroadcasting(): Result<Boolean> =
+        readBytes(UuidConstants.LCS_SERVICE, UuidConstants.LCS_BROADCASTING).mapCatching { bytes ->
+            if (bytes.isEmpty()) error("Empty broadcasting value")
+            // Spec: any value other than 0/1 is treated as 1 (relay).
+            (bytes[0].toInt() and 0xFF) != 0
+        }
+
+    /**
+     * FF09: writes the broadcasting flag (Write With Response). The wand resets it to 1 on every
+     * new connection, so the app must write it again after each connect.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun writeBroadcasting(enabled: Boolean): Boolean =
+        gattClient.writeCharacteristic(
+            serviceUuid = UuidConstants.LCS_SERVICE,
+            charUuid = UuidConstants.LCS_BROADCASTING,
+            data = byteArrayOf(if (enabled) 1 else 0),
+            writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        )
 
     // ============================================================================================
     // DIS (Device Information Service)

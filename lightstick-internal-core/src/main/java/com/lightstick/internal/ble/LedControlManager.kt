@@ -33,9 +33,12 @@ internal class LedControlManager(
         private const val MSG_TYPE_BYTE_POSITION = 0
         const val MSG_TYPE_EFFECT = 0
 
-        // LSEffectPayload byte[18-19] (protocol v3, u16 LE): effectIndex — pure dedup/sequence
-        // number, uninvolved in message-type discrimination (that moved to byte[0] in v3).
-        private const val EFFECT_INDEX_BYTE_POSITION = 18
+        // LSEffectPayload byte[17] (protocol v2.1, u8): effectIndex — pure dedup/sequence
+        // number, uninvolved in message-type discrimination (that is msgType at byte[0]).
+        // byte[18-19] (u16 LE) is duration; timeline frames always use 0 (hold until next frame).
+        private const val EFFECT_INDEX_BYTE_POSITION = 17
+        private const val DURATION_BYTE_POSITION = 18
+        private const val EFFECT_INDEX_MAX = 0xFF
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
     }
 
@@ -227,7 +230,7 @@ internal class LedControlManager(
         pendingResyncAfterManualEffect = false
 
         // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
-        currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
+        currentEffectIndex = nextEffectIndex(currentEffectIndex)
 
         Log.d("[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
 
@@ -381,7 +384,7 @@ internal class LedControlManager(
         if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
         anchorSystemMs = SystemClock.elapsedRealtime()
-        currentEffectIndex = (currentEffectIndex % 0xFFFF) + 1
+        currentEffectIndex = nextEffectIndex(currentEffectIndex)
         isEffectTransmissionEnabled = true
 
         if (pendingResyncAfterManualEffect) {
@@ -461,16 +464,24 @@ internal class LedControlManager(
         }
     }
 
+    /** effectIndex는 u8(1..255)로 순환한다 (0은 "미설정"과 구분하기 위해 건너뜀). */
+    private fun nextEffectIndex(current: Int): Int = (current % EFFECT_INDEX_MAX) + 1
+
     /**
-     * LSEffectPayload의 byte[18-19](effectIndex, protocol v3, u16 LE)를 교체합니다.
+     * 타임라인 프레임의 세션 필드를 설정합니다 (protocol v2.1):
+     * - byte[17] effectIndex (u8)
+     * - byte[18-19] duration (u16 LE) = 0 → 다음 프레임/명령까지 유지.
+     *   프레임 간격보다 짧은 duration은 프레임 사이에 LED를 꺼버리므로 0으로 고정한다.
+     *   (v2.0으로 저장된 EFX의 18-19 값이 duration으로 오해석되는 것도 방지)
      */
     private fun insertEffectIndex(frame: ByteArray, effectIndex: Int): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }
-        require(effectIndex in 0..0xFFFF) { "effectIndex must be 0-65535" }
+        require(effectIndex in 0..EFFECT_INDEX_MAX) { "effectIndex must be 0-255" }
 
         return frame.copyOf().apply {
-            this[EFFECT_INDEX_BYTE_POSITION] = (effectIndex and 0xFF).toByte()
-            this[EFFECT_INDEX_BYTE_POSITION + 1] = ((effectIndex shr 8) and 0xFF).toByte()
+            this[EFFECT_INDEX_BYTE_POSITION] = effectIndex.toByte()
+            this[DURATION_BYTE_POSITION] = 0
+            this[DURATION_BYTE_POSITION + 1] = 0
         }
     }
 

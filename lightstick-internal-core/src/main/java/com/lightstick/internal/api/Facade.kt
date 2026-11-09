@@ -628,6 +628,33 @@ object Facade {
         return true
     }
 
+    /** Returns true if [mac] exposes FF09 Broadcasting (BLE-mode wands only). */
+    fun supportsBroadcasting(mac: String): Boolean {
+        requireInit()
+        return sessions[mac]?.deviceInfo?.isBroadcastingSupported() ?: false
+    }
+
+    /** Reads FF09 Broadcasting from [mac]. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun readBroadcasting(mac: String, onResult: (Result<Boolean>) -> Unit): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        scope.launch {
+            onResult(requireSession(mac).deviceInfo.readBroadcasting())
+        }
+        return true
+    }
+
+    /** Writes FF09 Broadcasting on [mac]. Returns false if not connected/supported. */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun setBroadcasting(mac: String, enabled: Boolean): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        val info = requireSession(mac).deviceInfo
+        if (!info.isBroadcastingSupported()) return false
+        return info.writeBroadcasting(enabled)
+    }
+
     // ============================================================================================
     // MTU
     // ============================================================================================
@@ -793,7 +820,7 @@ object Facade {
      * Subscribes to FF04 game result Notify on the given device.
      *
      * The callback parameters map directly to the 20-byte result packet
-     * (`GameMode_Spec_v2_7.docx` §2.4, unified with FF03's msgType/effectIndex shape):
+     * (`GameMode_Spec_v2_9.docx` §2.4, unified with FF03's msgType/effectIndex(u8@17) shape):
      * subIndex, cmdIndex (RESULT=5 or TEAM_CONFIRM=8 — see [GameManager] for how field meaning
      * depends on this), redScore, blueScore, totalCount, wandId.
      */
