@@ -625,7 +625,7 @@ data class Device(
      *
      * @return `false` if the device is not connected.
      * @throws IllegalArgumentException If [intervalMs] is outside 0..1000.
-     * @since 2.1.0
+     * @since 2.1.1
      */
     fun setMinCommandInterval(intervalMs: Long): Boolean =
         Facade.setMinCommandIntervalMs(mac, intervalMs)

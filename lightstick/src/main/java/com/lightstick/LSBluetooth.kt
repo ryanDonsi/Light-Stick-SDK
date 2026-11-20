@@ -152,7 +152,7 @@ object LSBluetooth {
      *
      * @param intervalMs Interval in milliseconds, 0..1000.
      * @throws IllegalArgumentException If [intervalMs] is outside 0..1000.
-     * @since 2.1.0
+     * @since 2.1.1
      */
     @JvmStatic
     fun setMinCommandInterval(intervalMs: Long) {
