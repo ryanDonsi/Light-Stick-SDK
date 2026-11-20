@@ -23,9 +23,24 @@ internal class CmdQueueManager(
 ) {
     @Volatile private var config: CmdQueueConfig = config
 
-    /** Changes the minimum interval between commands; applies from the next scheduling on. */
+    /**
+     * Changes the minimum interval between commands.
+     *
+     * Any drain that was already scheduled with the old interval is cancelled and scheduled again
+     * with the new one, so the change takes effect immediately for queued commands. A command
+     * that is currently running is untouched; its completion schedules the next one with the new
+     * interval.
+     */
     fun setMinIntervalMs(ms: Long) {
         config = config.copy(minIntervalMs = ms)
+        handler.post {
+            for ((address, q) in queues) {
+                if (disconnected[address] == true) continue
+                if (running[address] == true) continue // signalComplete() will use the new value
+                if (q.isEmpty()) continue
+                scheduleNext(address, waitFor(address))
+            }
+        }
     }
 
     fun getMinIntervalMs(): Long = config.minIntervalMs
