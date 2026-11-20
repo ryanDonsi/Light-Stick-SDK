@@ -464,8 +464,8 @@ internal class LedControlManager(
         }
     }
 
-    /** effectIndex는 u8(1..255)로 순환한다 (0은 "미설정"과 구분하기 위해 건너뜀). */
-    private fun nextEffectIndex(current: Int): Int = (current % EFFECT_INDEX_MAX) + 1
+    /** effectIndex는 u8(0..255)로 순환한다 (BLE protocol v2.1 §2.2). */
+    private fun nextEffectIndex(current: Int): Int = (current + 1) and EFFECT_INDEX_MAX
 
     /**
      * 타임라인 프레임의 세션 필드를 설정합니다 (protocol v2.1):
