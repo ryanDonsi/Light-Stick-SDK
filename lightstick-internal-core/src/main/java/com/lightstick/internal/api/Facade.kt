@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
-import android.util.Log
+import com.lightstick.internal.util.Log
 import com.lightstick.internal.ble.DeviceFilter
 import android.bluetooth.BluetoothManager
 import com.lightstick.internal.ble.state.InternalDeviceStateEvent

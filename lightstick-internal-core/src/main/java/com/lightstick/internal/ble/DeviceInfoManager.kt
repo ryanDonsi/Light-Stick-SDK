@@ -2,7 +2,7 @@ package com.lightstick.internal.ble
 
 import android.Manifest
 import android.bluetooth.BluetoothGattCharacteristic
-import android.util.Log
+import com.lightstick.internal.util.Log
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.state.InternalDeviceInfo
 import kotlinx.coroutines.delay

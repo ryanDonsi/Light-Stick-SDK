@@ -4,7 +4,7 @@ package com.lightstick.internal.ble
 //import android.bluetooth.BluetoothManager
 //import android.bluetooth.BluetoothProfile
 import android.content.Context
-import android.util.Log
+import com.lightstick.internal.util.Log
 import com.lightstick.internal.ble.state.InternalConnectionState
 import com.lightstick.internal.ble.state.InternalDeviceInfo
 import com.lightstick.internal.ble.state.InternalDeviceState

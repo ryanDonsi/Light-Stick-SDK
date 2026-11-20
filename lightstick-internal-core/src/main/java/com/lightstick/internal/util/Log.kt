@@ -15,4 +15,12 @@ internal object Log {
     fun i(msg: String) { if (enabled) AndroidLog.i(tag, msg) }
     fun w(msg: String, t: Throwable? = null) { if (enabled) AndroidLog.w(tag, msg, t) }
     fun e(msg: String, t: Throwable? = null) { if (enabled) AndroidLog.e(tag, msg, t) }
+
+    // Tagged overloads (drop-in for android.util.Log call sites) — still gated by [enabled],
+    // so nothing (MAC addresses, device info, packet bytes) reaches Logcat unless the app
+    // explicitly turns debug logging on.
+    fun d(tag: String, msg: String) { if (enabled) AndroidLog.d(tag, msg) }
+    fun i(tag: String, msg: String) { if (enabled) AndroidLog.i(tag, msg) }
+    fun w(tag: String, msg: String, t: Throwable? = null) { if (enabled) AndroidLog.w(tag, msg, t) }
+    fun e(tag: String, msg: String, t: Throwable? = null) { if (enabled) AndroidLog.e(tag, msg, t) }
 }
