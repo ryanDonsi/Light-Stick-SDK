@@ -19,8 +19,17 @@ import java.util.concurrent.ConcurrentHashMap
  * - Call [enqueue], [signalComplete], and [clear] on the main thread for simplicity.
  */
 internal class CmdQueueManager(
-    private var config: CmdQueueConfig = CmdQueueConfig()
+    config: CmdQueueConfig = CmdQueueConfig()
 ) {
+    @Volatile private var config: CmdQueueConfig = config
+
+    /** Changes the minimum interval between commands; applies from the next scheduling on. */
+    fun setMinIntervalMs(ms: Long) {
+        config = config.copy(minIntervalMs = ms)
+    }
+
+    fun getMinIntervalMs(): Long = config.minIntervalMs
+
     private data class Cmd(
         val op: String,
         val key: String?,

@@ -11,7 +11,15 @@ internal data class CmdQueueConfig(
     val minIntervalMs: Long = 0L,
     val maxQueueSizePerAddress: Int = 64,
     val overflowPolicy: OverflowPolicy = OverflowPolicy.DROP_OLDEST
-)
+) {
+    companion object {
+        /** SDK default minimum interval between GATT commands (ms). */
+        const val DEFAULT_MIN_INTERVAL_MS = 20L
+
+        /** Largest interval accepted by the public setters (ms). */
+        const val MAX_MIN_INTERVAL_MS = 1000L
+    }
+}
 
 /**
  * Policy to apply on queue overflow.

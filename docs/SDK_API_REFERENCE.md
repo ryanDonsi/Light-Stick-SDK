@@ -36,6 +36,7 @@
 |---|---|
 | `initialize(context, deviceFilter: DeviceFilter? = null, allowUnknownDevices: Boolean = false)` | SDK 초기화. 앱 시작 시 1회 (여러 번 호출해도 최초 1회만 적용). 내부적으로 시스템 레벨에 이미 연결된 기기 세션 복원도 시도한다. |
 | `setDebugLoggingEnabled(enabled: Boolean)` | 패킷 TX/RX, 연결/서비스디스커버리/OTA 진단 로그를 `Lightstick` 태그로 ON/OFF. 기본값 `false`. 언제든 호출 가능. |
+| `setMinCommandInterval(intervalMs: Long)` / `getMinCommandInterval(): Long` | 기기별 GATT 명령 큐의 최소 간격(ms, 0~1000, 기본 20). 연결 중인 기기에 즉시 적용되고 이후 연결의 기본값이 됨. 큐는 기기당 최대 64개이며 넘치면 오래된 명령부터 버려짐 |
 
 ### 1.2 스캔
 
@@ -141,6 +142,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `readBattery(onResult: (Result<Int>) -> Unit): Boolean` | 배터리 잔량 (0..100) 단건 조회 — DIS는 건드리지 않음 |
 | `fetchDeviceInfo(onResult: (DeviceInfo) -> Unit): Boolean` | 위 4개 DIS 필드를 병렬로 읽어 취합한 콜백 1회 |
 | `supportsDeviceMode(): Boolean` | FF06 지원 여부 (spec v2.8 §2.1) |
+| `setMinCommandInterval(intervalMs: Long): Boolean` / `getMinCommandInterval(): Long?` | 이 기기만 GATT 명령 최소 간격(ms, 0~1000) 변경 — 연결 중에만 유효(미연결 시 false/null), 재연결하면 전역값으로 돌아감 |
 | `supportsBroadcasting(): Boolean` | FF09 지원 여부 (BLE 모드 응원봉만 true, 중계기 false) |
 | `readBroadcasting(onResult: (Result<Boolean>) -> Unit): Boolean` | FF09 조회 (true=주변 전파, 기본 / false=싱글) |
 | `setBroadcasting(enabled: Boolean): Boolean` | FF09 설정 (Write With Response). 응원봉은 연결마다 true로 초기화되므로 연결할 때마다 다시 호출. FF02에만 적용, 게임 명령은 항상 전파 |

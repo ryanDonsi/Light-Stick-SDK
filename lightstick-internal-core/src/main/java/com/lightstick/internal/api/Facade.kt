@@ -57,6 +57,35 @@ object Facade {
         check(::appContext.isInitialized) { "Facade.initialize(context) must be called first." }
     }
 
+    // GATT 명령 간 최소 간격(ms). 새 연결의 기본값이며 연결 중인 세션에도 즉시 적용된다.
+    @Volatile private var minCommandIntervalMs: Long = com.lightstick.internal.ble.queue.CmdQueueConfig.DEFAULT_MIN_INTERVAL_MS
+
+    private fun checkInterval(ms: Long) {
+        require(ms in 0L..com.lightstick.internal.ble.queue.CmdQueueConfig.MAX_MIN_INTERVAL_MS) {
+            "minIntervalMs must be within 0..${com.lightstick.internal.ble.queue.CmdQueueConfig.MAX_MIN_INTERVAL_MS}"
+        }
+    }
+
+    /** Sets the default minimum GATT command interval for all current and future connections. */
+    fun setMinCommandIntervalMs(ms: Long) {
+        checkInterval(ms)
+        minCommandIntervalMs = ms
+        sessions.values.forEach { it.gatt.setMinCommandIntervalMs(ms) }
+    }
+
+    fun getMinCommandIntervalMs(): Long = minCommandIntervalMs
+
+    /** Sets the minimum GATT command interval for one connected device only. */
+    fun setMinCommandIntervalMs(mac: String, ms: Long): Boolean {
+        requireInit()
+        checkInterval(ms)
+        val s = sessions[mac] ?: return false
+        s.gatt.setMinCommandIntervalMs(ms)
+        return true
+    }
+
+    fun getMinCommandIntervalMs(mac: String): Long? = sessions[mac]?.gatt?.getMinCommandIntervalMs()
+
     /** Toggles debug logging (packet TX/RX, connection/OTA diagnostics) across the BLE layer. */
     fun setDebugLoggingEnabled(enabled: Boolean) {
         com.lightstick.internal.util.Log.enabled = enabled
@@ -276,6 +305,7 @@ object Facade {
 
 
         val gatt = GattClient(appContext)
+        gatt.setMinCommandIntervalMs(minCommandIntervalMs)
 
         gatt.setConnectionStateListener { address, newState, gattStatus ->
             when (newState) {

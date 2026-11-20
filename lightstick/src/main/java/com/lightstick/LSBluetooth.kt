@@ -137,6 +137,32 @@ object LSBluetooth {
         Facade.setDebugLoggingEnabled(enabled)
     }
 
+    /**
+     * Sets the minimum interval between consecutive GATT commands (effects, colors, game
+     * commands, reads, ...) sent to a device. Commands are queued per device and each one waits
+     * until this much time has passed since the previous one completed.
+     *
+     * Applies immediately to devices that are already connected and is the default for devices
+     * connected afterwards. Default: 20 ms. `0` sends back-to-back (the BLE stack's own pacing
+     * still applies). Use [com.lightstick.device.Device.setMinCommandInterval] to override one
+     * device only.
+     *
+     * Note: the queue holds at most 64 pending commands per device and drops the oldest beyond
+     * that, so a very large interval can make bursts (e.g. dense timeline frames) lose frames.
+     *
+     * @param intervalMs Interval in milliseconds, 0..1000.
+     * @throws IllegalArgumentException If [intervalMs] is outside 0..1000.
+     * @since 2.1.0
+     */
+    @JvmStatic
+    fun setMinCommandInterval(intervalMs: Long) {
+        Facade.setMinCommandIntervalMs(intervalMs)
+    }
+
+    /** Returns the default minimum GATT command interval in ms (see [setMinCommandInterval]). */
+    @JvmStatic
+    fun getMinCommandInterval(): Long = Facade.getMinCommandIntervalMs()
+
     // ============================================================================================
     // Scan
     // ============================================================================================

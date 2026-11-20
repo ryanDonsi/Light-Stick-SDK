@@ -63,7 +63,7 @@ internal class GattClient(private val context: Context) : AutoCloseable {
 
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
-            minIntervalMs = 20L,
+            minIntervalMs = CmdQueueConfig.DEFAULT_MIN_INTERVAL_MS,
             maxQueueSizePerAddress = 64,
             overflowPolicy = OverflowPolicy.DROP_OLDEST
         )
@@ -72,6 +72,11 @@ internal class GattClient(private val context: Context) : AutoCloseable {
     // ============================================================================================
     // Public API
     // ============================================================================================
+
+    /** GATT 명령 사이의 최소 간격(ms)을 변경합니다. 이후 스케줄되는 명령부터 적용됩니다. */
+    fun setMinCommandIntervalMs(ms: Long) = queueManager.setMinIntervalMs(ms)
+
+    fun getMinCommandIntervalMs(): Long = queueManager.getMinIntervalMs()
 
     /**
      * 현재 연결된 디바이스의 MAC 주소를 반환합니다.

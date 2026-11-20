@@ -619,6 +619,21 @@ data class Device(
         )
 
     /**
+     * Overrides the minimum interval (ms, 0..1000) between consecutive GATT commands for THIS
+     * device while it is connected. The override ends when the device disconnects; the next
+     * connection uses the global value from [com.lightstick.LSBluetooth.setMinCommandInterval].
+     *
+     * @return `false` if the device is not connected.
+     * @throws IllegalArgumentException If [intervalMs] is outside 0..1000.
+     * @since 2.1.0
+     */
+    fun setMinCommandInterval(intervalMs: Long): Boolean =
+        Facade.setMinCommandIntervalMs(mac, intervalMs)
+
+    /** Current minimum command interval (ms) of this device, or `null` if not connected. */
+    fun getMinCommandInterval(): Long? = Facade.getMinCommandIntervalMs(mac)
+
+    /**
      * Returns `true` if this device exposes the FF09 Broadcasting characteristic
      * (BLE protocol v2.1 §2.5). Only BLE-mode wands ([DeviceMode.BLE]) have it; relays do not,
      * so call this (or check [readDeviceMode]) before [readBroadcasting] / [setBroadcasting].
