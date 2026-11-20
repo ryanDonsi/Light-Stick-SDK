@@ -118,7 +118,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
 | `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |
 
-특징: 10ms tick 배치 디스패치 · 드랍 없음(coalesce 안 함, 순서·개수 보장) · 프레임의 effectIndex(byte 17)를 덮어쓰지 않고 그대로 전송(펌웨어가 연속 동일 이펙트/새 이펙트 구분에 사용) · duration은 0으로 고정 · pause/resume 지원.
+특징: 10ms tick 배치 디스패치 · 드랍 없음(coalesce 안 함, 순서·개수 보장) · 프레임의 effectIndex(byte 17)를 덮어쓰지 않고 그대로 전송(펌웨어가 연속 동일 이펙트/새 이펙트 구분에 사용) · duration(byte 18-19)도 그대로 전송(연속 재생에는 0 권장) · pause/resume 지원.
 
 > `playEffects`/`stopEffects`와 `playTimeline`/`stopTimeline`은 서로 다른 내부 재생 잡(playJob/monitorJob)이라 서로를 취소하지 않는다 — 동시에 호출하면 두 메커니즘이 FF02에 동시에 쓸 수 있으므로 앱에서 하나만 쓰거나 명시적으로 순서를 맞춰야 한다. 단, `sendEffect()`(그룹 컨트롤 포함)는 예외적으로 둘 다 선점한다 — 진행 중인 `playEffects`는 취소하고, 진행 중인 `playTimeline`은 데이터를 보존한 채 일시정지한다(§2.2 참고).
 

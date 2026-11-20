@@ -17,7 +17,7 @@ import kotlinx.coroutines.sync.withLock
  * - 타임라인 기반 이펙트 재생 (나노초 정확도)
  * - 음악 재생 위치 동기화
  * - Effect 전송 ON/OFF 제어
- * - effectIndex: 타임라인 프레임에 앱이 넣은 값을 그대로 전송 (SDK가 덮어쓰지 않음)
+ * - 타임라인 프레임의 effectIndex(byte 17)/duration(byte 18-19)은 앱이 넣은 값 그대로 전송 (msgType만 EFFECT로 고정)
  * - Seek 자동 감지
  */
 internal class LedControlManager(
@@ -33,11 +33,9 @@ internal class LedControlManager(
         private const val MSG_TYPE_BYTE_POSITION = 0
         const val MSG_TYPE_EFFECT = 0
 
-        // LSEffectPayload byte[17] (protocol v2.1, u8): effectIndex — the firmware uses it to tell
-        // whether consecutive identical effects are the same effect or a new one. Timeline frames
-        // keep the value the app wrote; the SDK never rewrites it.
-        // byte[18-19] (u16 LE) is duration; timeline frames always use 0 (hold until next frame).
-        private const val DURATION_BYTE_POSITION = 18
+        // Timeline frames are sent as the app built them, except msgType (forced to EFFECT).
+        // byte[17] effectIndex — the firmware uses it to tell whether consecutive identical
+        // effects are the same effect or a new one — and byte[18-19] duration are NOT rewritten.
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
     }
 
@@ -202,7 +200,7 @@ internal class LedControlManager(
      *
      * 시작과 동시에:
      * 1. 모든 프레임의 msgType을 MSG_TYPE_EFFECT(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
-     * 2. effectIndex(byte 17)는 프레임에 담긴 값을 그대로 전송 (SDK가 덮어쓰지 않음)
+     * 2. effectIndex(byte 17)와 duration(byte 18-19)은 프레임에 담긴 값을 그대로 전송 (SDK가 덮어쓰지 않음)
      *
      * @param frames 타임라인 엔트리 리스트 (timestampMs, 20B payload)
      */
@@ -319,7 +317,7 @@ internal class LedControlManager(
             lastSentIndex++
 
             try {
-                val frameWithIndex = prepareTimelineFrame(frame)
+                val frameWithIndex = frame
 
                 val ok = sendTimelineFrame(
                     serviceUuid = UuidConstants.LCS_SERVICE,
@@ -397,7 +395,7 @@ internal class LedControlManager(
         val ok = sendTimelineFrame(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = prepareTimelineFrame(frame)
+            data = frame
         )
         if (!ok) {
             Log.w("[LedControlManager] Failed to resync current frame at index $idx")
@@ -455,21 +453,6 @@ internal class LedControlManager(
 
         return frame.copyOf().apply {
             this[MSG_TYPE_BYTE_POSITION] = msgType.toByte()
-        }
-    }
-
-    /**
-     * 타임라인 프레임을 전송용으로 준비합니다 (protocol v2.1):
-     * - byte[17] effectIndex: 앱이 넣은 값을 그대로 둡니다 (연속된 동일 이펙트와 새 이펙트를
-     *   구분하는 펌웨어 판단 요소이므로 SDK가 바꾸지 않음).
-     * - byte[18-19] duration (u16 LE) = 0 → 다음 프레임/명령까지 유지.
-     *   프레임 간격보다 짧은 duration은 프레임 사이에 LED를 꺼버리므로 0으로 고정한다.
-     */
-    private fun prepareTimelineFrame(frame: ByteArray): ByteArray {
-        require(frame.size == 20) { "Frame must be 20 bytes" }
-        return frame.copyOf().apply {
-            this[DURATION_BYTE_POSITION] = 0
-            this[DURATION_BYTE_POSITION + 1] = 0
         }
     }
 
