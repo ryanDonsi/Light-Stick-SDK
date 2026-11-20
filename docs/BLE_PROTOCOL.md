@@ -210,14 +210,14 @@ Android ── Write FF02 (msgType=EFFECT, groupMask=X, ...) [No Response] ─�
 ### 4.4 연속 프레임(타임라인) 재생 시퀀스
 
 ```
-Android ── Write FF02 (frame 0, effectIndex=K) [No Response] ──▶
-        ── Write FF02 (frame 1, effectIndex=K) [No Response] ──▶
+Android ── Write FF02 (frame 0, effectIndex=앱이 지정한 값) [No Response] ──▶
+        ── Write FF02 (frame 1, effectIndex=앱이 지정한 값) [No Response] ──▶
         ── ...                                                 ──▶
-        ── Write FF02 (frame N, effectIndex=K) [No Response] ──▶
+        ── Write FF02 (frame N, effectIndex=앱이 지정한 값) [No Response] ──▶
 ```
 - 모든 프레임은 msgType=EFFECT로 고정 전송된다.
 - 프레임의 `duration`은 0(다음 프레임/명령까지 유지)으로 고정한다.
-- 같은 재생 세션 내 모든 프레임은 동일한 `effectIndex` 값(u8, 0~255 순환)을 사용 — 새 세션(재로드/재개) 시작 시 값이 증가하여 응원봉이 이전 세션 프레임과 새 세션 프레임을 구분(dedup)할 수 있게 한다.
+- 프레임의 `effectIndex`(byte 17)는 앱이 넣은 값을 SDK가 그대로 전송한다. 펌웨어는 이 값으로 연속된 동일 이펙트가 같은 이펙트인지 새 이펙트인지 구분하므로, 이펙트마다 다른 순번(0~255 순환)을 넣어야 한다.
 - 프레임은 coalesce(치환) 대상에서 제외되어 순서와 개수가 보존된다.
 
 ### 4.5 게임 모드 시퀀스

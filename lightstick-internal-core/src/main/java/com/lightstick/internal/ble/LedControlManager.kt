@@ -17,7 +17,7 @@ import kotlinx.coroutines.sync.withLock
  * - 타임라인 기반 이펙트 재생 (나노초 정확도)
  * - 음악 재생 위치 동기화
  * - Effect 전송 ON/OFF 제어
- * - effectIndex 자동 관리 (사용자 투명)
+ * - effectIndex: 타임라인 프레임에 앱이 넣은 값을 그대로 전송 (SDK가 덮어쓰지 않음)
  * - Seek 자동 감지
  */
 internal class LedControlManager(
@@ -33,12 +33,11 @@ internal class LedControlManager(
         private const val MSG_TYPE_BYTE_POSITION = 0
         const val MSG_TYPE_EFFECT = 0
 
-        // LSEffectPayload byte[17] (protocol v2.1, u8): effectIndex — pure dedup/sequence
-        // number, uninvolved in message-type discrimination (that is msgType at byte[0]).
+        // LSEffectPayload byte[17] (protocol v2.1, u8): effectIndex — the firmware uses it to tell
+        // whether consecutive identical effects are the same effect or a new one. Timeline frames
+        // keep the value the app wrote; the SDK never rewrites it.
         // byte[18-19] (u16 LE) is duration; timeline frames always use 0 (hold until next frame).
-        private const val EFFECT_INDEX_BYTE_POSITION = 17
         private const val DURATION_BYTE_POSITION = 18
-        private const val EFFECT_INDEX_MAX = 0xFF
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
     }
 
@@ -56,7 +55,6 @@ internal class LedControlManager(
 
     // =========== Effect 전송 제어 ===========
     @Volatile private var isEffectTransmissionEnabled: Boolean = true
-    @Volatile private var currentEffectIndex: Int = 1
 
     // sendEffectPayload()가 타임라인을 일시정지시키는 동안 기기 LED 상태가 타임라인과
     // 어긋났음을 표시한다. resumeTimeline()이 이 플래그를 보고 재개 시 현재 프레임을
@@ -204,7 +202,7 @@ internal class LedControlManager(
      *
      * 시작과 동시에:
      * 1. 모든 프레임의 msgType을 MSG_TYPE_EFFECT(0)으로 설정 (그룹/게임 msgType과 충돌 방지)
-     * 2. effectIndex가 자동으로 증가 (새로운 재생 세션 시작)
+     * 2. effectIndex(byte 17)는 프레임에 담긴 값을 그대로 전송 (SDK가 덮어쓰지 않음)
      *
      * @param frames 타임라인 엔트리 리스트 (timestampMs, 20B payload)
      */
@@ -229,10 +227,7 @@ internal class LedControlManager(
         isEffectTransmissionEnabled = true
         pendingResyncAfterManualEffect = false
 
-        // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
-        currentEffectIndex = nextEffectIndex(currentEffectIndex)
-
-        Log.d("[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
+        Log.d("[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT")
 
         startMonitor()
     }
@@ -324,7 +319,7 @@ internal class LedControlManager(
             lastSentIndex++
 
             try {
-                val frameWithIndex = insertEffectIndex(frame, currentEffectIndex)
+                val frameWithIndex = prepareTimelineFrame(frame)
 
                 val ok = sendTimelineFrame(
                     serviceUuid = UuidConstants.LCS_SERVICE,
@@ -347,7 +342,7 @@ internal class LedControlManager(
         if (transmittedCount > 0) {
             val rangeStart = lastSentIndex - transmittedCount + 1
             val rangeEnd = lastSentIndex
-            Log.d("[LedControlManager] Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, effectIndex=$currentEffectIndex)")
+            Log.d("[LedControlManager] Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1})")
         }
     }
 
@@ -369,7 +364,7 @@ internal class LedControlManager(
     /**
      * 이펙트 전송을 재개합니다 (playTimeline()으로 시작한 타임라인 전용).
      *
-     * 내부적으로 effectIndex가 자동으로 증가하여 디바이스 재동기화가 처리됩니다.
+     * effectIndex는 프레임에 담긴 값 그대로이며 SDK가 바꾸지 않습니다.
      * 보간 기준 시각을 지금 이 순간으로 다시 맞춰서, 일시정지 동안 흐른 벽시계 시간이
      * 재생 위치에 합산되지 않도록 한다 — [pauseTimeline]/[sendEffectPayload]가 고정해둔
      * 위치에서 정확히 이어서 재개된다.
@@ -384,7 +379,6 @@ internal class LedControlManager(
         if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
         anchorSystemMs = SystemClock.elapsedRealtime()
-        currentEffectIndex = nextEffectIndex(currentEffectIndex)
         isEffectTransmissionEnabled = true
 
         if (pendingResyncAfterManualEffect) {
@@ -403,7 +397,7 @@ internal class LedControlManager(
         val ok = sendTimelineFrame(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,
-            data = insertEffectIndex(frame, currentEffectIndex)
+            data = prepareTimelineFrame(frame)
         )
         if (!ok) {
             Log.w("[LedControlManager] Failed to resync current frame at index $idx")
@@ -464,22 +458,16 @@ internal class LedControlManager(
         }
     }
 
-    /** effectIndex는 u8(0..255)로 순환한다 (BLE protocol v2.1 §2.2). */
-    private fun nextEffectIndex(current: Int): Int = (current + 1) and EFFECT_INDEX_MAX
-
     /**
-     * 타임라인 프레임의 세션 필드를 설정합니다 (protocol v2.1):
-     * - byte[17] effectIndex (u8)
+     * 타임라인 프레임을 전송용으로 준비합니다 (protocol v2.1):
+     * - byte[17] effectIndex: 앱이 넣은 값을 그대로 둡니다 (연속된 동일 이펙트와 새 이펙트를
+     *   구분하는 펌웨어 판단 요소이므로 SDK가 바꾸지 않음).
      * - byte[18-19] duration (u16 LE) = 0 → 다음 프레임/명령까지 유지.
      *   프레임 간격보다 짧은 duration은 프레임 사이에 LED를 꺼버리므로 0으로 고정한다.
-     *   (v2.0으로 저장된 EFX의 18-19 값이 duration으로 오해석되는 것도 방지)
      */
-    private fun insertEffectIndex(frame: ByteArray, effectIndex: Int): ByteArray {
+    private fun prepareTimelineFrame(frame: ByteArray): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }
-        require(effectIndex in 0..EFFECT_INDEX_MAX) { "effectIndex must be 0-255" }
-
         return frame.copyOf().apply {
-            this[EFFECT_INDEX_BYTE_POSITION] = effectIndex.toByte()
             this[DURATION_BYTE_POSITION] = 0
             this[DURATION_BYTE_POSITION + 1] = 0
         }

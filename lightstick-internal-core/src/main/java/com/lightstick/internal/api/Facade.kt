@@ -750,7 +750,7 @@ object Facade {
      * sendEffectTo()에 의한 일시정지 모두 대상 — sendEffectTo() 이후엔 반드시 마지막으로
      * 호출해야 함).
      *
-     * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다. 일시정지 중
+     * effectIndex는 프레임에 담긴 값 그대로 전송됩니다. 일시정지 중
      * sendEffectTo()가 호출되어 기기 LED 상태가 어긋난 경우, 다음 프레임 시점을 기다리지
      * 않고 현재 프레임을 즉시 재전송해 상태를 맞춥니다.
      *

@@ -342,7 +342,7 @@ data class Device(
      * The SDK automatically:
      * - Pins every frame's msgType to EFFECT, so a frame accidentally built as Game/Group
      *   never collides with those message types during playback
-     * - Increments effectIndex for new playback session
+     * - Sends each frame's effectIndex (byte 17) exactly as written by the app
      * - Manages timeline state internally
      *
      * @param frames Timeline entries [(timestampMs, 20B payload), ...]
@@ -426,7 +426,7 @@ data class Device(
      * [pauseTimeline] — or after [sendEffect] paused it, in which case call this once more
      * to resume (see [sendEffect]'s doc). Idempotent: a no-op if transmission is already on.
      *
-     * The SDK automatically increments effectIndex for device resynchronization, and resumes
+     * The SDK does not modify effectIndex (frames keep the app-provided value), and resumes
      * exactly from the position [pauseTimeline] froze — no jump or skipped frames from time
      * spent paused. If the LED was left showing a one-shot [sendEffect] payload from during
      * the pause, this also immediately resends the current timeline frame so the device
