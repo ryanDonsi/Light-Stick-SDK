@@ -6,10 +6,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- Android 11 and below (minSdk 26): legacy Bluetooth + location (required for BLE scan) -->
+    <!-- Android 11 and below (minSdk 26): legacy Bluetooth permissions for GATT connect/bond.
+         Location is intentionally NOT declared here: connecting by MAC does not need it.
+         An app that calls startScan() on Android 11 and below must declare
+         ACCESS_FINE_LOCATION itself (OS requirement for BLE scan results). -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
 
     <application />
 </manifest>
