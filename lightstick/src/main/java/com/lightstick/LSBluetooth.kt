@@ -143,7 +143,7 @@ object LSBluetooth {
      * until this much time has passed since the previous one completed.
      *
      * Applies immediately to devices that are already connected and is the default for devices
-     * connected afterwards. Default: 20 ms. `0` sends back-to-back (the BLE stack's own pacing
+     * connected afterwards. Default: 50 ms. `0` sends back-to-back (the BLE stack's own pacing
      * still applies). Use [com.lightstick.device.Device.setMinCommandInterval] to override one
      * device only.
      *

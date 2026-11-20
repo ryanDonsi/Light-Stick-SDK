@@ -14,7 +14,7 @@ internal data class CmdQueueConfig(
 ) {
     companion object {
         /** SDK default minimum interval between GATT commands (ms). */
-        const val DEFAULT_MIN_INTERVAL_MS = 20L
+        const val DEFAULT_MIN_INTERVAL_MS = 50L
 
         /** Largest interval accepted by the public setters (ms). */
         const val MAX_MIN_INTERVAL_MS = 1000L

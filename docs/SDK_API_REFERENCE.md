@@ -36,7 +36,7 @@
 |---|---|
 | `initialize(context, deviceFilter: DeviceFilter? = null, allowUnknownDevices: Boolean = false)` | SDK 초기화. 앱 시작 시 1회 (여러 번 호출해도 최초 1회만 적용). 내부적으로 시스템 레벨에 이미 연결된 기기 세션 복원도 시도한다. |
 | `setDebugLoggingEnabled(enabled: Boolean)` | 패킷 TX/RX, 연결/서비스디스커버리/OTA 진단 로그를 `Lightstick` 태그로 ON/OFF. 기본값 `false`. 언제든 호출 가능. |
-| `setMinCommandInterval(intervalMs: Long)` / `getMinCommandInterval(): Long` | 기기별 GATT 명령 큐의 최소 간격(ms, 0~1000, 기본 20). 연결 중인 기기에 즉시 적용되고 이후 연결의 기본값이 됨. 큐는 기기당 최대 64개이며 넘치면 오래된 명령부터 버려짐 |
+| `setMinCommandInterval(intervalMs: Long)` / `getMinCommandInterval(): Long` | 기기별 GATT 명령 큐의 최소 간격(ms, 0~1000, 기본 50). 연결 중인 기기에 즉시 적용되고 이후 연결의 기본값이 됨. 큐는 기기당 최대 64개이며 넘치면 오래된 명령부터 버려짐 |
 
 ### 1.2 스캔
 
