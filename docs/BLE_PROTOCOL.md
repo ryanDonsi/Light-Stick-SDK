@@ -245,10 +245,10 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 #### 2.7.4 SDK 동작과 한계
 
 - **API**: `Device.sendControl(cmd, groupMask)` 및 `showEnter/showExit/pauseShow/resumeShow/systemOff`. 호출마다 SDK가 effectIndex(1..255 순환)를 자동 증가시킨다. 존재 확인은 `supportsControl()`(FF0A 유무).
-- **타임라인 pause/resume 연동**: `Device.pauseTimeline()`은 SDK 전송 정지와 함께 FF0A가 있는 기기에 Control `PAUSE`(groupMask=0)를 보내고, `Device.resumeTimeline()`은 재전송할 프레임이 없어도 항상 `RESUME`(groupMask=0)을 먼저 보낸 뒤 필요하면 현재 프레임을 재전송한다. FF0A가 없는 기기는 v2.1과 동일하게 SDK 전송 정지/재개만 한다. 대상은 연결된 기기 하나가 아니라 중계기/Master를 통해 도달하는 **모든 응원봉**이다.
+- **타임라인 pause/resume 연동**: `Device.pauseTimeline()`은 SDK 전송 정지와 함께 Control `PAUSE`(groupMask=0)를 보내고, `Device.resumeTimeline()`은 재전송할 프레임이 없어도 항상 `RESUME`(groupMask=0)을 먼저 보낸 뒤 필요하면 현재 프레임을 재전송한다. 타임라인 pause/resume은 **groupMask=0(모든 응원봉) 고정**이며 그룹 대상은 지정할 수 없다 — 그룹 단위 제어가 필요하면 `pauseShow(groupMask)`/`resumeShow(groupMask)`를 쓰고 프레임 전송은 앱이 관리한다. 대상은 연결된 기기 하나가 아니라 중계기/Master를 통해 도달하는 **모든 응원봉**이다. BLE 모드에서 FF09=0이어도 Control은 규격상 항상 전파되므로(§2.6) 주변 응원봉이 함께 일시정지될 수 있다 — 개인 알림용 이벤트는 `pauseTimeline` 대신 `sendEffect`를 쓴다(`sendEffect`는 Control 없이 SDK 쪽에서 타임라인을 멈춘다).
 - **RESUME 재전송**: ACK가 없으므로 `resumeTimeline()`은 RESUME을 총 3회(즉시 1회 + 100ms 간격 2회, 매번 새 effectIndex) 보낸다(SDK 내부 값, 비공개). 응원봉은 일시정지 중일 때만 반응하므로(멱등) 이미 재시작한 응원봉은 영향이 없다. 놓친 응원봉은 최대 약 200ms 늦게 재시작한다. 대기 중인 재전송은 `pauseTimeline`/`sendEffect`/`stopTimeline`/연결 해제 시 취소된다. `Device.resumeShow()`/`sendControl()`로 직접 보내는 Control은 재전송하지 않는다.
 - **호출 순서**: 응원봉이 PAUSE 중일 때 새 Effect/타임라인 프레임이 도착하면 일시정지가 해제된다. 일시정지 중에는 프레임을 보내지 말고, 일시정지 중 `sendEffect`를 보낸 경우 `resumeTimeline()`을 마지막에 호출한다(이 경우 RESUME은 응원봉이 무시하고 프레임이 재전송된다). RESUME은 효과를 **처음부터** 재시작하므로 타임라인 위치와 응원봉 애니메이션 위상은 다를 수 있다.
-- **버전 한계**: `sendControl`은 연결 여부와 FF0A 존재만 확인하며 펌웨어 버전은 확인하지 않는다. 앱이 아는 것은 연결된 기기 하나의 버전이다. v2.2 중계기 뒤의 응원봉이 v2.1이면 SDK는 이를 알 수 없고, 해당 응원봉은 control 프레임을 Effect로 읽어 **소등**한다(SYSTEM_OFF도 전원이 꺼지지 않고 소등만 됨). 모든 중계기/응원봉을 2.200 이상으로 갱신한 뒤에만 control을 사용한다(§6.4, `Device.supportsProtocol(2, 2)`는 연결된 기기만 판단).
+- **전제**: 모든 중계기와 응원봉의 펌웨어가 **2.200 이상**이어야 한다(하위 버전은 지원하지 않는다). SDK는 연결 여부와 FF0A 존재만 확인하며 펌웨어 버전은 확인하지 않는다. FF0A가 없으면 쓰기가 실패한다(로그, `sendControl`은 `false`).
 - ACK/상태 통지는 v2.2 범위에 없다.
 
 ---
@@ -456,7 +456,7 @@ Android                                              응원봉
 - **msgType의 위상**: FF02/FF03/FF04/FF0A 모든 캐릭터리스틱이 offset 0에 `msgType`을 두는 동일한 설계 원칙을 따르되, FF02는 레이아웃 A(EFFECT/GROUP_SETUP 공용), FF03/FF04는 레이아웃 B(GAME_MODE 전용), FF0A는 레이아웃 C(CONTROL 전용)를 사용한다 — A와 C는 groupMask(offset 1-4)를, B와 C는 cmdIndex 이름을 공유한다(§2.7.2).
 - **effectIndex의 위상**: 모든 20바이트 프레임(레이아웃 A/B/C, FF04) 공통으로 offset 17, u8에 위치하며(v2.1, v2.0은 u16 offset 18-19), 순수 dedup/시퀀스 용도일 뿐 메시지 종류 판별에는 관여하지 않는다. offset 18-19는 레이아웃 A에서 duration(u16), 레이아웃 B/FF04에서는 예약이다.
 - **v2.0 → v2.1 호환성**: 구조체 크기(20바이트)는 같지만 offset 17 이후 의미가 바뀌었다 — 앱/응원봉/중계기를 함께 갱신해야 한다.
-- **v2.1 → v2.2 호환성**: 레이아웃 A/B의 필드 배치는 그대로이고 msgType=3이 추가된다. 다만 **v2.1 응원봉은 msgType=3을 모르고 EFFECT로 해석**한다 — control 프레임을 받으면 groupMask를 그대로 읽고 offset 11의 effectType(예약 0)을 OFF로 해석해 **대상이 맞으면 소등**한다. SYSTEM_OFF도 v2.1 응원봉에서는 소등만 된다. 따라서 control(FF0A)은 응원봉과 중계기를 모두 v2.2로 갱신한 뒤에만 사용한다.
+- **v2.1 → v2.2**: 레이아웃 A/B의 필드 배치는 그대로이고 msgType=3이 추가된다. **하위 버전 호환은 지원하지 않는다** — 모든 중계기/응원봉/앱을 v2.2(펌웨어 2.200 이상)로 맞춘다. (참고: v2.1 응원봉은 msgType=3을 EFFECT로 읽어 소등한다.)
 
 ---
 
@@ -465,6 +465,6 @@ Android                                              응원봉
 응원봉/중계기 **펌웨어 버전은 프로토콜 버전과 일치**시킨다. 형식은 `<프로토콜 메이저>.<프로토콜 마이너><빌드>` — 프로토콜 V2.2의 펌웨어는 `2.200`에서 시작하고 수정 빌드마다 1씩 올린다(`2.201`, `2.202`, ...). 프로토콜이 올라가면 새 `.x00`부터 다시 시작한다(V2.3 → `2.300`). v2.2 이전 체계는 `1.0.x`이다.
 
 - DIS Firmware Revision(0x2A26)에 펌웨어 버전 문자열이 그대로 노출된다(응원봉/중계기 공통).
-- 앱은 **펌웨어 버전 ≥ `<프로토콜 버전>.x00`** 으로 지원 여부를 판단한다(예: Control(FF0A)은 `2.200` 이상). 비교는 문자열이 아니라 **메이저 → (마이너+빌드) 숫자 순서**로 한다(`2.200 < 2.201 < 2.300`, `1.0.7`은 `2.200`보다 낮음).
-- SDK: `FirmwareVersion.parse()`, `DeviceInfo.supportsProtocol(2, 2)`, `Device.supportsProtocol(2, 2) { ... }`.
+- 앱은 **펌웨어 버전 ≥ `<프로토콜 버전>.x00`** 으로 지원 여부를 판단할 수 있다(예: Control(FF0A)은 `2.200` 이상). 비교는 문자열이 아니라 **메이저 → (마이너+빌드) 숫자 순서**로 한다(`2.200 < 2.201 < 2.300`, `1.0.7`은 `2.200`보다 낮음).
+- SDK: `FirmwareVersion.parse()`(숫자 비교, `FirmwareVersion.PROTOCOL_2_2` 상수)와 `DeviceInfo.firmwareVersion`. 이전 체계(`1.0.x`)는 파싱하지 않는다(`null`).
 - **SDK 버전 표기**: SDK 아티팩트 버전(`2.200.0`)은 프로토콜 부분(2.2xx)을 펌웨어 버전과 맞춘다. 단, 앱이 알 수 있는 펌웨어 버전은 **연결된 기기 하나**뿐이다.

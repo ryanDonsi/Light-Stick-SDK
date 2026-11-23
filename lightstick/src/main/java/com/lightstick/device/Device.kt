@@ -421,10 +421,12 @@ data class Device(
      *
      * **Control interlock (v2.2):** if the connected device exposes FF0A ([supportsControl]),
      * this also broadcasts a Control `PAUSE` (`groupMask = 0`, i.e. every wand), so the wand(s)
-     * freeze on the current color instead of just continuing to show the last frame. Devices
-     * without FF0A (firmware < 2.200) only get the SDK-side transmission stop, as in v2.1.
-     * Note the target is *all* wands reachable through the relay/master — not only this device —
-     * and a Control frame is not acknowledged.
+     * freeze on the current color instead of just continuing to show the last frame. The target
+     * is fixed to *all* wands reachable through the relay/master — not only this device, and
+     * not selectable by group (use [pauseShow] for that) — and a Control frame is not
+     * acknowledged. Do not call this for transient notification effects: [sendEffect] already
+     * suspends the timeline on the SDK side without any Control broadcast. If FF0A is missing
+     * the Control write fails (logged) and only the SDK-side pause happens.
      *
      * Do not send timeline frames or other effects while paused: any new Effect on the wand
      * releases the Control pause (last command wins).
@@ -702,27 +704,12 @@ data class Device(
 
     /**
      * Returns `true` if this device exposes the FF0A Control characteristic (relay or BLE-mode
-     * master wand running firmware >= 2.200). Guard every [sendControl] with this — a v2.1 wand
-     * does not know msgType=3 and would treat a control frame as an Effect (it turns the LED off).
+     * master wand; all relays and wands are expected to run firmware >= 2.200).
      *
      * @since 2.200.0
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun supportsControl(): Boolean = Facade.supportsControl(mac)
-
-    /**
-     * Reads the Firmware Revision (DIS 2A26) and reports whether it implements protocol
-     * [major].[minor] (`>= major.minor00`, numeric comparison — see [FirmwareVersion]).
-     * Example: `device.supportsProtocol(2, 2) { ok -> ... }` for Control support.
-     * The callback receives `false` if the read fails or the string cannot be parsed.
-     *
-     * @since 2.200.0
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun supportsProtocol(major: Int, minor: Int, onResult: (Boolean) -> Unit): Boolean =
-        readFirmwareRevision { r ->
-            onResult(r.getOrNull()?.let { FirmwareVersion.parse(it)?.supportsProtocol(major, minor) } ?: false)
-        }
 
     /**
      * Sends a show-control command (FF0A, Write With Response). With a relay connected it is
@@ -732,12 +719,9 @@ data class Device(
      * The frame's effectIndex is advanced automatically on every call, so resending the same
      * command is not discarded as a duplicate; commands are idempotent on the wand side.
      *
-     * **Version limits.** This only checks the connection and that FF0A exists — it does *not*
-     * check firmware versions. The app only knows the connected device's version: with a v2.2
-     * relay in front of v2.1 wands there is no way to detect the wands' version, and a v2.1
-     * wand reads a control frame as an Effect with `effectType = OFF` (it turns the LED off;
-     * `SYSTEM_OFF` only turns it off, it does not power down). Send Control only after every
-     * relay and wand is updated to firmware >= 2.200 (see [supportsProtocol]).
+     * **Prerequisite.** Every relay and wand must run firmware >= 2.200 (older wands would read
+     * the frame as an Effect). The SDK only checks the connection and that FF0A exists, not
+     * firmware versions.
      *
      * @param cmd Control command. **[ControlCmd.SYSTEM_OFF] cannot be undone remotely — the app
      *        must obtain user confirmation (UI) before calling; the SDK does not ask.**

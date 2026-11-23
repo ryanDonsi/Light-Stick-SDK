@@ -77,27 +77,23 @@ class ControlProtocolTest {
 
     @Test fun firmwareVersionOrdering() {
         val v = { s: String -> FirmwareVersion.parse(s)!! }
-        assertTrue(v("1.0.7") < v("2.200"))
         assertTrue(v("2.200") < v("2.201"))
-        assertTrue(v("2.201") < v("2.300"))
+        assertTrue(v("2.201") < v("2.202"))
+        assertTrue(v("2.202") < v("2.300"))
         assertTrue(v("2.999") < v("3.000"))
-    }
-
-    @Test fun protocolSupport() {
-        assertTrue(FirmwareVersion.parse("2.200")!!.supportsProtocol(2, 2))
-        assertTrue(FirmwareVersion.parse("2.203")!!.supportsProtocol(2, 2))
-        assertTrue(FirmwareVersion.parse("2.300")!!.supportsProtocol(2, 2))
-        assertFalse(FirmwareVersion.parse("2.150")!!.supportsProtocol(2, 2))
-        assertFalse(FirmwareVersion.parse("1.0.7")!!.supportsProtocol(2, 2))
-        assertTrue(FirmwareVersion.PROTOCOL_2_2.supportsProtocol(2, 2))
+        assertTrue(v("2.201") >= FirmwareVersion.PROTOCOL_2_2)
+        assertFalse(v("2.150") >= FirmwareVersion.PROTOCOL_2_2)
     }
 
     @Test fun firmwareParsing() {
         assertEquals(FirmwareVersion(2, 201), FirmwareVersion.parse(" 2.201\u0000"))
-        assertEquals(FirmwareVersion(1, 0), FirmwareVersion.parse("v1.0.7"))
+        assertEquals(FirmwareVersion(2, 200), FirmwareVersion.parse("v2.200"))
+        assertEquals(FirmwareVersion(2, 200), FirmwareVersion.parse("2.2"))      // right-padded
+        assertNull(FirmwareVersion.parse("1.0.7"))                               // legacy scheme unsupported
         assertNull(FirmwareVersion.parse("unknown"))
+        assertNull(FirmwareVersion.parse("2.2000"))
         assertNull(FirmwareVersion.parse(null))
         assertEquals("2.200", FirmwareVersion(2, 200).toString())
-        assertEquals(2, FirmwareVersion(2, 201).protocolMinor)
+        assertEquals("2.201", FirmwareVersion(2, 201).toString())
     }
 }

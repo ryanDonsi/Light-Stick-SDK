@@ -40,10 +40,6 @@ data class DeviceInfo(
     val isConnected: Boolean = false,
     val lastUpdated: Long = System.currentTimeMillis()
 ) {
-    /** [firmwareRevision] parsed per BLE protocol v2.2 §6, or `null` if absent/unparseable. */
+    /** [firmwareRevision] parsed per BLE protocol v2.2 §6 (numeric-comparable), or `null` if absent/unparseable. */
     val firmwareVersion: FirmwareVersion? get() = FirmwareVersion.parse(firmwareRevision)
-
-    /** True if the firmware is known to implement protocol [major].[minor] (`>= major.minor00`). */
-    fun supportsProtocol(major: Int, minor: Int): Boolean =
-        firmwareVersion?.supportsProtocol(major, minor) ?: false
 }

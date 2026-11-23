@@ -375,7 +375,7 @@ internal class LedControlManager(
         isEffectTransmissionEnabled = false
         // 대기 중인 RESUME 재전송이 새 일시정지를 풀지 않도록 먼저 취소한다.
         resumeSender.cancelPending()
-        // v2.2: 응원봉도 현재 색에서 얼린다 (FF0A PAUSE, groupMask=0). FF0A가 없는 기기는 건너뜀.
+        // v2.2: 응원봉도 현재 색에서 얼린다 (FF0A PAUSE, groupMask=0).
         sendShowControl(ControlFrame.CMD_PAUSE)
     }
 
@@ -413,12 +413,11 @@ internal class LedControlManager(
     }
 
     /**
-     * FF0A Control(PAUSE/RESUME, groupMask=0)을 보낸다. FF0A가 없는 기기(v2.1 이하 등)에는
-     * 아무것도 보내지 않는다 — 이 경우 기존(v2.1) 동작과 동일하게 SDK 전송 정지만 일어난다.
+     * FF0A Control(PAUSE/RESUME, groupMask=0)을 보낸다. 모든 기기가 펌웨어 2.200 이상(FF0A 보유)이라는
+     * 전제이며, FF0A가 없으면 쓰기가 실패해 경고 로그만 남기고 SDK 전송 정지만 일어난다.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun sendShowControl(cmdIndex: Int, repeated: Boolean = false) {
-        if (!control.isControlSupported()) return
         val ok = if (repeated) resumeSender.sendRepeated(cmdIndex, 0L) else control.send(cmdIndex, 0L)
         if (!ok) {
             Log.w("[LedControlManager] FF0A control cmdIndex=$cmdIndex write failed")
