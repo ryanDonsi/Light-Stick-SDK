@@ -25,6 +25,18 @@ class ControlProtocolTest {
         assertEquals(MsgType.CONTROL, MsgType.fromCode(3))
     }
 
+    @Test fun unknownMsgTypeIsIgnoredNotEffect() {
+        assertNull(MsgType.fromCode(99))
+        assertNull(MsgType.fromCode(4))
+        val f = ByteArray(20).also { it[0] = 99 }
+        assertThrows(IllegalArgumentException::class.java) { LSEffectPayload.fromByteArray(f) }
+    }
+
+    @Test fun pauseResumeCodesMatchFrameConstants() {
+        assertEquals(ControlCmd.PAUSE.cmdIndex, ControlFrame.CMD_PAUSE)
+        assertEquals(ControlCmd.RESUME.cmdIndex, ControlFrame.CMD_RESUME)
+    }
+
     @Test fun showEnterFrameLayout() {
         val f = ControlFrame.build(ControlCmd.SHOW_ENTER.cmdIndex, 0L, 7)
         assertEquals(20, f.size)

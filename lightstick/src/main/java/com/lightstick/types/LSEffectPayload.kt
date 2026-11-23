@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Structured LightStick Effect payload (protocol v2.1, `LE_LED_PATLOAD_T`) that encodes to an
+ * Structured LightStick Effect payload (protocol v2.1/v2.2, `LE_LED_PATLOAD_T`, layout A) that encodes to an
  * exact **20-byte** frame written to FF02.
  *
  * Byte layout (indices in brackets, little-endian for multi-byte fields). Shared by
@@ -27,6 +27,11 @@ import java.nio.ByteOrder
  *  [18..19] duration       (u16)  – Effect duration, 1 = 10 ms (max 65,535 ≈ 655 s). The wand
  *                                   turns its LED off after `duration x 10 ms`; 0 = hold until
  *                                   the next command arrives (v2.0 behaviour).
+ *
+ * Dedup rule: a wand drops a frame identical to the previous 20 bytes, so change [effectIndex] on
+ * every re-send of the same effect (also after `duration` expiry, also for group-targeted
+ * effects). The SDK does not do this for `Device.sendEffect`. Non-zero [duration] should be 10
+ * (=100 ms) or more; 1..9 are not corrected by the firmware.
  *
  * The v2.0 `broadcasting` field no longer exists: payloads are always broadcast. Whether a
  * BLE-mode master wand relays an effect to nearby wands is a per-connection setting on the
@@ -402,7 +407,8 @@ data class LSEffectPayload(
          * @return A deserialized [LSEffectPayload] instance.
          * @throws IllegalArgumentException If [bytes] length is not exactly 20, or if byte[0]
          *         (msgType) is [MsgType.GAME_MODE] — Game Mode frames use a different field
-         *         layout (see [MsgType]) and are not valid [LSEffectPayload] frames.
+         *         layout (see [MsgType]) and are not valid [LSEffectPayload] frames. An unknown
+         *         msgType is rejected too (protocol v2.2: it is ignored, never read as Effect).
          *
          * @sample com.lightstick.samples.EfxSamples.sampleDecodePayload
          */
@@ -415,7 +421,11 @@ data class LSEffectPayload(
             fun u8(): Int = bb.get().toInt() and 0xFF
             fun u32(): Long = bb.int.toLong() and 0xFFFFFFFFL
 
-            val msgType = MsgType.fromCode(u8())
+            val rawMsgType = u8()
+            val msgType = MsgType.fromCode(rawMsgType)
+                ?: throw IllegalArgumentException(
+                    "unknown msgType=$rawMsgType — frame ignored (protocol v2.2: unknown msgType is not an Effect)"
+                )
             require(msgType != MsgType.CONTROL) {
                 "bytes is a Control payload (msgType=CONTROL, layout C), not an LSEffectPayload frame"
             }

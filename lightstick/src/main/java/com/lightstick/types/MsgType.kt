@@ -1,13 +1,14 @@
 package com.lightstick.types
 
 /**
- * Message type carried in byte offset 0 of the 20-byte [LSEffectPayload] frame (protocol v2.0,
+ * Message type carried in byte offset 0 of every 20-byte frame (protocol v2.0, extended in v2.2;
  * "msgType 단일 판별자 + groupMask" — supersedes the earlier `GROUP_CONTROL` msgType).
  *
  * This is the **single, sole discriminator** for the whole frame — every message (single/group
  * effect control, GameMode, GroupSetup) shares one 20-byte layout that starts with this byte
  * and carries an 8-bit `effectIndex` at offset 17 (pure dedup/sequence number, uninvolved
  * in message-type discrimination; protocol v2.1). Layout A also ends with a `duration` u16.
+ * Layout C ([CONTROL], v2.2) is used on FF0A only.
  *
  * There is no longer a separate "GroupControl" msgType: targeting one group, an arbitrary
  * combination of groups, or every connected lightstick is now expressed by [EFFECT] plus the
@@ -45,10 +46,13 @@ enum class MsgType(val code: Int) {
         /**
          * Resolves a [MsgType] by its wire [code].
          *
-         * @return The corresponding [MsgType], or [EFFECT] if unknown.
+         * Unknown codes are **not** mapped to [EFFECT]: per protocol v2.2 a wand ignores a frame
+         * whose msgType it does not know, so callers must ignore it too.
+         *
+         * @return The corresponding [MsgType], or `null` if [code] is unknown (ignore the frame).
          */
         @JvmStatic
-        fun fromCode(code: Int): MsgType =
-            entries.firstOrNull { it.code == code } ?: EFFECT
+        fun fromCode(code: Int): MsgType? =
+            entries.firstOrNull { it.code == code }
     }
 }

@@ -254,6 +254,23 @@ data class Device(
      * Calling this while no timeline is loaded has no effect on timeline state. Use
      * [isTimelineLoaded] beforehand if you need to know which case you're in.
      *
+     * **effectIndex is NOT managed here** (the app's responsibility). Relays, BLE masters and
+     * slave wands drop a frame whose 20 bytes are identical to the previous one, so to send the
+     * same effect again — including re-lighting it after its `duration` expired — change
+     * [LSEffectPayload.effectIndex] (0..255, wrapping) on every send. This SDK sends the payload
+     * exactly as given and does not auto-increment it (only timeline playback manages its own
+     * effectIndex). The same rule applies to group-targeted effects (`groupMask != 0`): with a
+     * changed effectIndex the wand treats identical content as a new command.
+     *
+     * **duration** is also sent as given: a non-zero value turns the wand's LED off after
+     * `duration x 10 ms` (use 10 or more; 1..9 expire imprecisely, and the firmware does not
+     * correct them), and it applies to group-targeted effects too. A Control `PAUSE` (see
+     * [sendControl]) stops that timer and `RESUME` restarts it from the full duration. Timeline
+     * playback, in contrast, always forces `duration = 0` on its frames.
+     *
+     * If the wand is frozen by a Control `PAUSE`, a new effect sent here releases the pause and
+     * plays immediately (last command wins).
+     *
      * @param payload 20-byte structured effect payload.
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected or an error prevented enqueuing.
@@ -402,6 +419,16 @@ data class Device(
      * it does not keep advancing with wall-clock time while paused, no matter how long the
      * pause lasts. [resumeTimeline] picks up from exactly that frozen position.
      *
+     * **Control interlock (v2.2):** if the connected device exposes FF0A ([supportsControl]),
+     * this also broadcasts a Control `PAUSE` (`groupMask = 0`, i.e. every wand), so the wand(s)
+     * freeze on the current color instead of just continuing to show the last frame. Devices
+     * without FF0A (firmware < 2.200) only get the SDK-side transmission stop, as in v2.1.
+     * Note the target is *all* wands reachable through the relay/master — not only this device —
+     * and a Control frame is not acknowledged.
+     *
+     * Do not send timeline frames or other effects while paused: any new Effect on the wand
+     * releases the Control pause (last command wins).
+     *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
      *
@@ -432,6 +459,14 @@ data class Device(
      * spent paused. If the LED was left showing a one-shot [sendEffect] payload from during
      * the pause, this also immediately resends the current timeline frame so the device
      * doesn't wait for the next frame boundary to show the right thing again.
+     *
+     * **Control interlock (v2.2):** on a device that exposes FF0A ([supportsControl]), a Control
+     * `RESUME` (`groupMask = 0`) is **always** sent first — even when there is no frame to resend
+     * (timeline empty, or before the first frame). The wand restarts its last effect **from the
+     * beginning** (not from where it froze), so its animation phase can differ from the
+     * timeline position; a wand that is not paused ignores `RESUME`, e.g. when a `sendEffect`
+     * during the pause already released it. The optional frame resend described above follows
+     * the `RESUME`.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -693,8 +728,15 @@ data class Device(
      * The frame's effectIndex is advanced automatically on every call, so resending the same
      * command is not discarded as a duplicate; commands are idempotent on the wand side.
      *
+     * **Version limits.** This only checks the connection and that FF0A exists — it does *not*
+     * check firmware versions. The app only knows the connected device's version: with a v2.2
+     * relay in front of v2.1 wands there is no way to detect the wands' version, and a v2.1
+     * wand reads a control frame as an Effect with `effectType = OFF` (it turns the LED off;
+     * `SYSTEM_OFF` only turns it off, it does not power down). Send Control only after every
+     * relay and wand is updated to firmware >= 2.200 (see [supportsProtocol]).
+     *
      * @param cmd Control command. **[ControlCmd.SYSTEM_OFF] cannot be undone remotely — the app
-     *        must obtain user confirmation before calling.**
+     *        must obtain user confirmation (UI) before calling; the SDK does not ask.**
      * @param groupMask Target: [Group.ALL_SINGLE] (0, default) = every wand, [Group.ALL_GROUPS] =
      *        every wand that has a group, or `GRPn` bits OR'd together. Ungrouped wands ignore
      *        a non-zero mask. SHOW_ENTER / SHOW_EXIT should use 0.

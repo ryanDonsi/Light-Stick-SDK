@@ -21,7 +21,8 @@ import kotlinx.coroutines.sync.withLock
  * - Seek 자동 감지
  */
 internal class LedControlManager(
-    private val gattClient: GattClient
+    private val gattClient: GattClient,
+    private val control: ControlManager
 ) : AutoCloseable {
 
     companion object {
@@ -359,11 +360,14 @@ internal class LedControlManager(
      * 이어집니다(스킵되는 프레임 없음).
      */
     @MainThread
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun pauseTimeline() {
         if (!isEffectTransmissionEnabled) return
         anchorPositionMs = interpolatedPositionMs()
         anchorSystemMs = SystemClock.elapsedRealtime()
         isEffectTransmissionEnabled = false
+        // v2.2: 응원봉도 현재 색에서 얼린다 (FF0A PAUSE, groupMask=0). FF0A가 없는 기기는 건너뜀.
+        sendShowControl(ControlFrame.CMD_PAUSE)
     }
 
     /**
@@ -381,8 +385,14 @@ internal class LedControlManager(
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun resumeTimeline() {
-        if (timeline.isEmpty()) return
         if (isEffectTransmissionEnabled) return
+
+        // v2.2: 재전송할 프레임이 없어도 RESUME은 항상 전달한다(응원봉이 얼어붙은 채 남지 않도록).
+        // 응원봉은 일시정지 중일 때만 반응하므로(멱등) 일시정지 중 sendEffect로 이미 해제된
+        // 경우에는 무시된다. 아래 재전송 프레임보다 먼저 보낸다.
+        sendShowControl(ControlFrame.CMD_RESUME)
+
+        if (timeline.isEmpty()) return
         anchorSystemMs = SystemClock.elapsedRealtime()
         currentEffectIndex = nextEffectIndex(currentEffectIndex)
         isEffectTransmissionEnabled = true
@@ -390,6 +400,18 @@ internal class LedControlManager(
         if (pendingResyncAfterManualEffect) {
             pendingResyncAfterManualEffect = false
             resendCurrentFrame()
+        }
+    }
+
+    /**
+     * FF0A Control(PAUSE/RESUME, groupMask=0)을 보낸다. FF0A가 없는 기기(v2.1 이하 등)에는
+     * 아무것도 보내지 않는다 — 이 경우 기존(v2.1) 동작과 동일하게 SDK 전송 정지만 일어난다.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun sendShowControl(cmdIndex: Int) {
+        if (!control.isControlSupported()) return
+        if (!control.send(cmdIndex, 0L)) {
+            Log.w("[LedControlManager] FF0A control cmdIndex=$cmdIndex write failed")
         }
     }
 
@@ -453,7 +475,7 @@ internal class LedControlManager(
     // ============================================================================================
 
     /**
-     * LSEffectPayload의 byte[0](msgType, protocol v3)을 설정합니다.
+     * LSEffectPayload의 byte[0](msgType, protocol v2.x)을 설정합니다.
      */
     private fun setMsgType(frame: ByteArray, msgType: Int): ByteArray {
         require(frame.size == 20) { "Frame must be 20 bytes" }

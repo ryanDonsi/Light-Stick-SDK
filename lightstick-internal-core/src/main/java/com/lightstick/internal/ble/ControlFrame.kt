@@ -4,6 +4,10 @@ package com.lightstick.internal.ble
 object ControlFrame {
     const val MSG_TYPE_CONTROL = 3
     const val FRAME_SIZE = 20
+
+    // cmdIndex codes (§2.6.3) — mirrored by the public ControlCmd enum.
+    const val CMD_PAUSE = 3
+    const val CMD_RESUME = 4
     private const val EFFECT_INDEX_MAX = 0xFF
 
     /** Builds a 20-byte layout-C frame: msgType@0, groupMask@1-4 (u32 LE), cmdIndex@5, effectIndex@17. */

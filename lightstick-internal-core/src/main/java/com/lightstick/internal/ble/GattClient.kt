@@ -461,7 +461,7 @@ internal class GattClient(private val context: Context) : AutoCloseable {
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 // 본딩된 기기는 안드로이드가 GATT 서비스 목록을 캐시한다. 펌웨어 업데이트로
-                // FF09 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5)
+                // FF09/FF0A 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5, v2.2 §2.6)
                 // 서비스 재탐색 전에 캐시를 비운다.
                 if (gatt.device.bondState == BluetoothDevice.BOND_BONDED) refreshGattCache(gatt)
                 Log.d("[GattClient] 서비스 디스커버리 시작: $address")

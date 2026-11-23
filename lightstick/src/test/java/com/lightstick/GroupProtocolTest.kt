@@ -66,7 +66,7 @@ class GroupProtocolTest {
     @Test
     fun testMsgTypeFromCode() {
         assertEquals(MsgType.GROUP_SETUP, MsgType.fromCode(2))
-        assertEquals(MsgType.EFFECT, MsgType.fromCode(99)) // unknown -> EFFECT
+        assertNull(MsgType.fromCode(99)) // unknown -> ignored (protocol v2.2), not EFFECT
     }
 
     // ===========================================================================================
