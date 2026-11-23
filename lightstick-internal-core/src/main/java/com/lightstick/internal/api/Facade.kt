@@ -125,7 +125,8 @@ object Facade {
         val deviceInfo: DeviceInfoManager,
         val ota: OtaManager?,
         val game: GameManager,
-        val group: GroupControlManager
+        val group: GroupControlManager,
+        val control: ControlManager
     ) {
         fun cleanup() {
             runCatching { ota?.abort() }
@@ -314,7 +315,8 @@ object Facade {
                 val deviceInfo = DeviceInfoManager(gatt)
                 val game = GameManager(gatt)
                 val group = GroupControlManager(gatt)
-                sessions[mac] = Session(gatt, led, deviceInfo, null, game, group)
+                val control = ControlManager(gatt)
+                sessions[mac] = Session(gatt, led, deviceInfo, null, game, group, control)
                 disReadyMap[mac] = CompletableDeferred()
 
                 deviceStateManager.updateConnectionState(
@@ -889,6 +891,29 @@ object Facade {
         requireInit()
         if (!isConnected(mac)) return false
         return requireSession(mac).game.sendTeamAssignEnd(teamId)
+    }
+
+    // ============================================================================================
+    // Control (FF0A, BLE protocol v2.2 §2.6)
+    // ============================================================================================
+
+    /** Returns true if [mac] exposes FF0A Control (relay / BLE-mode master wand, firmware >= 2.200). */
+    fun supportsControl(mac: String): Boolean {
+        requireInit()
+        return sessions[mac]?.control?.isControlSupported() ?: false
+    }
+
+    /**
+     * Sends a Control frame (msgType=3) to FF0A. [cmdIndex] is the raw protocol code; effectIndex
+     * is advanced automatically per call. Returns false if not connected or FF0A is absent.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendControl(mac: String, cmdIndex: Int, groupMask: Long): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        val control = requireSession(mac).control
+        if (!control.isControlSupported()) return false
+        return control.send(cmdIndex, groupMask)
     }
 
     // ============================================================================================

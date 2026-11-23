@@ -5,6 +5,7 @@ import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.device.DeviceInfo
+import com.lightstick.control.ControlCmd
 import com.lightstick.game.GameCmd
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
@@ -655,6 +656,84 @@ data class Device(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun setBroadcasting(enabled: Boolean): Boolean =
         try { isConnected() && Facade.setBroadcasting(mac, enabled) } catch (_: Throwable) { false }
+
+    // ------------------------------------------------------------------------
+    // Control (FF0A, BLE protocol v2.2 §2.6)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Returns `true` if this device exposes the FF0A Control characteristic (relay or BLE-mode
+     * master wand running firmware >= 2.200). Guard every [sendControl] with this — a v2.1 wand
+     * does not know msgType=3 and would treat a control frame as an Effect (it turns the LED off).
+     *
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsControl(): Boolean = Facade.supportsControl(mac)
+
+    /**
+     * Reads the Firmware Revision (DIS 2A26) and reports whether it implements protocol
+     * [major].[minor] (`>= major.minor00`, numeric comparison — see [FirmwareVersion]).
+     * Example: `device.supportsProtocol(2, 2) { ok -> ... }` for Control support.
+     * The callback receives `false` if the read fails or the string cannot be parsed.
+     *
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsProtocol(major: Int, minor: Int, onResult: (Boolean) -> Unit): Boolean =
+        readFirmwareRevision { r ->
+            onResult(r.getOrNull()?.let { FirmwareVersion.parse(it)?.supportsProtocol(major, minor) } ?: false)
+        }
+
+    /**
+     * Sends a show-control command (FF0A, Write With Response). With a relay connected it is
+     * broadcast over 802.15.4; with a BLE-mode master it is also advertised to nearby wands
+     * regardless of the FF09 setting. There is no ACK in protocol v2.2.
+     *
+     * The frame's effectIndex is advanced automatically on every call, so resending the same
+     * command is not discarded as a duplicate; commands are idempotent on the wand side.
+     *
+     * @param cmd Control command. **[ControlCmd.SYSTEM_OFF] cannot be undone remotely — the app
+     *        must obtain user confirmation before calling.**
+     * @param groupMask Target: [Group.ALL_SINGLE] (0, default) = every wand, [Group.ALL_GROUPS] =
+     *        every wand that has a group, or `GRPn` bits OR'd together. Ungrouped wands ignore
+     *        a non-zero mask. SHOW_ENTER / SHOW_EXIT should use 0.
+     * @return `true` if enqueued; `false` if not connected or FF0A is absent.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendControl(cmd: ControlCmd, groupMask: Long = Group.ALL_SINGLE): Boolean {
+        require(groupMask in 0L..0xFFFFFFFFL) { "groupMask must be within 0..0xFFFFFFFF" }
+        return try {
+            isConnected() && Facade.sendControl(mac, cmd.cmdIndex, groupMask)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** [ControlCmd.SHOW_ENTER] shortcut. @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun showEnter(): Boolean = sendControl(ControlCmd.SHOW_ENTER)
+
+    /** [ControlCmd.SHOW_EXIT] shortcut. @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun showExit(): Boolean = sendControl(ControlCmd.SHOW_EXIT)
+
+    /** [ControlCmd.PAUSE] shortcut. @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun pauseShow(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.PAUSE, groupMask)
+
+    /** [ControlCmd.RESUME] shortcut (restarts the last effect from the beginning). @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun resumeShow(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.RESUME, groupMask)
+
+    /**
+     * [ControlCmd.SYSTEM_OFF] shortcut. **Irreversible remotely** — confirm with the user first.
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun systemOff(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.SYSTEM_OFF, groupMask)
 
     /**
      * Reads multiple device info fields in parallel and returns aggregated DeviceInfo.

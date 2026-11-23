@@ -19,7 +19,7 @@ package com.lightstick.types
  * through the FF03 game command path instead.
  *
  * @property code The numeric wire value written at payload offset 0.
- * @since 2.0.0
+ * @since 2.0.0 (CONTROL added in 2.200.0)
  */
 enum class MsgType(val code: Int) {
     /**
@@ -33,7 +33,13 @@ enum class MsgType(val code: Int) {
     GAME_MODE(1),
 
     /** Group join broadcast — see `Device.sendGroupSetting`. */
-    GROUP_SETUP(2);
+    GROUP_SETUP(2),
+
+    /**
+     * Show control (protocol v2.2, layout C) — FF0A only, never on FF02. Build these through
+     * `Device.sendControl`; [LSEffectPayload] (layout A) rejects frames carrying this value.
+     */
+    CONTROL(3);
 
     companion object {
         /**

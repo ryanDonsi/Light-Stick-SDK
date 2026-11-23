@@ -416,6 +416,9 @@ data class LSEffectPayload(
             fun u32(): Long = bb.int.toLong() and 0xFFFFFFFFL
 
             val msgType = MsgType.fromCode(u8())
+            require(msgType != MsgType.CONTROL) {
+                "bytes is a Control payload (msgType=CONTROL, layout C), not an LSEffectPayload frame"
+            }
             require(msgType != MsgType.GAME_MODE) {
                 "bytes is a Game Mode payload (msgType=GAME_MODE), not an LSEffectPayload frame"
             }
