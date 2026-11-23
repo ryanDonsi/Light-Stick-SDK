@@ -246,6 +246,7 @@ SDK의 Kotlin API 이름/시그니처는 다루지 않으며, 오직 **서비스
 
 - **API**: `Device.sendControl(cmd, groupMask)` 및 `showEnter/showExit/pauseShow/resumeShow/systemOff`. 호출마다 SDK가 effectIndex(1..255 순환)를 자동 증가시킨다. 존재 확인은 `supportsControl()`(FF0A 유무).
 - **타임라인 pause/resume 연동**: `Device.pauseTimeline()`은 SDK 전송 정지와 함께 FF0A가 있는 기기에 Control `PAUSE`(groupMask=0)를 보내고, `Device.resumeTimeline()`은 재전송할 프레임이 없어도 항상 `RESUME`(groupMask=0)을 먼저 보낸 뒤 필요하면 현재 프레임을 재전송한다. FF0A가 없는 기기는 v2.1과 동일하게 SDK 전송 정지/재개만 한다. 대상은 연결된 기기 하나가 아니라 중계기/Master를 통해 도달하는 **모든 응원봉**이다.
+- **RESUME 재전송**: ACK가 없으므로 `resumeTimeline()`은 RESUME을 총 3회(즉시 1회 + 100ms 간격 2회, 매번 새 effectIndex) 보낸다(SDK 내부 값, 비공개). 응원봉은 일시정지 중일 때만 반응하므로(멱등) 이미 재시작한 응원봉은 영향이 없다. 놓친 응원봉은 최대 약 200ms 늦게 재시작한다. 대기 중인 재전송은 `pauseTimeline`/`sendEffect`/`stopTimeline`/연결 해제 시 취소된다. `Device.resumeShow()`/`sendControl()`로 직접 보내는 Control은 재전송하지 않는다.
 - **호출 순서**: 응원봉이 PAUSE 중일 때 새 Effect/타임라인 프레임이 도착하면 일시정지가 해제된다. 일시정지 중에는 프레임을 보내지 말고, 일시정지 중 `sendEffect`를 보낸 경우 `resumeTimeline()`을 마지막에 호출한다(이 경우 RESUME은 응원봉이 무시하고 프레임이 재전송된다). RESUME은 효과를 **처음부터** 재시작하므로 타임라인 위치와 응원봉 애니메이션 위상은 다를 수 있다.
 - **버전 한계**: `sendControl`은 연결 여부와 FF0A 존재만 확인하며 펌웨어 버전은 확인하지 않는다. 앱이 아는 것은 연결된 기기 하나의 버전이다. v2.2 중계기 뒤의 응원봉이 v2.1이면 SDK는 이를 알 수 없고, 해당 응원봉은 control 프레임을 Effect로 읽어 **소등**한다(SYSTEM_OFF도 전원이 꺼지지 않고 소등만 됨). 모든 중계기/응원봉을 2.200 이상으로 갱신한 뒤에만 control을 사용한다(§6.4, `Device.supportsProtocol(2, 2)`는 연결된 기기만 판단).
 - ACK/상태 통지는 v2.2 범위에 없다.

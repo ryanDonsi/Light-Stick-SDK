@@ -1,6 +1,7 @@
 package com.lightstick.internal.ble
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothGattCharacteristic
 import android.os.SystemClock
 import com.lightstick.internal.util.Log
@@ -45,6 +46,11 @@ internal class LedControlManager(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val playMutex = Mutex()
+
+    // RESUME은 ACK가 없는 방송이라 놓칠 수 있으므로 내부에서 재전송한다(3회, 100ms, API 비공개).
+    // 늦게 도착한 사본이 새 일시정지를 풀지 않도록 pause/sendEffect/stop/close 시 취소한다.
+    @SuppressLint("MissingPermission")
+    private val resumeSender = RepeatingControlSender(scope, send = { cmd, mask -> control.send(cmd, mask) })
 
     // =========== Timeline 재생 상태 ===========
     @Volatile private var timeline: List<Pair<Long, ByteArray>> = emptyList()
@@ -145,6 +151,7 @@ internal class LedControlManager(
      *   있지 않으면 아무 것도 건드리지 않는다.
      */
     private fun suspendBackgroundProducers() {
+        resumeSender.cancelPending()
         playJob?.cancel()
         playJob = null
 
@@ -366,6 +373,8 @@ internal class LedControlManager(
         anchorPositionMs = interpolatedPositionMs()
         anchorSystemMs = SystemClock.elapsedRealtime()
         isEffectTransmissionEnabled = false
+        // 대기 중인 RESUME 재전송이 새 일시정지를 풀지 않도록 먼저 취소한다.
+        resumeSender.cancelPending()
         // v2.2: 응원봉도 현재 색에서 얼린다 (FF0A PAUSE, groupMask=0). FF0A가 없는 기기는 건너뜀.
         sendShowControl(ControlFrame.CMD_PAUSE)
     }
@@ -390,7 +399,7 @@ internal class LedControlManager(
         // v2.2: 재전송할 프레임이 없어도 RESUME은 항상 전달한다(응원봉이 얼어붙은 채 남지 않도록).
         // 응원봉은 일시정지 중일 때만 반응하므로(멱등) 일시정지 중 sendEffect로 이미 해제된
         // 경우에는 무시된다. 아래 재전송 프레임보다 먼저 보낸다.
-        sendShowControl(ControlFrame.CMD_RESUME)
+        sendShowControl(ControlFrame.CMD_RESUME, repeated = true)
 
         if (timeline.isEmpty()) return
         anchorSystemMs = SystemClock.elapsedRealtime()
@@ -408,9 +417,10 @@ internal class LedControlManager(
      * 아무것도 보내지 않는다 — 이 경우 기존(v2.1) 동작과 동일하게 SDK 전송 정지만 일어난다.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun sendShowControl(cmdIndex: Int) {
+    private fun sendShowControl(cmdIndex: Int, repeated: Boolean = false) {
         if (!control.isControlSupported()) return
-        if (!control.send(cmdIndex, 0L)) {
+        val ok = if (repeated) resumeSender.sendRepeated(cmdIndex, 0L) else control.send(cmdIndex, 0L)
+        if (!ok) {
             Log.w("[LedControlManager] FF0A control cmdIndex=$cmdIndex write failed")
         }
     }
@@ -440,6 +450,7 @@ internal class LedControlManager(
      */
     @MainThread
     fun stopTimeline() {
+        resumeSender.cancelPending()
         monitorJob?.cancel()
         monitorJob = null
 
