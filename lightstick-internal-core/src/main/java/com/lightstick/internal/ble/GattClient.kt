@@ -9,6 +9,7 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.queue.CmdQueueConfig
+import com.lightstick.internal.ble.queue.CommandInterval
 import com.lightstick.internal.ble.queue.CmdQueueManager
 import com.lightstick.internal.ble.queue.OverflowPolicy
 import com.lightstick.internal.util.Log
@@ -32,7 +33,11 @@ import java.util.concurrent.ConcurrentHashMap
  * - 서비스/캐릭터리스틱 미발견 (서비스 디스커버리 전/UUID 불일치)
  */
 @Suppress("DEPRECATION")
-internal class GattClient(private val context: Context) : AutoCloseable {
+internal class GattClient(
+    private val context: Context,
+    /** Minimum interval between completed GATT commands per device, read on every command. */
+    commandIntervalMs: () -> Long = { CommandInterval.DEFAULT_MS }
+) : AutoCloseable {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -63,10 +68,11 @@ internal class GattClient(private val context: Context) : AutoCloseable {
 
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
-            minIntervalMs = 20L,
+            minIntervalMs = CommandInterval.DEFAULT_MS,
             maxQueueSizePerAddress = 64,
             overflowPolicy = OverflowPolicy.DROP_OLDEST
-        )
+        ),
+        commandIntervalMs
     )
 
     // ============================================================================================

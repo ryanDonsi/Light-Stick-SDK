@@ -19,7 +19,9 @@ import java.util.concurrent.ConcurrentHashMap
  * - Call [enqueue], [signalComplete], and [clear] on the main thread for simplicity.
  */
 internal class CmdQueueManager(
-    private var config: CmdQueueConfig = CmdQueueConfig()
+    private var config: CmdQueueConfig = CmdQueueConfig(),
+    /** If set, read on every scheduling decision and overrides [CmdQueueConfig.minIntervalMs]. */
+    private val minIntervalProvider: (() -> Long)? = null
 ) {
     private data class Cmd(
         val op: String,
@@ -100,7 +102,7 @@ internal class CmdQueueManager(
     // --- internals ---
 
     private fun waitFor(address: String): Long {
-        val min = config.minIntervalMs.coerceAtLeast(0)
+        val min = (minIntervalProvider?.invoke() ?: config.minIntervalMs).coerceAtLeast(0)
         if (min == 0L) return 0L
         val last = lastDone[address] ?: return 0L
         return (min - (System.currentTimeMillis() - last)).coerceAtLeast(0)

@@ -138,6 +138,44 @@ object LSBluetooth {
     }
 
     // ============================================================================================
+    // GATT command interval
+    // ============================================================================================
+
+    /** Default minimum interval between GATT commands per device, in milliseconds (50). */
+    const val DEFAULT_COMMAND_INTERVAL_MS: Long = com.lightstick.internal.ble.queue.CommandInterval.DEFAULT_MS
+
+    /** Largest value accepted by [setCommandIntervalMs], in milliseconds (1000). */
+    const val MAX_COMMAND_INTERVAL_MS: Long = com.lightstick.internal.ble.queue.CommandInterval.MAX_MS
+
+    /**
+     * Sets the minimum interval between completed GATT commands, **per device**
+     * (default [DEFAULT_COMMAND_INTERVAL_MS] = 50 ms).
+     *
+     * Each connected device has one serialized command queue; after a command completes the next
+     * one is held back until this interval has passed. It therefore throttles FF02 effect/timeline
+     * frames, but equally every other GATT operation on that device (DIS/BAS reads, CCCD writes,
+     * FF03 game commands, FF0A control, OTA writes). A larger value spaces frames further apart
+     * (more loss margin, more delay; a full queue of 64 drops its oldest pending command); `0`
+     * removes the minimum entirely.
+     *
+     * Applies immediately to devices that are already connected or connecting, and to future
+     * connections. The value is not persisted — set it again after the process restarts. Safe to
+     * call any time, from any thread, even before [initialize].
+     *
+     * @param intervalMs Interval in milliseconds, `0..[MAX_COMMAND_INTERVAL_MS]`.
+     * @throws IllegalArgumentException If [intervalMs] is outside that range.
+     * @since 2.200.0
+     */
+    @JvmStatic
+    fun setCommandIntervalMs(intervalMs: Long) {
+        Facade.setCommandIntervalMs(intervalMs)
+    }
+
+    /** Current minimum interval between GATT commands in milliseconds. @since 2.200.0 */
+    @JvmStatic
+    fun getCommandIntervalMs(): Long = Facade.commandIntervalMs()
+
+    // ============================================================================================
     // Scan
     // ============================================================================================
 

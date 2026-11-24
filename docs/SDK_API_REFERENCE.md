@@ -38,6 +38,8 @@
 | `initialize(context, deviceFilter: DeviceFilter? = null, allowUnknownDevices: Boolean = false)` | SDK 초기화. 앱 시작 시 1회 (여러 번 호출해도 최초 1회만 적용). 내부적으로 시스템 레벨에 이미 연결된 기기 세션 복원도 시도한다. |
 | `setDebugLoggingEnabled(enabled: Boolean)` | 패킷 TX/RX, 연결/서비스디스커버리/OTA 진단 로그를 `Lightstick` 태그로 ON/OFF. 기본값 `false`. 언제든 호출 가능. |
 
+| `setCommandIntervalMs(intervalMs: Long)` / `getCommandIntervalMs(): Long` | 기기별 GATT 명령 큐의 **최소 전송 간격**(기본 `DEFAULT_COMMAND_INTERVAL_MS` = **50ms**, 범위 `0..MAX_COMMAND_INTERVAL_MS`=1000, 0 = 간격 없음). 한 명령이 끝난 뒤 다음 명령까지 대기하는 시간이라 FF02 이펙트/타임라인 프레임뿐 아니라 그 기기의 **모든 GATT 작업**(DIS/BAS 읽기, CCCD 쓰기, FF03, FF0A, OTA 쓰기)에 적용됨. 값이 클수록 프레임 간격이 벌어져 유실 여유는 늘지만 지연이 커지고, 큐(기기당 64개)가 가득 차면 가장 오래된 대기 명령부터 버려짐. 이미 연결된/연결 중인 기기에도 즉시 적용, 앱 재시작 시 초기화(저장 안 됨). 범위를 벗어나면 `IllegalArgumentException`. `initialize` 전에도 호출 가능 (@since 2.200.0) |
+
 ### 1.2 스캔
 
 | 메서드 | 설명 |

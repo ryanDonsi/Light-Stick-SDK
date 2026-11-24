@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.*
+import com.lightstick.internal.ble.queue.CommandInterval
 import com.lightstick.internal.ble.ota.OtaManager
 import com.lightstick.internal.ble.ota.OtaState
 import com.lightstick.internal.ble.state.InternalConnectionState
@@ -58,6 +59,23 @@ object Facade {
     }
 
     /** Toggles debug logging (packet TX/RX, connection/OTA diagnostics) across the BLE layer. */
+    @Volatile private var commandIntervalMs: Long = CommandInterval.DEFAULT_MS
+
+    /**
+     * Sets the minimum interval between completed GATT commands per device (default
+     * [CommandInterval.DEFAULT_MS], 0 = none). The value is read by each device's command queue on
+     * every command, so it also applies to devices that are already connected or connecting.
+     * May be called any time, even before initialize.
+     *
+     * @throws IllegalArgumentException if outside `0..CommandInterval.MAX_MS`.
+     */
+    fun setCommandIntervalMs(intervalMs: Long) {
+        commandIntervalMs = CommandInterval.validate(intervalMs)
+    }
+
+    /** Current minimum interval between GATT commands in milliseconds. */
+    fun commandIntervalMs(): Long = commandIntervalMs
+
     fun setDebugLoggingEnabled(enabled: Boolean) {
         com.lightstick.internal.util.Log.enabled = enabled
     }
@@ -276,7 +294,7 @@ object Facade {
         deviceStateManager.updateConnectionState(mac, InternalConnectionState.Connecting())
 
 
-        val gatt = GattClient(appContext)
+        val gatt = GattClient(appContext) { commandIntervalMs }
 
         gatt.setConnectionStateListener { address, newState, gattStatus ->
             when (newState) {
