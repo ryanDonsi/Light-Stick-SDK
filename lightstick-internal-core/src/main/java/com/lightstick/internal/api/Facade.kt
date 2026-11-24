@@ -753,7 +753,7 @@ object Facade {
      * sendEffectTo()에 의한 일시정지 모두 대상 — sendEffectTo() 이후엔 반드시 마지막으로
      * 호출해야 함).
      *
-     * 재전송할 프레임이 없어도 Control RESUME(groupMask=0)을 항상 먼저 보냅니다(v2.2, 내부 3회 재전송).
+     * 재전송할 프레임이 없어도 Control RESUME(groupMask=0)을 항상 먼저 보냅니다(v2.2, 1회 전송).
      * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다. 일시정지 중
      * sendEffectTo()가 호출되어 기기 LED 상태가 어긋난 경우, 다음 프레임 시점을 기다리지
      * 않고 현재 프레임을 즉시 재전송해 상태를 맞춥니다.

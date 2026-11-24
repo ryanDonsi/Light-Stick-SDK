@@ -465,12 +465,9 @@ data class Device(
      * **Control interlock (v2.2):** on a device that exposes FF0A ([supportsControl]), a Control
      * `RESUME` (`groupMask = 0`) is **always** sent first — even when there is no frame to resend
      * (timeline empty, or before the first frame). The wand restarts its last effect **from the
-     * beginning** (not from where it froze). Because broadcasts are not acknowledged, the SDK
-     * sends `RESUME` 3 times in total (first immediately, then every 100 ms; each with a new
-     * effectIndex — internal, not configurable). Pending repeats are dropped on
-     * [pauseTimeline], [sendEffect], [stopTimeline] or disconnect, so a late copy can never
-     * release a newer pause. Its animation phase can differ from the
-     * timeline position; a wand that is not paused ignores `RESUME`, e.g. when a `sendEffect`
+     * beginning** (not from where it froze). The `RESUME` is sent **once**: there is no ACK and no
+     * automatic resend (the app may resend with [resumeShow], which is idempotent). Its animation
+     * phase can differ from the timeline position; a wand that is not paused ignores `RESUME`, e.g. when a `sendEffect`
      * during the pause already released it. The optional frame resend described above follows
      * the `RESUME`.
      *
