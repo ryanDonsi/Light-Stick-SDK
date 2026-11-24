@@ -36,7 +36,9 @@ import java.util.concurrent.ConcurrentHashMap
 internal class GattClient(
     private val context: Context,
     /** Minimum interval between completed GATT commands per device, read on every command. */
-    commandIntervalMs: () -> Long = { CommandInterval.DEFAULT_MS }
+    commandIntervalMs: () -> Long = { CommandInterval.DEFAULT_MS },
+    /** Maximum pending commands per device queue, read on every enqueue. */
+    commandQueueSize: () -> Int = { CommandInterval.DEFAULT_QUEUE_SIZE }
 ) : AutoCloseable {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -69,10 +71,11 @@ internal class GattClient(
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
             minIntervalMs = CommandInterval.DEFAULT_MS,
-            maxQueueSizePerAddress = 64,
+            maxQueueSizePerAddress = CommandInterval.DEFAULT_QUEUE_SIZE,
             overflowPolicy = OverflowPolicy.DROP_OLDEST
         ),
-        commandIntervalMs
+        commandIntervalMs,
+        commandQueueSize
     )
 
     // ============================================================================================

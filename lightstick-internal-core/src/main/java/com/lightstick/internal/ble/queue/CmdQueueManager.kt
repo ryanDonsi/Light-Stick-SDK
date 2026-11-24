@@ -21,7 +21,9 @@ import java.util.concurrent.ConcurrentHashMap
 internal class CmdQueueManager(
     private var config: CmdQueueConfig = CmdQueueConfig(),
     /** If set, read on every scheduling decision and overrides [CmdQueueConfig.minIntervalMs]. */
-    private val minIntervalProvider: (() -> Long)? = null
+    private val minIntervalProvider: (() -> Long)? = null,
+    /** If set, read on every enqueue and overrides [CmdQueueConfig.maxQueueSizePerAddress]. */
+    private val maxQueueSizeProvider: (() -> Int)? = null
 ) {
     private data class Cmd(
         val op: String,
@@ -77,7 +79,7 @@ internal class CmdQueueManager(
         q.addLast(Cmd(operation, coalesceKey, replaceIfSameKey, runner))
 
         // overflow trimming
-        val max = config.maxQueueSizePerAddress.coerceAtLeast(1)
+        val max = (maxQueueSizeProvider?.invoke() ?: config.maxQueueSizePerAddress).coerceAtLeast(1)
         while (q.size > max) {
             when (config.overflowPolicy) {
                 OverflowPolicy.DROP_OLDEST -> if (q.isNotEmpty()) q.removeFirst()

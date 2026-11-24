@@ -76,6 +76,23 @@ object Facade {
     /** Current minimum interval between GATT commands in milliseconds. */
     fun commandIntervalMs(): Long = commandIntervalMs
 
+    @Volatile private var commandQueueSize: Int = CommandInterval.DEFAULT_QUEUE_SIZE
+
+    /**
+     * Sets the maximum number of pending GATT commands per device (default
+     * [CommandInterval.DEFAULT_QUEUE_SIZE]). Read on every enqueue, so it also applies to devices
+     * that are already connected; when the queue exceeds it the oldest pending commands are
+     * dropped (never executed, no completion callback). Lowering it trims on the next enqueue.
+     *
+     * @throws IllegalArgumentException if outside `1..CommandInterval.MAX_QUEUE_SIZE`.
+     */
+    fun setCommandQueueSize(size: Int) {
+        commandQueueSize = CommandInterval.validateQueueSize(size)
+    }
+
+    /** Current maximum number of pending GATT commands per device. */
+    fun commandQueueSize(): Int = commandQueueSize
+
     fun setDebugLoggingEnabled(enabled: Boolean) {
         com.lightstick.internal.util.Log.enabled = enabled
     }
@@ -294,7 +311,7 @@ object Facade {
         deviceStateManager.updateConnectionState(mac, InternalConnectionState.Connecting())
 
 
-        val gatt = GattClient(appContext) { commandIntervalMs }
+        val gatt = GattClient(appContext, { commandIntervalMs }, { commandQueueSize })
 
         gatt.setConnectionStateListener { address, newState, gattStatus ->
             when (newState) {

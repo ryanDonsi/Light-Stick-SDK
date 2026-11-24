@@ -22,4 +22,20 @@ object CommandInterval {
         require(intervalMs in 0L..MAX_MS) { "commandIntervalMs must be within 0..$MAX_MS (got $intervalMs)" }
         return intervalMs
     }
+
+    /** Default maximum number of pending commands per device queue. */
+    const val DEFAULT_QUEUE_SIZE: Int = 8
+
+    /** Upper bound accepted by [validateQueueSize]. */
+    const val MAX_QUEUE_SIZE: Int = 256
+
+    /**
+     * @return [size] if it is within `1..[MAX_QUEUE_SIZE]`.
+     * @throws IllegalArgumentException otherwise.
+     */
+    @JvmStatic
+    fun validateQueueSize(size: Int): Int {
+        require(size in 1..MAX_QUEUE_SIZE) { "commandQueueSize must be within 1..$MAX_QUEUE_SIZE (got $size)" }
+        return size
+    }
 }

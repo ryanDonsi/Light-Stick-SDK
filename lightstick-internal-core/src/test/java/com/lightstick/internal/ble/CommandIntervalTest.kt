@@ -13,6 +13,16 @@ class CommandIntervalTest {
         assertEquals(1000L, CommandInterval.validate(1000))
     }
 
+    @Test fun queueSizeDefaultIsEight() = assertEquals(8, CommandInterval.DEFAULT_QUEUE_SIZE)
+
+    @Test fun queueSizeBounds() {
+        assertEquals(1, CommandInterval.validateQueueSize(1))
+        assertEquals(8, CommandInterval.validateQueueSize(8))
+        assertEquals(256, CommandInterval.validateQueueSize(256))
+        assertThrows(IllegalArgumentException::class.java) { CommandInterval.validateQueueSize(0) }
+        assertThrows(IllegalArgumentException::class.java) { CommandInterval.validateQueueSize(257) }
+    }
+
     @Test fun rejectsOutOfRange() {
         assertThrows(IllegalArgumentException::class.java) { CommandInterval.validate(-1) }
         assertThrows(IllegalArgumentException::class.java) { CommandInterval.validate(1001) }

@@ -175,6 +175,40 @@ object LSBluetooth {
     @JvmStatic
     fun getCommandIntervalMs(): Long = Facade.commandIntervalMs()
 
+    /** Default maximum number of pending GATT commands per device (8). */
+    const val DEFAULT_COMMAND_QUEUE_SIZE: Int = com.lightstick.internal.ble.queue.CommandInterval.DEFAULT_QUEUE_SIZE
+
+    /** Largest value accepted by [setCommandQueueSize] (256). */
+    const val MAX_COMMAND_QUEUE_SIZE: Int = com.lightstick.internal.ble.queue.CommandInterval.MAX_QUEUE_SIZE
+
+    /**
+     * Sets the maximum number of **pending** GATT commands per device
+     * (default [DEFAULT_COMMAND_QUEUE_SIZE] = 8, the command currently in flight not counted).
+     *
+     * When more commands are waiting than this, the **oldest pending commands are dropped**: they
+     * are never executed and get no completion callback (a dropped read keeps waiting until its
+     * own timeout). For FF02 effect/timeline frames this means frames are lost when the app sends
+     * faster than the [setCommandIntervalMs] interval allows — roughly `queueSize x interval` of
+     * backlog is tolerated (8 x 50 ms = 400 ms by default). A small queue keeps the LED close to
+     * real time; a larger one preserves more frames at the cost of delay. Apps that fire many GATT
+     * operations at once (parallel reads right after connect, bursts of sends) should raise it.
+     *
+     * Read on every enqueue, so it applies immediately to connected devices; lowering it trims the
+     * queue on the next enqueue. Not persisted. Safe to call any time, even before [initialize].
+     *
+     * @param size `1..[MAX_COMMAND_QUEUE_SIZE]`.
+     * @throws IllegalArgumentException If [size] is outside that range.
+     * @since 2.200.0
+     */
+    @JvmStatic
+    fun setCommandQueueSize(size: Int) {
+        Facade.setCommandQueueSize(size)
+    }
+
+    /** Current maximum number of pending GATT commands per device. @since 2.200.0 */
+    @JvmStatic
+    fun getCommandQueueSize(): Int = Facade.commandQueueSize()
+
     // ============================================================================================
     // Scan
     // ============================================================================================
