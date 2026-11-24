@@ -40,7 +40,7 @@
 
 | `setCommandIntervalMs(intervalMs: Long)` / `getCommandIntervalMs(): Long` | 기기별 GATT 명령 큐의 **최소 전송 간격**(기본 `DEFAULT_COMMAND_INTERVAL_MS` = **50ms**, 범위 `0..MAX_COMMAND_INTERVAL_MS`=1000, 0 = 간격 없음). 한 명령이 끝난 뒤 다음 명령까지 대기하는 시간이라 FF02 이펙트/타임라인 프레임뿐 아니라 그 기기의 **모든 GATT 작업**(DIS/BAS 읽기, CCCD 쓰기, FF03, FF0A, OTA 쓰기)에 적용됨. 값이 클수록 프레임 간격이 벌어져 유실 여유는 늘지만 지연이 커지고, 큐(기기당 64개)가 가득 차면 가장 오래된 대기 명령부터 버려짐. 이미 연결된/연결 중인 기기에도 즉시 적용, 앱 재시작 시 초기화(저장 안 됨). 범위를 벗어나면 `IllegalArgumentException`. `initialize` 전에도 호출 가능 (@since 2.200.0) |
 
-| `setCommandQueueSize(size: Int)` / `getCommandQueueSize(): Int` | 기기별 GATT 명령 큐의 **대기 명령 최대 개수**(기본 `DEFAULT_COMMAND_QUEUE_SIZE` = **8**, 범위 `1..MAX_COMMAND_QUEUE_SIZE`=256, 실행 중인 명령은 제외). 초과하면 **가장 오래된 대기 명령부터 버려짐** — 실행도 완료 콜백도 없음(버려진 읽기는 자체 타임아웃까지 대기). FF02 프레임은 전송 간격보다 빠르게 보내면 유실되며 대략 `큐 크기 × 간격`(기본 8×50ms=400ms)만큼의 밀림을 허용. 작을수록 LED가 실시간에 가깝고, 클수록 프레임은 보존되지만 지연됨. 연결 직후 병렬 읽기나 한꺼번에 많이 보내는 앱은 키울 것. 연결된 기기에도 즉시 적용(줄이면 다음 enqueue 때 정리), 저장 안 됨. 범위를 벗어나면 `IllegalArgumentException` (@since 2.200.0) |
+| `setCommandQueueSize(size: Int)` / `getCommandQueueSize(): Int` | 기기별 GATT 명령 큐의 **대기 명령 최대 개수**(기본 `DEFAULT_COMMAND_QUEUE_SIZE` = **16**, 범위 `1..MAX_COMMAND_QUEUE_SIZE`=256, 실행 중인 명령은 제외). 초과하면 **가장 오래된 대기 명령부터 버려짐** — 실행도 완료 콜백도 없음(버려진 읽기는 자체 타임아웃까지 대기). FF02 프레임은 전송 간격보다 빠르게 보내면 유실되며 대략 `큐 크기 × 간격`(기본 16×50ms=800ms)만큼의 밀림을 허용. 작을수록 LED가 실시간에 가깝고, 클수록 프레임은 보존되지만 지연됨. 연결 직후 병렬 읽기나 한꺼번에 많이 보내는 앱은 키울 것. 연결된 기기에도 즉시 적용(줄이면 다음 enqueue 때 정리), 저장 안 됨. 범위를 벗어나면 `IllegalArgumentException` (@since 2.200.0) |
 
 ### 1.2 스캔
 

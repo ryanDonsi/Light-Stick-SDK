@@ -292,7 +292,7 @@ Android                                   응원봉
 
 - 각 DIS 필드 Read는 실패 시 최대 3회, 400ms 간격으로 재시도한다.
 - Read/Write/Notify-CCCD-write는 모두 기기별 **직렬 큐**로 처리되어 동시에 여러 GATT 오퍼레이션이 겹치지 않는다 (Android BluetoothGatt는 오퍼레이션 동시 진행을 지원하지 않음).
-- FF02(Write No Response) 연속 전송은 기기별 명령 큐의 최소 호출 간격(기본 **50ms**, `LSBluetooth.setCommandIntervalMs`로 0~1000ms 설정, 그 기기의 모든 GATT 작업에 적용)와 대기 큐 상한(기본 **8**, `setCommandQueueSize`로 1~256 설정 — 초과 시 가장 오래된 대기 명령이 버려짐)이 있으며, 같은 "키"의 대기 중인 쓰기는 최신 값으로 치환(coalesce)될 수 있다 — 단, **타임라인 프레임 전송은 이 치환 대상에서 제외**되어 프레임 순서가 보장된다.
+- FF02(Write No Response) 연속 전송은 기기별 명령 큐의 최소 호출 간격(기본 **50ms**, `LSBluetooth.setCommandIntervalMs`로 0~1000ms 설정, 그 기기의 모든 GATT 작업에 적용)와 대기 큐 상한(기본 **16**, `setCommandQueueSize`로 1~256 설정 — 초과 시 가장 오래된 대기 명령이 버려짐)이 있으며, 같은 "키"의 대기 중인 쓰기는 최신 값으로 치환(coalesce)될 수 있다 — 단, **타임라인 프레임 전송은 이 치환 대상에서 제외**되어 프레임 순서가 보장된다.
 
 ### 4.2 단발 이펙트 / 그룹 컨트롤 전송
 
