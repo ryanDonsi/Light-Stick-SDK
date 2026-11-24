@@ -24,7 +24,7 @@ object CommandInterval {
     }
 
     /** Default maximum number of pending commands per device queue. */
-    const val DEFAULT_QUEUE_SIZE: Int = 16
+    const val DEFAULT_QUEUE_SIZE: Int = 8
 
     /** Upper bound accepted by [validateQueueSize]. */
     const val MAX_QUEUE_SIZE: Int = 256

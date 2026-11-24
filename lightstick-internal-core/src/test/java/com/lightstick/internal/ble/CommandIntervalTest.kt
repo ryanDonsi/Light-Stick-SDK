@@ -13,11 +13,11 @@ class CommandIntervalTest {
         assertEquals(1000L, CommandInterval.validate(1000))
     }
 
-    @Test fun queueSizeDefaultIsSixteen() = assertEquals(16, CommandInterval.DEFAULT_QUEUE_SIZE)
+    @Test fun queueSizeDefaultIsEight() = assertEquals(8, CommandInterval.DEFAULT_QUEUE_SIZE)
 
     @Test fun queueSizeBounds() {
         assertEquals(1, CommandInterval.validateQueueSize(1))
-        assertEquals(16, CommandInterval.validateQueueSize(16))
+        assertEquals(8, CommandInterval.validateQueueSize(8))
         assertEquals(256, CommandInterval.validateQueueSize(256))
         assertThrows(IllegalArgumentException::class.java) { CommandInterval.validateQueueSize(0) }
         assertThrows(IllegalArgumentException::class.java) { CommandInterval.validateQueueSize(257) }

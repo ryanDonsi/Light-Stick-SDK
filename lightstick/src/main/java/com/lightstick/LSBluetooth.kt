@@ -175,7 +175,7 @@ object LSBluetooth {
     @JvmStatic
     fun getCommandIntervalMs(): Long = Facade.commandIntervalMs()
 
-    /** Default maximum number of pending GATT commands per device (16). */
+    /** Default maximum number of pending GATT commands per device (8). */
     const val DEFAULT_COMMAND_QUEUE_SIZE: Int = com.lightstick.internal.ble.queue.CommandInterval.DEFAULT_QUEUE_SIZE
 
     /** Largest value accepted by [setCommandQueueSize] (256). */
@@ -183,13 +183,13 @@ object LSBluetooth {
 
     /**
      * Sets the maximum number of **pending** GATT commands per device
-     * (default [DEFAULT_COMMAND_QUEUE_SIZE] = 16, the command currently in flight not counted).
+     * (default [DEFAULT_COMMAND_QUEUE_SIZE] = 8, the command currently in flight not counted).
      *
      * When more commands are waiting than this, the **oldest pending commands are dropped**: they
      * are never executed and get no completion callback (a dropped read keeps waiting until its
      * own timeout). For FF02 effect/timeline frames this means frames are lost when the app sends
      * faster than the [setCommandIntervalMs] interval allows — roughly `queueSize x interval` of
-     * backlog is tolerated (16 x 50 ms = 800 ms by default). A small queue keeps the LED close to
+     * backlog is tolerated (8 x 50 ms = 400 ms by default). A small queue keeps the LED close to
      * real time; a larger one preserves more frames at the cost of delay. Apps that fire many GATT
      * operations at once (parallel reads right after connect, bursts of sends) should raise it.
      *
