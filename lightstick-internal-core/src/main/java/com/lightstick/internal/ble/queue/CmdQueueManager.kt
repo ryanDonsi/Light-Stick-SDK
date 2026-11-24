@@ -2,7 +2,7 @@ package com.lightstick.internal.ble.queue
 
 import android.os.Handler
 import android.os.Looper
-import java.util.ArrayDeque
+import com.lightstick.internal.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -33,7 +33,7 @@ internal class CmdQueueManager(
     )
 
     private val handler = Handler(Looper.getMainLooper())
-    private val queues = ConcurrentHashMap<String, ArrayDeque<Cmd>>()
+    private val queues = ConcurrentHashMap<String, PendingCommandQueue<Cmd>>()
     private val running = ConcurrentHashMap<String, Boolean>()
     private val disconnected = ConcurrentHashMap<String, Boolean>()
     private val lastDone = ConcurrentHashMap<String, Long>()
@@ -68,27 +68,33 @@ internal class CmdQueueManager(
     ) {
         if (disconnected[address] == true) return
 
-        val q = queues.getOrPut(address) { ArrayDeque() }
+        val q = queues.getOrPut(address) { PendingCommandQueue() }
 
-        // coalescing: keep only the latest pending with the same key
-        if (replaceIfSameKey && coalesceKey != null && q.isNotEmpty()) {
-            val it = q.iterator()
-            while (it.hasNext()) if (it.next().key == coalesceKey) it.remove()
-        }
-
-        q.addLast(Cmd(operation, coalesceKey, replaceIfSameKey, runner))
-
-        // overflow trimming
+        // coalescing (keep only the latest pending with the same key) + overflow trimming
         val max = (maxQueueSizeProvider?.invoke() ?: config.maxQueueSizePerAddress).coerceAtLeast(1)
-        while (q.size > max) {
-            when (config.overflowPolicy) {
-                OverflowPolicy.DROP_OLDEST -> if (q.isNotEmpty()) q.removeFirst()
-                OverflowPolicy.DROP_NEWEST -> if (q.isNotEmpty()) q.removeLast()
-            }
+        val discarded = q.offer(
+            Cmd(operation, coalesceKey, replaceIfSameKey, runner),
+            coalesceKey, replaceIfSameKey, max, config.overflowPolicy
+        )
+        // Discarded commands never run and never signal completion — make that visible in the log.
+        discarded.forEach {
+            Log.w("[CmdQueue] $address overflow: dropped pending '${it.op}' " +
+                "(policy=${config.overflowPolicy}, max=$max, totalDropped=${q.dropped})")
         }
 
         // schedule next if not running
         if (running[address] != true) scheduleNext(address, waitFor(address))
+    }
+
+    /** Snapshot of the queue counters for [address] (all zero if nothing was ever enqueued). */
+    fun stats(address: String): CommandQueueSnapshot {
+        val q = queues[address] ?: return CommandQueueSnapshot(0, 0, 0, 0, 0)
+        return CommandQueueSnapshot(q.size, q.peak, q.dropped, q.replaced, q.executed)
+    }
+
+    /** Zeroes the counters of [address] (the pending commands themselves are untouched). */
+    fun resetStats(address: String) {
+        queues[address]?.resetStats()
     }
 
     /**

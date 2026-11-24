@@ -157,6 +157,8 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 
 | 메서드 | 설명 |
 |---|---|
+| `getCommandQueueStats(): CommandQueueStats?` | 이 기기의 GATT 명령 큐 카운터(디버그/튜닝용). 연결되지 않았으면 `null`. 필드는 §3 `CommandQueueStats` 참고. `dropped`가 0이 아니면 큐 오버플로로 명령이 유실된 것 — `LSBluetooth.setCommandQueueSize`/`setCommandIntervalMs`를 조정. 어느 스레드에서든 호출 가능하지만 값들은 대략적으로만 일관됨 (@since 2.200.0) |
+| `resetCommandQueueStats(): Boolean` | 위 카운터를 0으로 초기화(대기 중인 명령은 그대로, `peakPending`은 현재 대기 수부터 다시 집계). 연결되지 않았으면 `false` (@since 2.200.0) |
 | `supportsControl(): Boolean` | FF0A(Control) **특성 존재 여부** 확인 (중계기 / BLE 모드 Master) |
 | `sendControl(cmd: ControlCmd, groupMask: Long = Group.ALL_SINGLE): Boolean` | FF0A Write With Response. `groupMask` 기본 0 = **모든 응원봉**, `ALL_GROUPS` = 그룹 배정된 모든 응원봉, `GRPn` OR 조합 = 해당 그룹(미배정 응원봉은 0이 아닌 마스크를 무시). effectIndex는 SDK가 호출마다 자동 증가. 연결 안 됨/FF0A 없음이면 `false` |
 | `showEnter()` / `showExit()` | `SHOW_ENTER` / `SHOW_EXIT` (groupMask=0) |
@@ -235,6 +237,18 @@ data class DeviceInfo(
 
 ### `FirmwareVersion` (data class, `Comparable`) — v2.2 §6
 펌웨어 버전 `<메이저>.<마이너+빌드 3자리>`(예: `2.200`, `2.201`). 비교는 **숫자**(메이저 → 마이너+빌드)이며 `2.200 < 2.201 < 2.300`. `FirmwareVersion.parse(String?)`(이전 체계 `1.0.x` 등 형식이 다르면 `null`), 상수 `FirmwareVersion.PROTOCOL_2_2`(`2.200`).
+
+### `CommandQueueStats` (data class) — `Device.getCommandQueueStats()` 반환 (@since 2.200.0)
+```kotlin
+data class CommandQueueStats(
+    val pending: Int,       // 지금 대기 중인 명령 수 (실행 중인 1개는 제외)
+    val peakPending: Int,   // 대기 수 최댓값 — 설정한 큐 크기와 같으면 한 번이라도 가득 찼다는 뜻
+    val dropped: Long,      // 오버플로로 버려진 명령 수 (실행도 완료 콜백도 없음 → 유실)
+    val replaced: Long,     // 같은 coalesce 키의 새 명령으로 치환된 대기 명령 수 (타임라인 프레임은 치환 안 됨)
+    val executed: Long      // BLE 스택에 실행 요청된 명령 수
+)
+```
+큐는 그 기기의 **모든** GATT 작업(FF02 프레임, 읽기, CCCD, FF03/FF0A, OTA)이 공유한다. 카운터는 연결 시점(또는 마지막 `resetCommandQueueStats()`)부터 누적되며, 디버그 로그를 켜면(`setDebugLoggingEnabled(true)`) 버려질 때마다 `[CmdQueue] ... overflow: dropped pending '<작업>'` 경고가 남는다.
 
 ### `DeviceState` (data class)
 ```kotlin

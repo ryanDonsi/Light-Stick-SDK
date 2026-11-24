@@ -10,6 +10,7 @@ import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.queue.CmdQueueConfig
 import com.lightstick.internal.ble.queue.CommandInterval
+import com.lightstick.internal.ble.queue.CommandQueueSnapshot
 import com.lightstick.internal.ble.queue.CmdQueueManager
 import com.lightstick.internal.ble.queue.OverflowPolicy
 import com.lightstick.internal.util.Log
@@ -86,6 +87,12 @@ internal class GattClient(
      * 현재 연결된 디바이스의 MAC 주소를 반환합니다.
      */
     fun getCurrentAddress(): String? = currentAddress
+
+    /** Counters of the command queue for [address] (pending / peak / dropped / replaced / executed). */
+    fun queueStats(address: String): CommandQueueSnapshot = queueManager.stats(address)
+
+    /** Zeroes the command-queue counters for [address]. */
+    fun resetQueueStats(address: String) = queueManager.resetStats(address)
 
     fun addNotificationListener(charUuid: java.util.UUID, listener: (ByteArray) -> Unit) {
         notificationListeners[charUuid] = listener

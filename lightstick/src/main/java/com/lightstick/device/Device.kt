@@ -762,6 +762,42 @@ data class Device(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun systemOff(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.SYSTEM_OFF, groupMask)
 
+    // ------------------------------------------------------------------------
+    // GATT command queue diagnostics
+    // ------------------------------------------------------------------------
+
+    /**
+     * Returns the counters of THIS device's GATT command queue — how many commands wait, the peak,
+     * and how many were **dropped** on overflow — so the values set with
+     * `LSBluetooth.setCommandIntervalMs` / `setCommandQueueSize` can be tuned against real
+     * traffic. A non-zero [CommandQueueStats.dropped] means commands were lost (see its doc).
+     *
+     * The numbers are cheap to read and safe from any thread, but only approximately consistent
+     * with each other (the queue keeps running while they are read). Meant for debug UI / logs.
+     *
+     * @return the counters, or `null` if the device is not connected.
+     * @since 2.200.0
+     */
+    fun getCommandQueueStats(): CommandQueueStats? =
+        try {
+            if (!isConnected()) null
+            else Facade.commandQueueStats(mac)?.let {
+                CommandQueueStats(it.pending, it.peakPending, it.dropped, it.replaced, it.executed)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+
+    /**
+     * Zeroes the counters returned by [getCommandQueueStats] (the pending commands themselves are
+     * not touched; [CommandQueueStats.peakPending] restarts from the current pending count).
+     *
+     * @return `false` if the device is not connected.
+     * @since 2.200.0
+     */
+    fun resetCommandQueueStats(): Boolean =
+        try { isConnected() && Facade.resetCommandQueueStats(mac) } catch (_: Throwable) { false }
+
     /**
      * Reads multiple device info fields in parallel and returns aggregated DeviceInfo.
      *

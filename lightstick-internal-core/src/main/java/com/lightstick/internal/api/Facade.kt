@@ -8,6 +8,7 @@ import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.*
 import com.lightstick.internal.ble.queue.CommandInterval
+import com.lightstick.internal.ble.queue.CommandQueueSnapshot
 import com.lightstick.internal.ble.ota.OtaManager
 import com.lightstick.internal.ble.ota.OtaState
 import com.lightstick.internal.ble.state.InternalConnectionState
@@ -92,6 +93,20 @@ object Facade {
 
     /** Current maximum number of pending GATT commands per device. */
     fun commandQueueSize(): Int = commandQueueSize
+
+    /** Command-queue counters of the connected device [mac], or `null` if it is not connected. */
+    fun commandQueueStats(mac: String): CommandQueueSnapshot? {
+        requireInit()
+        return sessions[mac]?.gatt?.queueStats(mac)
+    }
+
+    /** Zeroes the command-queue counters of [mac]. @return `false` if it is not connected. */
+    fun resetCommandQueueStats(mac: String): Boolean {
+        requireInit()
+        val gatt = sessions[mac]?.gatt ?: return false
+        gatt.resetQueueStats(mac)
+        return true
+    }
 
     fun setDebugLoggingEnabled(enabled: Boolean) {
         com.lightstick.internal.util.Log.enabled = enabled
