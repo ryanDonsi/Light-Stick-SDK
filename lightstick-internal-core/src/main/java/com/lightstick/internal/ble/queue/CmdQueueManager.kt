@@ -29,6 +29,8 @@ internal class CmdQueueManager(
         val op: String,
         val key: String?,
         val replace: Boolean,
+        /** If true, this command does not wait for the minimum interval (see [enqueue]). */
+        val bypassMinInterval: Boolean,
         val runner: () -> Unit
     )
 
@@ -57,6 +59,10 @@ internal class CmdQueueManager(
      * @param coalesceKey If provided with [replaceIfSameKey]=true, removes older pending entries
      *                    that share the same key, keeping the newest one.
      * @param replaceIfSameKey Whether to coalesce by [coalesceKey].
+     * @param bypassMinInterval If true, this command is started right away once the previous command
+     *                    has completed, without waiting for the configured minimum interval. For
+     *                    commands that pace themselves (OTA writes wait for each write ack), where the
+     *                    interval — meant for effect frames — would only slow the transfer down.
      * @param runner Async starter that MUST eventually call [signalComplete] with the same address.
      */
     fun enqueue(
@@ -64,6 +70,7 @@ internal class CmdQueueManager(
         operation: String,
         coalesceKey: String? = null,
         replaceIfSameKey: Boolean = false,
+        bypassMinInterval: Boolean = false,
         runner: () -> Unit
     ) {
         if (disconnected[address] == true) return
@@ -73,7 +80,7 @@ internal class CmdQueueManager(
         // coalescing (keep only the latest pending with the same key) + overflow trimming
         val max = (maxQueueSizeProvider?.invoke() ?: config.maxQueueSizePerAddress).coerceAtLeast(1)
         val discarded = q.offer(
-            Cmd(operation, coalesceKey, replaceIfSameKey, runner),
+            Cmd(operation, coalesceKey, replaceIfSameKey, bypassMinInterval, runner),
             coalesceKey, replaceIfSameKey, max, config.overflowPolicy
         )
         // Discarded commands never run and never signal completion — make that visible in the log.
@@ -110,6 +117,8 @@ internal class CmdQueueManager(
     // --- internals ---
 
     private fun waitFor(address: String): Long {
+        // The next command opted out of the minimum interval (e.g. an OTA write): no extra wait.
+        if (queues[address]?.head?.bypassMinInterval == true) return 0L
         val min = (minIntervalProvider?.invoke() ?: config.minIntervalMs).coerceAtLeast(0)
         if (min == 0L) return 0L
         val last = lastDone[address] ?: return 0L

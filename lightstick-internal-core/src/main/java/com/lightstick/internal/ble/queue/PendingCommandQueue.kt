@@ -32,6 +32,13 @@ internal class PendingCommandQueue<T> {
     @Volatile var replaced: Long = 0
         private set
 
+    /**
+     * The next command that [pollFirst] would hand out (`null` if none). A volatile snapshot kept up
+     * to date on every change, so another thread can look at it without touching the deque.
+     */
+    @Volatile var head: T? = null
+        private set
+
     /** Commands handed out for execution by [pollFirst]. */
     @Volatile var executed: Long = 0
         private set
@@ -69,6 +76,7 @@ internal class PendingCommandQueue<T> {
         }
 
         size = deque.size
+        head = deque.peekFirst()?.item
         if (size > peak) peak = size
         return discarded ?: emptyList()
     }
@@ -78,6 +86,7 @@ internal class PendingCommandQueue<T> {
         val e = deque.pollFirst() ?: return null
         executed++
         size = deque.size
+        head = deque.peekFirst()?.item
         return e.item
     }
 
@@ -85,6 +94,7 @@ internal class PendingCommandQueue<T> {
     fun clear() {
         deque.clear()
         size = 0
+        head = null
     }
 
     /** Zeroes the counters; [peak] restarts from the current [size]. */

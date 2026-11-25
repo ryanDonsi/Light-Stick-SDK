@@ -361,7 +361,9 @@ internal class GattClient(
         }
         chr.writeType = writeType
 
-        queueManager.enqueue(address, "ota-write") {
+        // OTA 쓰기는 write ACK 를 받은 뒤에야 다음 패킷을 보내므로 스스로 속도가 조절된다.
+        // 이펙트 프레임용 최소 전송 간격을 적용하면 패킷마다 대기해 OTA 전체 시간 제한(0x0D)을 넘길 수 있어 예외로 둔다.
+        queueManager.enqueue(address, "ota-write", bypassMinInterval = true) {
             pendingWriteAck[address] = onResult
             chr.value = data
             try {

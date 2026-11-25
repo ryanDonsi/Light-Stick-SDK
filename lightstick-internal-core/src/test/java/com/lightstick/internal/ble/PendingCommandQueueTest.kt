@@ -84,6 +84,31 @@ class PendingCommandQueueTest {
         assertEquals(q.size, q.peak)
     }
 
+    @Test fun headTracksTheNextCommandThroughOfferPollAndClear() {
+        val q = q()
+        assertNull(q.head)
+        q.offer("a", null, false, 8, OverflowPolicy.DROP_OLDEST)
+        q.offer("b", null, false, 8, OverflowPolicy.DROP_OLDEST)
+        assertEquals("a", q.head)
+        q.pollFirst()
+        assertEquals("b", q.head)
+        q.pollFirst()
+        assertNull(q.head)
+        q.offer("c", null, false, 8, OverflowPolicy.DROP_OLDEST)
+        q.clear()
+        assertNull(q.head)
+    }
+
+    @Test fun headFollowsOverflowAndReplacement() {
+        val q = q()
+        listOf("1", "2", "3").forEach { q.offer(it, null, false, 2, OverflowPolicy.DROP_OLDEST) }
+        assertEquals("2", q.head)                       // "1" was dropped
+        val r = q()
+        r.offer("x1", "K", true, 8, OverflowPolicy.DROP_OLDEST)
+        r.offer("x2", "K", true, 8, OverflowPolicy.DROP_OLDEST)
+        assertEquals("x2", r.head)                      // "x1" was replaced
+    }
+
     @Test fun maxBelowOneIsTreatedAsOne() {
         val q = q()
         q.offer("a", null, false, 0, OverflowPolicy.DROP_OLDEST)

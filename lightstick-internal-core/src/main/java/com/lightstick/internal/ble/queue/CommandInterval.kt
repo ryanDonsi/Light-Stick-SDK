@@ -2,7 +2,8 @@ package com.lightstick.internal.ble.queue
 
 /**
  * Minimum interval between completed GATT commands per device (applies to the whole per-device
- * serialized command queue — FF02 effect writes, but also reads, CCCD writes and OTA writes).
+ * serialized command queue — FF02 effect writes, but also reads, CCCD writes and game/control
+ * commands; OTA firmware writes are exempt, they pace themselves by waiting for each write ack).
  *
  * Public only so the `lightstick` module and unit tests can reach it; not part of the SDK API.
  */
