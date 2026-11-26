@@ -296,16 +296,23 @@ object Facade {
             }
         }
 
-        scope.launch {
+        // Replace (not add to) the auto-stop timer: a timer left over from an earlier scan would
+        // otherwise stop this new scan early (e.g. stopScan() + startScan() to refresh the list).
+        scanStopJob?.cancel()
+        scanStopJob = scope.launch {
             kotlinx.coroutines.delay(validScanTime * 1000L)
-            stopScan()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { stopScan() }
         }
     }
+
+    @Volatile private var scanStopJob: kotlinx.coroutines.Job? = null
 
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     fun stopScan() {
         requireInit()
+        scanStopJob?.cancel()
+        scanStopJob = null
         scan.stop(appContext)
     }
 
