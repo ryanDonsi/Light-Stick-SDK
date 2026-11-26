@@ -1,4 +1,4 @@
-# Light-Stick SDK API 레퍼런스 (v2.1.0)
+# Light-Stick SDK API 레퍼런스 (v2.200.0)
 
 `com.lightstick` 패키지(모듈: `lightstick`, `lightstick-internal-core`, 배포 아티팩트: `lightstick-sdk`)가 제공하는
 **공개(public) Kotlin API**를 모두 정리한 문서. 순수 BLE 와이어 프로토콜은 [`BLE_PROTOCOL.md`](./BLE_PROTOCOL.md)를 참고.
@@ -13,6 +13,7 @@
 | `com.lightstick.device` | `Device`, `DeviceInfo`, `DeviceState`, `ConnectionState`, `DeviceInfoResult` |
 | `com.lightstick.config` | `DeviceFilter`, `InitConfig`/`InitResult`(§9 참고 — 현재 미사용) |
 | `com.lightstick.types` | `Color`, `Colors`, `EffectType`, `MsgType`, `Group`, `GroupPalette`, `LSEffectPayload` |
+| `com.lightstick.control` | `ControlCmd` (v2.2 공연 제어 명령) |
 | `com.lightstick.game` | `GameCmd`, `GameMode`, `GameLevel`, `GameResult` |
 | `com.lightstick.efx` | `Efx`, `EfxHeader`, `EfxBody`, `EfxEntry`, `MusicId` |
 | `com.lightstick.ota` | `OtaManager` (+ 중첩 `OtaProgress`/`OtaResult`) |
@@ -36,6 +37,10 @@
 |---|---|
 | `initialize(context, deviceFilter: DeviceFilter? = null, allowUnknownDevices: Boolean = false)` | SDK 초기화. 앱 시작 시 1회 (여러 번 호출해도 최초 1회만 적용). 내부적으로 시스템 레벨에 이미 연결된 기기 세션 복원도 시도한다. |
 | `setDebugLoggingEnabled(enabled: Boolean)` | 패킷 TX/RX, 연결/서비스디스커버리/OTA 진단 로그를 `Lightstick` 태그로 ON/OFF. 기본값 `false`. 언제든 호출 가능. |
+
+| `setCommandIntervalMs(intervalMs: Long)` / `getCommandIntervalMs(): Long` | 기기별 GATT 명령 큐의 **최소 전송 간격**(기본 `DEFAULT_COMMAND_INTERVAL_MS` = **50ms**, 범위 `0..MAX_COMMAND_INTERVAL_MS`=1000, 0 = 간격 없음). 한 명령이 끝난 뒤 다음 명령까지 대기하는 시간이라 FF02 이펙트/타임라인 프레임뿐 아니라 그 기기의 **모든 GATT 작업**(DIS/BAS 읽기, CCCD 쓰기, FF03, FF0A)에 적용됨. 값이 클수록 프레임 간격이 벌어져 유실 여유는 늘지만 지연이 커지고, 큐(기기당 64개)가 가득 차면 가장 오래된 대기 명령부터 버려짐. 이미 연결된/연결 중인 기기에도 즉시 적용, 앱 재시작 시 초기화(저장 안 됨). 범위를 벗어나면 `IllegalArgumentException`. `initialize` 전에도 호출 가능 (@since 2.200.0) **OTA 펌웨어 쓰기는 이 간격의 적용을 받지 않는다**(쓰기 ACK를 기다리며 스스로 속도가 조절되고, 간격을 적용하면 기기의 OTA 전체 시간 제한(결과 0x0D)을 넘길 수 있음). |
+
+| `setCommandQueueSize(size: Int)` / `getCommandQueueSize(): Int` | 기기별 GATT 명령 큐의 **대기 명령 최대 개수**(기본 `DEFAULT_COMMAND_QUEUE_SIZE` = **8**, 범위 `1..MAX_COMMAND_QUEUE_SIZE`=256, 실행 중인 명령은 제외). 초과하면 **가장 오래된 대기 명령부터 버려짐** — 실행도 완료 콜백도 없음(버려진 읽기는 자체 타임아웃까지 대기). FF02 프레임은 전송 간격보다 빠르게 보내면 유실되며 대략 `큐 크기 × 간격`(기본 8×50ms=400ms)만큼의 밀림을 허용. 작을수록 LED가 실시간에 가깝고, 클수록 프레임은 보존되지만 지연됨. 연결 직후 병렬 읽기나 한꺼번에 많이 보내는 앱은 키울 것. 연결된 기기에도 즉시 적용(줄이면 다음 enqueue 때 정리), 저장 안 됨. 범위를 벗어나면 `IllegalArgumentException` (@since 2.200.0) |
 
 ### 1.2 스캔
 
@@ -95,7 +100,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | 메서드 | 설명 |
 |---|---|
 | `sendColor(color: Color, transition: Int): Boolean` | FF01 4바이트 컬러 패킷 전송 |
-| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). 진행 중이던 `playEffects`는 취소되고(재개하려면 재호출), 진행 중이던 `playTimeline`은 **호출할 때마다 매번 일시정지**됨(데이터는 보존 — 재개하려면 반드시 마지막으로 `resumeTimeline()`을 한 번 더 호출). 로드된 타임라인이 없으면 타임라인 상태에 영향 없음. ⚠️ 재생 중 `resumeTimeline()` → `sendEffect()` 순서로 호출하고 그 뒤로 `resumeTimeline()`을 다시 안 부르면 타임라인이 영구 정지함 — 재생 중 sendEffect를 쓰는 흐름에서는 항상 **가장 마지막에** `resumeTimeline()`을 호출할 것. |
+| `sendEffect(payload: LSEffectPayload): Boolean` | FF02 20바이트 이펙트 전송. **그룹 컨트롤도 이 메서드 하나** — `payload.groupMask`만 다르게 주면 됨 (별도 그룹 API 없음). 진행 중이던 `playEffects`는 취소되고(재개하려면 재호출), 진행 중이던 `playTimeline`은 **호출할 때마다 매번 일시정지**됨(데이터는 보존 — 재개하려면 반드시 마지막으로 `resumeTimeline()`을 한 번 더 호출). 로드된 타임라인이 없으면 타임라인 상태에 영향 없음. ⚠️ 재생 중 `resumeTimeline()` → `sendEffect()` 순서로 호출하고 그 뒤로 `resumeTimeline()`을 다시 안 부르면 타임라인이 영구 정지함 — 재생 중 sendEffect를 쓰는 흐름에서는 항상 **가장 마지막에** `resumeTimeline()`을 호출할 것. ⚠️ **effectIndex는 SDK가 자동 증가시키지 않는다(앱 관리)** — 같은 이펙트를 다시 보낼 땐(duration 만료 후 재점등 포함) effectIndex를 바꿀 것. `duration`은 그대로 전송되며 0이 아니면 10 이상 권장. 응원봉이 Control PAUSE 상태면 새 Effect가 일시정지를 해제한다. |
 
 ### 2.3 이펙트 재생 — `playEffects`/`stopEffects` (자체 시계, 원샷)
 
@@ -112,8 +117,8 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 |---|---|
 | `playTimeline(frames: List<Pair<Long, ByteArray>>): Boolean` | 타임라인 시작. `updatePlaybackPosition()`을 안 부르면 로드 시점부터 자체 시계로 free-run. |
 | `updatePlaybackPosition(currentPositionMs: Long): Boolean` | 외부 음악 재생 위치와 동기화 (권장 100ms 주기 호출). 뒤로 1초 이상/앞으로 10초 이상 점프 시 자동 seek 감지. |
-| `pauseTimeline(): Boolean` | 전송 일시정지. 이 순간의 재생 위치를 고정 — 일시정지 중에는 벽시계 시간이 얼마나 지나든 내부 보간 위치가 더 이상 흐르지 않음(과거 "내부 시계는 계속 흐름" 동작은 버그로 확인되어 수정됨). |
-| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화). 고정해뒀던 위치에서 정확히 이어서 재개 — 일시정지 동안 지난 시간만큼 위치가 튀거나 프레임이 유실되지 않음. 일시정지 중 `sendEffect()`가 호출되어 기기 LED 상태가 어긋나 있었다면, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해 상태를 맞춤. 이미 전송 활성 상태면 no-op. |
+| `pauseTimeline(): Boolean` | 전송 일시정지. 이 순간의 재생 위치를 고정 — 일시정지 중에는 벽시계 시간이 얼마나 지나든 내부 보간 위치가 더 이상 흐르지 않음(과거 "내부 시계는 계속 흐름" 동작은 버그로 확인되어 수정됨). **v2.2**: Control `PAUSE`(groupMask=0, 도달 가능한 모든 응원봉)도 함께 전송해 응원봉이 현재 색에서 얼어붙음. |
+| `resumeTimeline(): Boolean` | 재개 (effectIndex 자동 증가로 기기 재동기화). 고정해뒀던 위치에서 정확히 이어서 재개 — 일시정지 동안 지난 시간만큼 위치가 튀거나 프레임이 유실되지 않음. 일시정지 중 `sendEffect()`가 호출되어 기기 LED 상태가 어긋나 있었다면, 다음 타임라인 프레임 시점까지 기다리지 않고 현재 프레임을 즉시 재전송해 상태를 맞춤. 이미 전송 활성 상태면 no-op. **v2.2**: 재전송할 프레임이 없어도 Control `RESUME`(groupMask=0)을 **항상 먼저** 전송 — 응원봉은 마지막 효과를 *처음부터* 재시작하므로 타임라인 위치와 위상이 다를 수 있고, 일시정지 중이 아니면(예: 일시정지 중 `sendEffect`로 이미 해제됨) 응원봉이 RESUME을 무시함. 프레임 재전송은 RESUME 다음에 수행. RESUME은 **1회만** 전송(ACK/자동 재전송 없음) — 놓친 응원봉이 있으면 앱이 `resumeShow()`로 재전송(멱등). |
 | `stopTimeline(): Boolean` | 타임라인 중단 + 데이터 클리어. 재개하려면 `playTimeline()` 재호출 |
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
 | `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |
@@ -147,6 +152,22 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `readDeviceMode(onResult: (Result<DeviceMode>) -> Unit): Boolean` | 현재 응원봉 동작 모드 조회 (`DeviceMode.RELAY`=중계기 / `DeviceMode.BLE`=BLE Only). BLE Only 모드는 그룹 제어·게임모드4를 지원하지 않으므로 앱이 이 값으로 해당 메뉴를 비활성화해야 함 |
 
 > 배터리만 주기적으로 갱신하고 싶다면 `readBattery`만 앱 쪽 타이머로 반복 호출하면 된다 — SDK가 자동으로 폴링하지 않는다.
+
+### 2.6.1 공연 제어 (FF0A, v2.2)
+
+| 메서드 | 설명 |
+|---|---|
+| `getCommandQueueStats(): CommandQueueStats?` | 이 기기의 GATT 명령 큐 카운터(디버그/튜닝용). 연결되지 않았으면 `null`. 필드는 §3 `CommandQueueStats` 참고. `dropped`가 0이 아니면 큐 오버플로로 명령이 유실된 것 — `LSBluetooth.setCommandQueueSize`/`setCommandIntervalMs`를 조정. 어느 스레드에서든 호출 가능하지만 값들은 대략적으로만 일관됨 (@since 2.200.0) |
+| `resetCommandQueueStats(): Boolean` | 위 카운터를 0으로 초기화(대기 중인 명령은 그대로, `peakPending`은 현재 대기 수부터 다시 집계). 연결되지 않았으면 `false` (@since 2.200.0) |
+| `supportsControl(): Boolean` | FF0A(Control) **특성 존재 여부** 확인 (중계기 / BLE 모드 Master) |
+| `sendControl(cmd: ControlCmd, groupMask: Long = Group.ALL_SINGLE): Boolean` | FF0A Write With Response. `groupMask` 기본 0 = **모든 응원봉**, `ALL_GROUPS` = 그룹 배정된 모든 응원봉, `GRPn` OR 조합 = 해당 그룹(미배정 응원봉은 0이 아닌 마스크를 무시). effectIndex는 SDK가 호출마다 자동 증가. 연결 안 됨/FF0A 없음이면 `false` |
+| `showEnter()` / `showExit()` | `SHOW_ENTER` / `SHOW_EXIT` (groupMask=0) |
+| `pauseShow(groupMask = 0)` / `resumeShow(groupMask = 0)` | `PAUSE`(현재 색에서 얼림) / `RESUME`(마지막 효과를 **처음부터** 재시작, 일시정지 중일 때만 동작) |
+| `systemOff(groupMask = 0)` | `SYSTEM_OFF` — **원격 복구 불가**(버튼으로만 켤 수 있음). 사용자 확인 UI는 **앱이 구현**, SDK는 확인하지 않음 |
+
+> **전제**: 모든 중계기/응원봉은 펌웨어 **2.200 이상**이어야 한다(하위 버전 미지원). `sendControl`은 연결 여부와 FF0A 존재만 확인하고 펌웨어 버전은 확인하지 않는다. ACK/상태 통지는 없다.
+>
+> **`pauseTimeline`/`resumeTimeline`과의 관계**: §2.4의 타임라인 pause/resume은 위 `PAUSE`/`RESUME`을 자동 전송하며 **groupMask=0(모든 응원봉) 고정**이다(그룹 단위는 `pauseShow(groupMask)`/`resumeShow(groupMask)` 사용). BLE 모드 FF09=0이어도 Control은 규격상 항상 전파되므로 개인 알림 이벤트에는 `pauseTimeline` 대신 `sendEffect`를 쓴다. 일시정지 중에는 프레임/Effect를 보내지 말 것 — 새 Effect는 응원봉의 일시정지를 해제한다.
 
 ### 2.7 OTA
 
@@ -209,8 +230,25 @@ data class DeviceInfo(
     val rssi: Int? = null,
     val isConnected: Boolean = false,
     val lastUpdated: Long = System.currentTimeMillis()
+) {
+    val firmwareVersion: FirmwareVersion?                 // firmwareRevision 파싱 (v2.2 §6), 실패 시 null
+}
+```
+
+### `FirmwareVersion` (data class, `Comparable`) — v2.2 §6
+펌웨어 버전 `<메이저>.<마이너+빌드 3자리>`(예: `2.200`, `2.201`). 비교는 **숫자**(메이저 → 마이너+빌드)이며 `2.200 < 2.201 < 2.300`. `FirmwareVersion.parse(String?)`(이전 체계 `1.0.x` 등 형식이 다르면 `null`), 상수 `FirmwareVersion.PROTOCOL_2_2`(`2.200`).
+
+### `CommandQueueStats` (data class) — `Device.getCommandQueueStats()` 반환 (@since 2.200.0)
+```kotlin
+data class CommandQueueStats(
+    val pending: Int,       // 지금 대기 중인 명령 수 (실행 중인 1개는 제외)
+    val peakPending: Int,   // 대기 수 최댓값 — 설정한 큐 크기와 같으면 한 번이라도 가득 찼다는 뜻
+    val dropped: Long,      // 오버플로로 버려진 명령 수 (실행도 완료 콜백도 없음 → 유실)
+    val replaced: Long,     // 같은 coalesce 키의 새 명령으로 치환된 대기 명령 수 (타임라인 프레임은 치환 안 됨)
+    val executed: Long      // BLE 스택에 실행 요청된 명령 수
 )
 ```
+큐는 그 기기의 **모든** GATT 작업(FF02 프레임, 읽기, CCCD, FF03/FF0A, OTA)이 공유한다. 카운터는 연결 시점(또는 마지막 `resetCommandQueueStats()`)부터 누적되며, 디버그 로그를 켜면(`setDebugLoggingEnabled(true)`) 버려질 때마다 `[CmdQueue] ... overflow: dropped pending '<작업>'` 경고가 남는다.
 
 ### `DeviceState` (data class)
 ```kotlin
@@ -296,6 +334,18 @@ fun Color.toRgbBytes(): ByteArray                        // [r,g,b] 3바이트
 | EFFECT | 0 | 단일/그룹 이펙트 (기본값) |
 | GAME_MODE | 1 | FF02에서는 사용 안 함 (FF03/FF04 전용 레이아웃) |
 | GROUP_SETUP | 2 | `Device.sendGroupSetting`에서만 사용 |
+| CONTROL | 3 | v2.2 공연 제어 — FF0A 전용(레이아웃 C). `LSEffectPayload`로는 만들 수 없음, `Device.sendControl` 사용 |
+
+`MsgType.fromCode(code)`는 알 수 없는 값에 **`null`**을 반환한다(v2.2: 알 수 없는 msgType은 Effect로 해석하지 않고 무시). `LSEffectPayload.fromByteArray`는 알 수 없는 msgType도 예외로 거부한다.
+
+### `ControlCmd` (enum, cmdIndex) — `Device.sendControl`의 명령 인자 (v2.2)
+| 값 | cmdIndex | 설명 |
+|---|---|---|
+| SHOW_ENTER | 1 | 공연 모드 진입 (LED 변화 없음) |
+| SHOW_EXIT | 2 | 공연 모드 해제 (일시정지 중이면 해제 + 소등) |
+| PAUSE | 3 | 현재 효과를 얼림 (duration 타이머도 정지) |
+| RESUME | 4 | 얼린 효과를 처음부터 재시작 (일시정지 중일 때만) |
+| SYSTEM_OFF | 5 | 전원 끄기 — 복구 불가 |
 
 ### `Group` (object, 상수 전용)
 ```kotlin
@@ -332,10 +382,10 @@ data class LSEffectPayload(
     val randomDelay: Int = 0,
     val fade: Int = 100,
     val duration: Int = 0,      // 10ms 단위, 0 = 다음 명령까지 유지 (protocol v2.1)
-    val effectIndex: Int = 0    // 0..255 (u8)
+    val effectIndex: Int = 0    // 0..255 (u8) — 동일 프레임 재전송 시 앱이 변경해야 함(§2.2)
 )
 fun toByteArray(): ByteArray                       // 20바이트 인코딩
-companion fun fromByteArray(bytes: ByteArray): LSEffectPayload  // 디코딩 (msgType=GAME_MODE면 예외)
+companion fun fromByteArray(bytes: ByteArray): LSEffectPayload  // 디코딩 (msgType=GAME_MODE/CONTROL/알 수 없는 값이면 예외)
 ```
 정확한 바이트 오프셋/범위는 [`BLE_PROTOCOL.md` §2.2](./BLE_PROTOCOL.md#22-ff02--effect-payload-20바이트-le_led_patload_t-protocol-v21)참고.
 
@@ -474,4 +524,4 @@ data class OtaResult(val ok: Boolean, val message: String? = null)  // OtaManage
 
 ## 9. 버전
 
-`lightstick` / `lightstick-internal-core` / `lightstick-sdk` 세 모듈 모두 `group="com.lightstick"`, `version="2.1.0"`으로 통일 배포.
+`lightstick` / `lightstick-internal-core` / `lightstick-sdk` 세 모듈 모두 `group="com.lightstick"`, `version="2.200.0"`으로 통일 배포.

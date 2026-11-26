@@ -9,6 +9,8 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.queue.CmdQueueConfig
+import com.lightstick.internal.ble.queue.CommandInterval
+import com.lightstick.internal.ble.queue.CommandQueueSnapshot
 import com.lightstick.internal.ble.queue.CmdQueueManager
 import com.lightstick.internal.ble.queue.OverflowPolicy
 import com.lightstick.internal.util.Log
@@ -32,7 +34,13 @@ import java.util.concurrent.ConcurrentHashMap
  * - 서비스/캐릭터리스틱 미발견 (서비스 디스커버리 전/UUID 불일치)
  */
 @Suppress("DEPRECATION")
-internal class GattClient(private val context: Context) : AutoCloseable {
+internal class GattClient(
+    private val context: Context,
+    /** Minimum interval between completed GATT commands per device, read on every command. */
+    commandIntervalMs: () -> Long = { CommandInterval.DEFAULT_MS },
+    /** Maximum pending commands per device queue, read on every enqueue. */
+    commandQueueSize: () -> Int = { CommandInterval.DEFAULT_QUEUE_SIZE }
+) : AutoCloseable {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -63,10 +71,12 @@ internal class GattClient(private val context: Context) : AutoCloseable {
 
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
-            minIntervalMs = 20L,
-            maxQueueSizePerAddress = 64,
+            minIntervalMs = CommandInterval.DEFAULT_MS,
+            maxQueueSizePerAddress = CommandInterval.DEFAULT_QUEUE_SIZE,
             overflowPolicy = OverflowPolicy.DROP_OLDEST
-        )
+        ),
+        commandIntervalMs,
+        commandQueueSize
     )
 
     // ============================================================================================
@@ -77,6 +87,12 @@ internal class GattClient(private val context: Context) : AutoCloseable {
      * 현재 연결된 디바이스의 MAC 주소를 반환합니다.
      */
     fun getCurrentAddress(): String? = currentAddress
+
+    /** Counters of the command queue for [address] (pending / peak / dropped / replaced / executed). */
+    fun queueStats(address: String): CommandQueueSnapshot = queueManager.stats(address)
+
+    /** Zeroes the command-queue counters for [address]. */
+    fun resetQueueStats(address: String) = queueManager.resetStats(address)
 
     fun addNotificationListener(charUuid: java.util.UUID, listener: (ByteArray) -> Unit) {
         notificationListeners[charUuid] = listener
@@ -345,7 +361,9 @@ internal class GattClient(private val context: Context) : AutoCloseable {
         }
         chr.writeType = writeType
 
-        queueManager.enqueue(address, "ota-write") {
+        // OTA 쓰기는 write ACK 를 받은 뒤에야 다음 패킷을 보내므로 스스로 속도가 조절된다.
+        // 이펙트 프레임용 최소 전송 간격을 적용하면 패킷마다 대기해 OTA 전체 시간 제한(0x0D)을 넘길 수 있어 예외로 둔다.
+        queueManager.enqueue(address, "ota-write", bypassMinInterval = true) {
             pendingWriteAck[address] = onResult
             chr.value = data
             try {
@@ -461,7 +479,7 @@ internal class GattClient(private val context: Context) : AutoCloseable {
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 // 본딩된 기기는 안드로이드가 GATT 서비스 목록을 캐시한다. 펌웨어 업데이트로
-                // FF09 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5)
+                // FF09/FF0A 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5, v2.2 §2.6)
                 // 서비스 재탐색 전에 캐시를 비운다.
                 if (gatt.device.bondState == BluetoothDevice.BOND_BONDED) refreshGattCache(gatt)
                 Log.d("[GattClient] 서비스 디스커버리 시작: $address")

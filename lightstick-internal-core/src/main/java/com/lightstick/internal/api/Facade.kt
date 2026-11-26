@@ -7,6 +7,8 @@ import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.*
+import com.lightstick.internal.ble.queue.CommandInterval
+import com.lightstick.internal.ble.queue.CommandQueueSnapshot
 import com.lightstick.internal.ble.ota.OtaManager
 import com.lightstick.internal.ble.ota.OtaState
 import com.lightstick.internal.ble.state.InternalConnectionState
@@ -58,6 +60,54 @@ object Facade {
     }
 
     /** Toggles debug logging (packet TX/RX, connection/OTA diagnostics) across the BLE layer. */
+    @Volatile private var commandIntervalMs: Long = CommandInterval.DEFAULT_MS
+
+    /**
+     * Sets the minimum interval between completed GATT commands per device (default
+     * [CommandInterval.DEFAULT_MS], 0 = none). The value is read by each device's command queue on
+     * every command, so it also applies to devices that are already connected or connecting.
+     * May be called any time, even before initialize.
+     *
+     * @throws IllegalArgumentException if outside `0..CommandInterval.MAX_MS`.
+     */
+    fun setCommandIntervalMs(intervalMs: Long) {
+        commandIntervalMs = CommandInterval.validate(intervalMs)
+    }
+
+    /** Current minimum interval between GATT commands in milliseconds. */
+    fun commandIntervalMs(): Long = commandIntervalMs
+
+    @Volatile private var commandQueueSize: Int = CommandInterval.DEFAULT_QUEUE_SIZE
+
+    /**
+     * Sets the maximum number of pending GATT commands per device (default
+     * [CommandInterval.DEFAULT_QUEUE_SIZE]). Read on every enqueue, so it also applies to devices
+     * that are already connected; when the queue exceeds it the oldest pending commands are
+     * dropped (never executed, no completion callback). Lowering it trims on the next enqueue.
+     *
+     * @throws IllegalArgumentException if outside `1..CommandInterval.MAX_QUEUE_SIZE`.
+     */
+    fun setCommandQueueSize(size: Int) {
+        commandQueueSize = CommandInterval.validateQueueSize(size)
+    }
+
+    /** Current maximum number of pending GATT commands per device. */
+    fun commandQueueSize(): Int = commandQueueSize
+
+    /** Command-queue counters of the connected device [mac], or `null` if it is not connected. */
+    fun commandQueueStats(mac: String): CommandQueueSnapshot? {
+        requireInit()
+        return sessions[mac]?.gatt?.queueStats(mac)
+    }
+
+    /** Zeroes the command-queue counters of [mac]. @return `false` if it is not connected. */
+    fun resetCommandQueueStats(mac: String): Boolean {
+        requireInit()
+        val gatt = sessions[mac]?.gatt ?: return false
+        gatt.resetQueueStats(mac)
+        return true
+    }
+
     fun setDebugLoggingEnabled(enabled: Boolean) {
         com.lightstick.internal.util.Log.enabled = enabled
     }
@@ -125,7 +175,8 @@ object Facade {
         val deviceInfo: DeviceInfoManager,
         val ota: OtaManager?,
         val game: GameManager,
-        val group: GroupControlManager
+        val group: GroupControlManager,
+        val control: ControlManager
     ) {
         fun cleanup() {
             runCatching { ota?.abort() }
@@ -275,7 +326,7 @@ object Facade {
         deviceStateManager.updateConnectionState(mac, InternalConnectionState.Connecting())
 
 
-        val gatt = GattClient(appContext)
+        val gatt = GattClient(appContext, { commandIntervalMs }, { commandQueueSize })
 
         gatt.setConnectionStateListener { address, newState, gattStatus ->
             when (newState) {
@@ -310,11 +361,12 @@ object Facade {
         gatt.connect(
             address = mac,
             onConnected = {
-                val led = LedControlManager(gatt)
+                val control = ControlManager(gatt)
+                val led = LedControlManager(gatt, control)
                 val deviceInfo = DeviceInfoManager(gatt)
                 val game = GameManager(gatt)
                 val group = GroupControlManager(gatt)
-                sessions[mac] = Session(gatt, led, deviceInfo, null, game, group)
+                sessions[mac] = Session(gatt, led, deviceInfo, null, game, group, control)
                 disReadyMap[mac] = CompletableDeferred()
 
                 deviceStateManager.updateConnectionState(
@@ -734,7 +786,8 @@ object Facade {
     }
 
     /**
-     * playTimeline()으로 시작한 타임라인의 이펙트 전송을 일시정지합니다.
+     * playTimeline()으로 시작한 타임라인의 이펙트 전송을 일시정지합니다. Control PAUSE(groupMask=0)도
+     * 함께 전송합니다(v2.2).
      *
      * @param mac 대상 디바이스 MAC 주소
      */
@@ -750,6 +803,7 @@ object Facade {
      * sendEffectTo()에 의한 일시정지 모두 대상 — sendEffectTo() 이후엔 반드시 마지막으로
      * 호출해야 함).
      *
+     * 재전송할 프레임이 없어도 Control RESUME(groupMask=0)을 항상 먼저 보냅니다(v2.2, 1회 전송).
      * 내부적으로 effectIndex가 자동 증가하여 재동기화가 처리됩니다. 일시정지 중
      * sendEffectTo()가 호출되어 기기 LED 상태가 어긋난 경우, 다음 프레임 시점을 기다리지
      * 않고 현재 프레임을 즉시 재전송해 상태를 맞춥니다.
@@ -889,6 +943,29 @@ object Facade {
         requireInit()
         if (!isConnected(mac)) return false
         return requireSession(mac).game.sendTeamAssignEnd(teamId)
+    }
+
+    // ============================================================================================
+    // Control (FF0A, BLE protocol v2.2 §2.6)
+    // ============================================================================================
+
+    /** Returns true if [mac] exposes FF0A Control (relay / BLE-mode master wand, firmware >= 2.200). */
+    fun supportsControl(mac: String): Boolean {
+        requireInit()
+        return sessions[mac]?.control?.isControlSupported() ?: false
+    }
+
+    /**
+     * Sends a Control frame (msgType=3) to FF0A. [cmdIndex] is the raw protocol code; effectIndex
+     * is advanced automatically per call. Returns false if not connected or FF0A is absent.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendControl(mac: String, cmdIndex: Int, groupMask: Long): Boolean {
+        requireInit()
+        if (!isConnected(mac)) return false
+        val control = requireSession(mac).control
+        if (!control.isControlSupported()) return false
+        return control.send(cmdIndex, groupMask)
     }
 
     // ============================================================================================

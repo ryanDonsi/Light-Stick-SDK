@@ -45,6 +45,12 @@ internal object UuidConstants {
      */
     val LCS_BROADCASTING: UUID = UUID.fromString("0001ff09-0000-1000-8000-00805f9800c4")
 
+    /**
+     * FF0A — Control (공연 제어): Write With Response, 20B layout C (msgType=3). Present on relays
+     * and BLE-mode master wands (BLE protocol v2.2 §2.6).
+     */
+    val LCS_CONTROL: UUID = UUID.fromString("0001ff0a-0000-1000-8000-00805f9800c4")
+
     // ===== Generic Access Profile (Standard) =====================================
     /** Generic Access Profile (GAP) service. Device Name (0x2A00) lives here, not in DIS. */
     val GAP_SERVICE: UUID = UUID.fromString("00001800-0000-1000-8000-00805f9b34fb")

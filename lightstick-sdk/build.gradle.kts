@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "com.lightstick"
-version = "2.1.0"
+version = "2.200.0"
 
 androidFusedLibrary {
     namespace = "com.lightstick.sdk"

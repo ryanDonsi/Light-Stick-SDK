@@ -39,4 +39,7 @@ data class DeviceInfo(
     val rssi: Int? = null,
     val isConnected: Boolean = false,
     val lastUpdated: Long = System.currentTimeMillis()
-)
+) {
+    /** [firmwareRevision] parsed per BLE protocol v2.2 §6 (numeric-comparable), or `null` if absent/unparseable. */
+    val firmwareVersion: FirmwareVersion? get() = FirmwareVersion.parse(firmwareRevision)
+}

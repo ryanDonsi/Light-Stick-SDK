@@ -2,7 +2,7 @@ package com.lightstick.internal.ble.queue
 
 import android.os.Handler
 import android.os.Looper
-import java.util.ArrayDeque
+import com.lightstick.internal.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -19,17 +19,23 @@ import java.util.concurrent.ConcurrentHashMap
  * - Call [enqueue], [signalComplete], and [clear] on the main thread for simplicity.
  */
 internal class CmdQueueManager(
-    private var config: CmdQueueConfig = CmdQueueConfig()
+    private var config: CmdQueueConfig = CmdQueueConfig(),
+    /** If set, read on every scheduling decision and overrides [CmdQueueConfig.minIntervalMs]. */
+    private val minIntervalProvider: (() -> Long)? = null,
+    /** If set, read on every enqueue and overrides [CmdQueueConfig.maxQueueSizePerAddress]. */
+    private val maxQueueSizeProvider: (() -> Int)? = null
 ) {
     private data class Cmd(
         val op: String,
         val key: String?,
         val replace: Boolean,
+        /** If true, this command does not wait for the minimum interval (see [enqueue]). */
+        val bypassMinInterval: Boolean,
         val runner: () -> Unit
     )
 
     private val handler = Handler(Looper.getMainLooper())
-    private val queues = ConcurrentHashMap<String, ArrayDeque<Cmd>>()
+    private val queues = ConcurrentHashMap<String, PendingCommandQueue<Cmd>>()
     private val running = ConcurrentHashMap<String, Boolean>()
     private val disconnected = ConcurrentHashMap<String, Boolean>()
     private val lastDone = ConcurrentHashMap<String, Long>()
@@ -53,6 +59,10 @@ internal class CmdQueueManager(
      * @param coalesceKey If provided with [replaceIfSameKey]=true, removes older pending entries
      *                    that share the same key, keeping the newest one.
      * @param replaceIfSameKey Whether to coalesce by [coalesceKey].
+     * @param bypassMinInterval If true, this command is started right away once the previous command
+     *                    has completed, without waiting for the configured minimum interval. For
+     *                    commands that pace themselves (OTA writes wait for each write ack), where the
+     *                    interval — meant for effect frames — would only slow the transfer down.
      * @param runner Async starter that MUST eventually call [signalComplete] with the same address.
      */
     fun enqueue(
@@ -60,31 +70,38 @@ internal class CmdQueueManager(
         operation: String,
         coalesceKey: String? = null,
         replaceIfSameKey: Boolean = false,
+        bypassMinInterval: Boolean = false,
         runner: () -> Unit
     ) {
         if (disconnected[address] == true) return
 
-        val q = queues.getOrPut(address) { ArrayDeque() }
+        val q = queues.getOrPut(address) { PendingCommandQueue() }
 
-        // coalescing: keep only the latest pending with the same key
-        if (replaceIfSameKey && coalesceKey != null && q.isNotEmpty()) {
-            val it = q.iterator()
-            while (it.hasNext()) if (it.next().key == coalesceKey) it.remove()
-        }
-
-        q.addLast(Cmd(operation, coalesceKey, replaceIfSameKey, runner))
-
-        // overflow trimming
-        val max = config.maxQueueSizePerAddress.coerceAtLeast(1)
-        while (q.size > max) {
-            when (config.overflowPolicy) {
-                OverflowPolicy.DROP_OLDEST -> if (q.isNotEmpty()) q.removeFirst()
-                OverflowPolicy.DROP_NEWEST -> if (q.isNotEmpty()) q.removeLast()
-            }
+        // coalescing (keep only the latest pending with the same key) + overflow trimming
+        val max = (maxQueueSizeProvider?.invoke() ?: config.maxQueueSizePerAddress).coerceAtLeast(1)
+        val discarded = q.offer(
+            Cmd(operation, coalesceKey, replaceIfSameKey, bypassMinInterval, runner),
+            coalesceKey, replaceIfSameKey, max, config.overflowPolicy
+        )
+        // Discarded commands never run and never signal completion — make that visible in the log.
+        discarded.forEach {
+            Log.w("[CmdQueue] $address overflow: dropped pending '${it.op}' " +
+                "(policy=${config.overflowPolicy}, max=$max, totalDropped=${q.dropped})")
         }
 
         // schedule next if not running
         if (running[address] != true) scheduleNext(address, waitFor(address))
+    }
+
+    /** Snapshot of the queue counters for [address] (all zero if nothing was ever enqueued). */
+    fun stats(address: String): CommandQueueSnapshot {
+        val q = queues[address] ?: return CommandQueueSnapshot(0, 0, 0, 0, 0)
+        return CommandQueueSnapshot(q.size, q.peak, q.dropped, q.replaced, q.executed)
+    }
+
+    /** Zeroes the counters of [address] (the pending commands themselves are untouched). */
+    fun resetStats(address: String) {
+        queues[address]?.resetStats()
     }
 
     /**
@@ -100,7 +117,9 @@ internal class CmdQueueManager(
     // --- internals ---
 
     private fun waitFor(address: String): Long {
-        val min = config.minIntervalMs.coerceAtLeast(0)
+        // The next command opted out of the minimum interval (e.g. an OTA write): no extra wait.
+        if (queues[address]?.head?.bypassMinInterval == true) return 0L
+        val min = (minIntervalProvider?.invoke() ?: config.minIntervalMs).coerceAtLeast(0)
         if (min == 0L) return 0L
         val last = lastDone[address] ?: return 0L
         return (min - (System.currentTimeMillis() - last)).coerceAtLeast(0)

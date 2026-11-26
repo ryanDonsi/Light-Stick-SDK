@@ -5,6 +5,7 @@ import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
 import com.lightstick.device.DeviceInfo
+import com.lightstick.control.ControlCmd
 import com.lightstick.game.GameCmd
 import com.lightstick.game.GameMode
 import com.lightstick.game.GameResult
@@ -253,6 +254,23 @@ data class Device(
      * Calling this while no timeline is loaded has no effect on timeline state. Use
      * [isTimelineLoaded] beforehand if you need to know which case you're in.
      *
+     * **effectIndex is NOT managed here** (the app's responsibility). Relays, BLE masters and
+     * slave wands drop a frame whose 20 bytes are identical to the previous one, so to send the
+     * same effect again — including re-lighting it after its `duration` expired — change
+     * [LSEffectPayload.effectIndex] (0..255, wrapping) on every send. This SDK sends the payload
+     * exactly as given and does not auto-increment it (only timeline playback manages its own
+     * effectIndex). The same rule applies to group-targeted effects (`groupMask != 0`): with a
+     * changed effectIndex the wand treats identical content as a new command.
+     *
+     * **duration** is also sent as given: a non-zero value turns the wand's LED off after
+     * `duration x 10 ms` (use 10 or more; 1..9 expire imprecisely, and the firmware does not
+     * correct them), and it applies to group-targeted effects too. A Control `PAUSE` (see
+     * [sendControl]) stops that timer and `RESUME` restarts it from the full duration. Timeline
+     * playback, in contrast, always forces `duration = 0` on its frames.
+     *
+     * If the wand is frozen by a Control `PAUSE`, a new effect sent here releases the pause and
+     * plays immediately (last command wins).
+     *
      * @param payload 20-byte structured effect payload.
      * @return `true` if the payload was enqueued to the BLE write queue; `false` if the
      *         device is not connected or an error prevented enqueuing.
@@ -401,6 +419,18 @@ data class Device(
      * it does not keep advancing with wall-clock time while paused, no matter how long the
      * pause lasts. [resumeTimeline] picks up from exactly that frozen position.
      *
+     * **Control interlock (v2.2):** if the connected device exposes FF0A ([supportsControl]),
+     * this also broadcasts a Control `PAUSE` (`groupMask = 0`, i.e. every wand), so the wand(s)
+     * freeze on the current color instead of just continuing to show the last frame. The target
+     * is fixed to *all* wands reachable through the relay/master — not only this device, and
+     * not selectable by group (use [pauseShow] for that) — and a Control frame is not
+     * acknowledged. Do not call this for transient notification effects: [sendEffect] already
+     * suspends the timeline on the SDK side without any Control broadcast. If FF0A is missing
+     * the Control write fails (logged) and only the SDK-side pause happens.
+     *
+     * Do not send timeline frames or other effects while paused: any new Effect on the wand
+     * releases the Control pause (last command wins).
+     *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
      *
@@ -431,6 +461,15 @@ data class Device(
      * spent paused. If the LED was left showing a one-shot [sendEffect] payload from during
      * the pause, this also immediately resends the current timeline frame so the device
      * doesn't wait for the next frame boundary to show the right thing again.
+     *
+     * **Control interlock (v2.2):** on a device that exposes FF0A ([supportsControl]), a Control
+     * `RESUME` (`groupMask = 0`) is **always** sent first — even when there is no frame to resend
+     * (timeline empty, or before the first frame). The wand restarts its last effect **from the
+     * beginning** (not from where it froze). The `RESUME` is sent **once**: there is no ACK and no
+     * automatic resend (the app may resend with [resumeShow], which is idempotent). Its animation
+     * phase can differ from the timeline position; a wand that is not paused ignores `RESUME`, e.g. when a `sendEffect`
+     * during the pause already released it. The optional frame resend described above follows
+     * the `RESUME`.
      *
      * @return true if the request was submitted; false otherwise.
      * @throws SecurityException If BLUETOOTH_CONNECT permission is missing.
@@ -655,6 +694,109 @@ data class Device(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun setBroadcasting(enabled: Boolean): Boolean =
         try { isConnected() && Facade.setBroadcasting(mac, enabled) } catch (_: Throwable) { false }
+
+    // ------------------------------------------------------------------------
+    // Control (FF0A, BLE protocol v2.2 §2.6)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Returns `true` if this device exposes the FF0A Control characteristic (relay or BLE-mode
+     * master wand; all relays and wands are expected to run firmware >= 2.200).
+     *
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun supportsControl(): Boolean = Facade.supportsControl(mac)
+
+    /**
+     * Sends a show-control command (FF0A, Write With Response). With a relay connected it is
+     * broadcast over 802.15.4; with a BLE-mode master it is also advertised to nearby wands
+     * regardless of the FF09 setting. There is no ACK in protocol v2.2.
+     *
+     * The frame's effectIndex is advanced automatically on every call, so resending the same
+     * command is not discarded as a duplicate; commands are idempotent on the wand side.
+     *
+     * **Prerequisite.** Every relay and wand must run firmware >= 2.200 (older wands would read
+     * the frame as an Effect). The SDK only checks the connection and that FF0A exists, not
+     * firmware versions.
+     *
+     * @param cmd Control command. **[ControlCmd.SYSTEM_OFF] cannot be undone remotely — the app
+     *        must obtain user confirmation (UI) before calling; the SDK does not ask.**
+     * @param groupMask Target: [Group.ALL_SINGLE] (0, default) = every wand, [Group.ALL_GROUPS] =
+     *        every wand that has a group, or `GRPn` bits OR'd together. Ungrouped wands ignore
+     *        a non-zero mask. SHOW_ENTER / SHOW_EXIT should use 0.
+     * @return `true` if enqueued; `false` if not connected or FF0A is absent.
+     * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendControl(cmd: ControlCmd, groupMask: Long = Group.ALL_SINGLE): Boolean {
+        require(groupMask in 0L..0xFFFFFFFFL) { "groupMask must be within 0..0xFFFFFFFF" }
+        return try {
+            isConnected() && Facade.sendControl(mac, cmd.cmdIndex, groupMask)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** [ControlCmd.SHOW_ENTER] shortcut. @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun showEnter(): Boolean = sendControl(ControlCmd.SHOW_ENTER)
+
+    /** [ControlCmd.SHOW_EXIT] shortcut. @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun showExit(): Boolean = sendControl(ControlCmd.SHOW_EXIT)
+
+    /** [ControlCmd.PAUSE] shortcut. @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun pauseShow(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.PAUSE, groupMask)
+
+    /** [ControlCmd.RESUME] shortcut (restarts the last effect from the beginning). @since 2.200.0 */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun resumeShow(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.RESUME, groupMask)
+
+    /**
+     * [ControlCmd.SYSTEM_OFF] shortcut. **Irreversible remotely** — confirm with the user first.
+     * @since 2.200.0
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun systemOff(groupMask: Long = Group.ALL_SINGLE): Boolean = sendControl(ControlCmd.SYSTEM_OFF, groupMask)
+
+    // ------------------------------------------------------------------------
+    // GATT command queue diagnostics
+    // ------------------------------------------------------------------------
+
+    /**
+     * Returns the counters of THIS device's GATT command queue — how many commands wait, the peak,
+     * and how many were **dropped** on overflow — so the values set with
+     * `LSBluetooth.setCommandIntervalMs` / `setCommandQueueSize` can be tuned against real
+     * traffic. A non-zero [CommandQueueStats.dropped] means commands were lost (see its doc).
+     *
+     * The numbers are cheap to read and safe from any thread, but only approximately consistent
+     * with each other (the queue keeps running while they are read). Meant for debug UI / logs.
+     *
+     * @return the counters, or `null` if the device is not connected.
+     * @since 2.200.0
+     */
+    fun getCommandQueueStats(): CommandQueueStats? =
+        try {
+            if (!isConnected()) null
+            else Facade.commandQueueStats(mac)?.let {
+                CommandQueueStats(it.pending, it.peakPending, it.dropped, it.replaced, it.executed)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+
+    /**
+     * Zeroes the counters returned by [getCommandQueueStats] (the pending commands themselves are
+     * not touched; [CommandQueueStats.peakPending] restarts from the current pending count).
+     *
+     * @return `false` if the device is not connected.
+     * @since 2.200.0
+     */
+    fun resetCommandQueueStats(): Boolean =
+        try { isConnected() && Facade.resetCommandQueueStats(mac) } catch (_: Throwable) { false }
 
     /**
      * Reads multiple device info fields in parallel and returns aggregated DeviceInfo.
