@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Parcelable
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.MainThreadCallbacks
 import com.lightstick.device.DeviceInfo
 import com.lightstick.control.ControlCmd
 import com.lightstick.game.GameCmd
@@ -99,7 +100,7 @@ data class Device(
     ) {
         Facade.connect(
             mac = mac,
-            onConnected = {
+            onConnected = MainThreadCallbacks.wrap {
                 onConnected()
 
                 // Facade는 DIS 읽기 성공/실패/타임아웃 여부와 관계없이
@@ -112,7 +113,7 @@ data class Device(
                     }
                 }
             },
-            onFailed = onFailed
+            onFailed = MainThreadCallbacks.wrap(onFailed)
         )
     }
 
@@ -153,8 +154,8 @@ data class Device(
         return try {
             Facade.ensureBond(
                 mac = mac,
-                onDone = { onDone?.invoke() },
-                onFailed = { t -> onFailed?.invoke(t) }
+                onDone = MainThreadCallbacks.wrap { onDone?.invoke() },
+                onFailed = MainThreadCallbacks.wrap { t: Throwable -> onFailed?.invoke(t) }
             )
             true
         } catch (_: Throwable) {
@@ -175,7 +176,7 @@ data class Device(
         return try {
             Facade.removeBond(
                 mac = mac,
-                onResult = { result ->
+                onResult = MainThreadCallbacks.wrap { result: Result<Unit> ->
                     result.onSuccess { onDone?.invoke() }
                 }
             )
@@ -558,7 +559,7 @@ data class Device(
      *
      * @param preferred Preferred MTU value.
      * @param onResult Optional: the negotiated MTU, or a failure (rejected, disconnected, or no
-     *        answer within the command timeout). Called on a background thread.
+     *        answer within the command timeout). Called on the main thread.
      * @return `true` if the request was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
@@ -567,7 +568,7 @@ data class Device(
     fun requestMtu(preferred: Int, onResult: ((Result<Int>) -> Unit)? = null): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.requestMtu(mac, preferred) { result -> onResult?.invoke(result) }
+            Facade.requestMtu(mac, preferred, MainThreadCallbacks.wrap { result: Result<Int> -> onResult?.invoke(result) })
             true
         } catch (_: Throwable) {
             false
@@ -954,16 +955,15 @@ data class Device(
             if (!isConnected()) return false
             Facade.subscribeGameResults(mac) { subIndex, cmdIndex, redScore, blueScore, totalCount, wandId ->
                 val gameMode = GameMode.fromSubIndex(subIndex) ?: return@subscribeGameResults
-                onResult(
-                    GameResult(
-                        mode       = gameMode,
-                        cmdIndex   = cmdIndex,
-                        redScore   = redScore,
-                        blueScore  = blueScore,
-                        totalCount = totalCount,
-                        wandId     = wandId
-                    )
+                val result = GameResult(
+                    mode       = gameMode,
+                    cmdIndex   = cmdIndex,
+                    redScore   = redScore,
+                    blueScore  = blueScore,
+                    totalCount = totalCount,
+                    wandId     = wandId
                 )
+                MainThreadCallbacks.run { onResult(result) }
             }
             true
         } catch (_: Throwable) {
@@ -1134,13 +1134,14 @@ data class Device(
     ): Boolean {
         return try {
             if (!isConnected()) {
-                onResult(Result.failure(IllegalStateException("Device($mac) not connected")))
+                val failure = Result.failure<T>(IllegalStateException("Device($mac) not connected"))
+                MainThreadCallbacks.run { onResult(failure) }
                 return false
             }
-            submit { result -> onResult(result) }
+            submit { result -> MainThreadCallbacks.run { onResult(result) } }
             true
         } catch (t: Throwable) {
-            onResult(Result.failure(t))
+            MainThreadCallbacks.run { onResult(Result.failure(t)) }
             false
         }
     }
