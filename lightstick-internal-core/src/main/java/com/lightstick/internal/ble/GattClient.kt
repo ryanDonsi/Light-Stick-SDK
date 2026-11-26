@@ -49,6 +49,10 @@ internal class GattClient(
         const val LEGACY_START_FAILED = -1
         const val BUSY_RETRY_MAX = 3
         const val BUSY_RETRY_DELAY_MS = 10L
+
+        /** 연결 수립 중 한 번 다시 시도할 만한 일시적 실패: 133(GATT_ERROR), 0x3E(CONN_FAILED_ESTABLISH). */
+        val RETRYABLE_CONNECT_STATUS = setOf(0x85, 0x3E)
+        const val CONNECT_RETRY_DELAY_MS = 500L
     }
 
     private val bluetoothManager: BluetoothManager =
@@ -78,6 +82,9 @@ internal class GattClient(
 
     /** 이번 연결 시도에서 GATT 캐시 갱신 + 재탐색을 이미 했는지 (BLE 스레드에서만 접근). */
     private var cacheRefreshTried = false
+
+    /** 이번 연결 시도에서 일시적 실패(133/0x3E) 재시도를 이미 했는지 (BLE 스레드에서만 접근). */
+    private var connectRetried = false
 
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
@@ -136,6 +143,7 @@ internal class GattClient(
 
             val device = bluetoothAdapter.getRemoteDevice(address)
             cacheRefreshTried = false
+            connectRetried = false
             val cb = ConnectCallbacks(onConnected, onFailed)
             pendingConnect[address] = cb
 
@@ -532,6 +540,35 @@ internal class GattClient(
     }
 
     /**
+     * 실패한 GATT 객체를 닫고 [CONNECT_RETRY_DELAY_MS] 뒤 같은 기기에 한 번 다시 연결한다(BLE 스레드).
+     * 대기 중 [disconnect]/[close]나 연결 타임아웃이 오면 재시도는 취소된다. 전체 연결 타임아웃(10초)은 그대로다.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun retryConnect(failed: BluetoothGatt, address: String, status: Int) {
+        connectRetried = true
+        Log.w("[GattClient] 연결 실패 status=$status(0x${status.toString(16)}) — ${CONNECT_RETRY_DELAY_MS}ms 뒤 한 번 재시도: $address")
+        try {
+            failed.close()
+        } catch (_: Throwable) {
+        }
+        gatt = null   // 닫은 GATT의 늦은 콜백은 무시된다
+        bleHandler.postDelayed({
+            if (currentAddress != address || gatt != null || !pendingConnect.containsKey(address)) return@postDelayed
+            try {
+                gatt = bluetoothAdapter.getRemoteDevice(address).connectGatt(
+                    context,
+                    false,
+                    gattCallback,
+                    BluetoothDevice.TRANSPORT_LE
+                )
+            } catch (e: Throwable) {
+                connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
+                pendingConnect.remove(address)?.onFailed(e)
+            }
+        }, CONNECT_RETRY_DELAY_MS)
+    }
+
+    /**
      * 본딩된 기기인데 탐색 결과에 LCS 서비스나 FF09/FF0A가 없으면 캐시가 오래됐을 수 있다고 본다.
      * (FF09/FF0A가 원래 없는 이전 펌웨어도 여기에 걸리지만, 연결마다 재탐색은 최대 한 번이다.)
      */
@@ -576,6 +613,17 @@ internal class GattClient(
             }
             // status=19(0x13)=PEER_TERMINATED, status=8(0x08)=CONN_TIMEOUT, status=0=SUCCESS
             Log.d { "[GattClient] onConnectionStateChange: $address state=$stateStr status=$status(0x${status.toString(16)})" }
+
+            // 연결 수립 중 133/0x3E는 대개 일시적이라 한 번 다시 시도한다. 재시도하는 동안에는 앱에
+            // Disconnected를 알리지 않는다 — 재시도까지 실패하면 그때 평소처럼 알린다.
+            if (newState == BluetoothProfile.STATE_DISCONNECTED &&
+                status in RETRYABLE_CONNECT_STATUS &&
+                !connectRetried &&
+                pendingConnect.containsKey(address)
+            ) {
+                retryConnect(gatt, address, status)
+                return
+            }
 
             connectionStateListener?.invoke(address, newState, status)
 
