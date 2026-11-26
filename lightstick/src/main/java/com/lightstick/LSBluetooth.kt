@@ -153,10 +153,10 @@ object LSBluetooth {
      *
      * Each connected device has one serialized command queue; after a command completes the next
      * one is held back until this interval has passed. It therefore throttles FF02 effect/timeline
-     * frames, but equally every other GATT operation on that device (DIS/BAS reads, CCCD writes,
-     * FF03 game commands, FF0A control). **OTA firmware writes are exempt** — they
-     * pace themselves by waiting for each write ack, and the interval would only slow the update down
-     * (the device aborts an OTA that runs past its total time limit, result 0x0D). A larger value spaces frames further apart
+     * frames, and also FF03 game commands and FF0A control. **Reads (DIS/BAS), CCCD writes and OTA
+     * firmware writes are exempt** — they pace themselves by waiting for the device's response/ack,
+     * and the interval would only slow connection setup and updates down (the device aborts an OTA
+     * that runs past its total time limit, result 0x0D). A larger value spaces frames further apart
      * (more loss margin, more delay; a full queue of 64 drops its oldest pending command); `0`
      * removes the minimum entirely.
      *
