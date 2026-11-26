@@ -24,6 +24,7 @@
 - 성공/실패 데이터가 필요한 호출은 `Result<T>` 콜백으로 전달된다.
 - `false` 반환 또는 `Result.failure(...)`가 유일한 실패 통지 경로 — 별도의 `onError` 콜백은 없다.
 - `@RequiresPermission(BLUETOOTH_CONNECT)`가 붙은 메서드는 Android 12+ 런타임 권한이 없으면 `SecurityException`을 던진다.
+- 공개 콜백(`onConnected`/`onFailed`/`onDeviceInfo`, 각종 `read*`·`requestMtu`·`bond`/`unbond`의 결과, `startScan`의 `onFound`, OTA `onProgress`/`onResult`, 게임 결과 Notify)은 **항상 메인 스레드에서 호출**된다. 메인 스레드에서 이미 호출 중이면 바로 실행되고, 그렇지 않으면 메인 스레드로 post된다. 콜백 안에서 UI를 바로 다뤄도 되며, 무거운 작업은 앱이 직접 백그라운드로 넘겨야 한다. `Flow`(`deviceStates` 등)는 수집하는 쪽의 컨텍스트를 따른다.
 
 ---
 
@@ -133,7 +134,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 
 | 메서드 | 설명 |
 |---|---|
-| `requestMtu(preferred: Int, onResult: ((Result<Int>) -> Unit)? = null): Boolean` | MTU 협상 요청. 기기 GATT 명령 큐를 거치므로 진행 중인 읽기/쓰기와 겹치지 않는다. `onResult`(선택)로 협상된 MTU 또는 실패(거부, 연결 해제, 응답 시간 초과)를 받는다. 콜백은 백그라운드 스레드에서 호출될 수 있음. |
+| `requestMtu(preferred: Int, onResult: ((Result<Int>) -> Unit)? = null): Boolean` | MTU 협상 요청. 기기 GATT 명령 큐를 거치므로 진행 중인 읽기/쓰기와 겹치지 않는다. `onResult`(선택)로 협상된 MTU 또는 실패(거부, 연결 해제, 응답 시간 초과)를 받는다. 콜백은 메인 스레드에서 호출된다. |
 
 ### 2.6 기기 정보 (DIS / BAS / MAC)
 

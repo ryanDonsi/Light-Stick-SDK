@@ -3,6 +3,7 @@ package com.lightstick.ota
 import android.Manifest
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.MainThreadCallbacks
 import com.lightstick.device.Device
 import com.lightstick.internal.api.Facade
 import kotlinx.coroutines.flow.Flow
@@ -93,7 +94,7 @@ object OtaManager {
     ) {
         // Fast connection guard for better UX
         if (!Facade.isConnected(device.mac)) {
-            onResult(OtaResult(false, "Device not connected: ${device.mac}"))
+            MainThreadCallbacks.run { onResult(OtaResult(false, "Device not connected: ${device.mac}")) }
             return
         }
 
@@ -103,11 +104,10 @@ object OtaManager {
             firmware = firmwareBytes,
             preferredMtu = preferredMtu,
             startOpcodes = startOpcodes,
-            onProgress = { pct -> onProgress(OtaProgress(pct)) },
+            onProgress = { pct -> MainThreadCallbacks.run { onProgress(OtaProgress(pct)) } },
             onResult = { result ->
-                result
-                    .onSuccess { onResult(OtaResult(true, null)) }
-                    .onFailure { e -> onResult(OtaResult(false, e.message)) }
+                val r = result.fold({ OtaResult(true, null) }, { e -> OtaResult(false, e.message) })
+                MainThreadCallbacks.run { onResult(r) }
             }
         )
     }

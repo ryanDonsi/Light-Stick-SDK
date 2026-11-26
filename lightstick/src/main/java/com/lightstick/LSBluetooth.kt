@@ -255,7 +255,8 @@ object LSBluetooth {
         onFound: (Device) -> Unit
     ) {
         Facade.startScan(scanTimeSeconds) { mac, name, rssi ->
-            onFound(Device(mac, name, rssi))
+            val device = Device(mac, name, rssi)
+            MainThreadCallbacks.run { onFound(device) }
         }
     }
 
