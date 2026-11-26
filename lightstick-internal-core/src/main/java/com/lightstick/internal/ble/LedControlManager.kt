@@ -40,7 +40,11 @@ internal class LedControlManager(
         private const val EFFECT_INDEX_BYTE_POSITION = 17
         private const val DURATION_BYTE_POSITION = 18
         private const val EFFECT_INDEX_MAX = 0xFF
-        private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
+        // 전송 실패(GATT 미준비) 시 재시도 간격
+        private const val RETRY_INTERVAL_MS = 10L
+        // 다음 프레임까지 대기할 최대 시간. 위치 보고가 끊겨도 이 간격으로는 상태를 다시 본다.
+        private const val MAX_WAIT_MS = 1000L
+        private const val IDLE = -1L
 
         // 타임라인 프레임 전용 coalesce 키. 단발성 sendEffect("LCS:PAYLOAD")와 분리해
         // 일시정지/재개 흐름에서 서로를 치환하지 않게 한다.
@@ -70,7 +74,8 @@ internal class LedControlManager(
     @Volatile private var pendingResyncAfterManualEffect: Boolean = false
 
     // =========== 재생 Job ===========
-    // 타임라인 모니터: BLE 스레드에서 도는 Runnable. 현재 활성 인스턴스만 다음 틱을 예약한다.
+    // 타임라인 모니터: BLE 스레드에서 도는 Runnable. 고정 주기로 돌지 않고 다음 프레임 시각에 맞춰
+    // 스스로 다시 예약하며, 일시정지 중이거나 끝까지 재생했으면 쉰다. 위치 보고/재개가 [wakeMonitor]로 깨운다.
     private var monitor: Runnable? = null
 
     // 타임라인 상태는 공개 API(앱 메인 스레드)와 모니터(BLE 스레드)가 함께 다루므로 이 락으로 보호한다.
@@ -264,7 +269,7 @@ internal class LedControlManager(
     /**
      * 현재 음악 재생 위치를 업데이트합니다.
      *
-     * 내부 보간 루프가 10ms 간격으로 실제 프레임 dispatch를 처리하므로,
+     * 내부 모니터가 보간된 위치로 다음 프레임 시각에 맞춰 dispatch하므로,
      * 이 메서드는 호출 간격(50~200ms)에 관계없이 정밀한 타이밍을 보장합니다.
      *
      * @param currentPositionMs 현재 음악 재생 위치 (밀리초)
@@ -290,6 +295,9 @@ internal class LedControlManager(
         // 보간 기준점 갱신
         anchorPositionMs = currentPositionMs
         anchorSystemMs = now
+
+        // 위치가 바뀌었으니 다음 프레임까지의 대기 시간을 다시 계산한다(시킹, 끝난 뒤 되감기 포함).
+        wakeMonitor()
     }
 
     /**
@@ -310,7 +318,11 @@ internal class LedControlManager(
     }
 
     /**
-     * 내부 10ms 루프: 보간된 위치 기준으로 프레임 dispatch
+     * 내부 모니터: 보간된 위치 기준으로 프레임을 dispatch하고, 다음 프레임 시각에 맞춰 다시 예약한다.
+     *
+     * 고정 10ms 폴링 대신 필요한 시각에만 깨어나므로, 프레임 간격이 긴 타임라인이나 일시정지/재생 끝
+     * 상태에서 BLE 스레드가 헛돌지 않는다. 예약은 [stateLock] 안에서 하므로 [wakeMonitor]와 겹쳐도
+     * 같은 Runnable이 두 번 예약되지 않는다.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun startMonitor() {
@@ -321,13 +333,22 @@ internal class LedControlManager(
             override fun run() {
                 synchronized(stateLock) {
                     if (monitor !== this) return   // 중지되었거나 새 모니터로 교체됨
-                    dispatchFrames(interpolatedPositionMs())
+                    handler.removeCallbacks(this)
+                    val next = dispatchFrames(interpolatedPositionMs())
+                    if (next != IDLE) handler.postDelayed(this, next)
                 }
-                handler.postDelayed(this, MONITOR_INTERVAL_MS)
             }
         }
         monitor = r
-        handler.postDelayed(r, MONITOR_INTERVAL_MS)
+        handler.post(r)
+    }
+
+    /** 쉬고 있거나 대기 중인 모니터를 지금 바로 한 번 돌린다([stateLock] 안에서 호출). */
+    private fun wakeMonitor() {
+        val r = monitor ?: return
+        val handler = BleThread.handler
+        handler.removeCallbacks(r)
+        handler.post(r)
     }
 
     private fun stopMonitor() {
@@ -335,18 +356,23 @@ internal class LedControlManager(
         monitor = null
     }
 
+    /**
+     * 도래한 프레임을 처리하고, 모니터가 다시 깨어날 때까지의 대기 시간(ms)을 돌려준다.
+     * [IDLE]이면 [wakeMonitor]가 깨울 때까지 쉰다(일시정지 중, 남은 프레임 없음).
+     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun dispatchFrames(currentPositionMs: Long) {
-        if (timeline.isEmpty()) return
+    private fun dispatchFrames(currentPositionMs: Long): Long {
+        if (timeline.isEmpty()) return IDLE
 
-        // ✅ OFF 상태면 인덱스만 업데이트, 전송 스킵
+        // ✅ OFF 상태면 인덱스만 업데이트, 전송 스킵. 위치가 고정되어 있으므로 다음 위치 보고나
+        // 재개 때까지 쉰다.
         if (!isEffectTransmissionEnabled) {
             while (lastSentIndex + 1 < timeline.size) {
                 val (timestamp, _) = timeline[lastSentIndex + 1]
                 if (timestamp > currentPositionMs) break
                 lastSentIndex++
             }
-            return
+            return IDLE
         }
 
         // ✅ ON 상태: 이번 틱까지 도래한 프레임 중 가장 최신 것 하나만 전송한다.
@@ -357,7 +383,7 @@ internal class LedControlManager(
         while (newestDue + 1 < timeline.size && timeline[newestDue + 1].first <= currentPositionMs) {
             newestDue++
         }
-        if (newestDue < firstDue) return
+        if (newestDue < firstDue) return delayUntilNextFrame(currentPositionMs)
 
         val (timestamp, frame) = timeline[newestDue]
         try {
@@ -369,11 +395,11 @@ internal class LedControlManager(
             if (!ok) {
                 // GATT 미준비: 인덱스를 전진시키지 않아 다음 틱에 다시 시도한다.
                 Log.w("[LedControlManager] Failed to send effect at ${timestamp}ms")
-                return
+                return RETRY_INTERVAL_MS
             }
         } catch (e: Exception) {
             Log.e("[LedControlManager] Error sending effect at ${timestamp}ms: ${e.message}")
-            return
+            return RETRY_INTERVAL_MS
         }
         lastSentIndex = newestDue
 
@@ -383,6 +409,14 @@ internal class LedControlManager(
         } else {
             Log.d { "[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms (effectIndex=$currentEffectIndex)" }
         }
+        return delayUntilNextFrame(currentPositionMs)
+    }
+
+    /** 다음 미전송 프레임까지 남은 시간. 남은 프레임이 없으면 [IDLE](되감기 시 [wakeMonitor]가 깨움). */
+    private fun delayUntilNextFrame(currentPositionMs: Long): Long {
+        val next = lastSentIndex + 1
+        if (next >= timeline.size) return IDLE
+        return (timeline[next].first - currentPositionMs).coerceIn(0L, MAX_WAIT_MS)
     }
 
     /**
@@ -434,6 +468,9 @@ internal class LedControlManager(
             pendingResyncAfterManualEffect = false
             resendCurrentFrame()
         }
+
+        // 일시정지 동안 쉬던 모니터를 깨운다.
+        wakeMonitor()
     }
 
     /**
