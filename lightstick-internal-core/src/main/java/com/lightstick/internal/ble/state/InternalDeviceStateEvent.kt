@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble.state
 
+import androidx.annotation.RestrictTo
+
 /**
  * 디바이스 상태 변경 이벤트
  *
@@ -9,6 +11,7 @@ package com.lightstick.internal.ble.state
  * @property mac   상태가 변경된 디바이스 MAC 주소
  * @property state 변경된 연결 상태
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 data class InternalDeviceStateEvent(
     val mac:   String,
     val state: InternalConnectionState

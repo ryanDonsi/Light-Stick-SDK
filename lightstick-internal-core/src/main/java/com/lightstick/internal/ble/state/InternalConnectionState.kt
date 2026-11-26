@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble.state
 
+import androidx.annotation.RestrictTo
+
 /**
  * Internal representation of BLE connection state.
  *
@@ -12,6 +14,7 @@ package com.lightstick.internal.ble.state
  * - Immutable data classes for thread safety
  * - Internal visibility to prevent module boundary violations
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 sealed class InternalConnectionState {
 
     /**

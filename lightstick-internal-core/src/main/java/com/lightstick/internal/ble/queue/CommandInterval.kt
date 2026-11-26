@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble.queue
 
+import androidx.annotation.RestrictTo
+
 /**
  * Minimum interval between completed GATT commands per device (applies to the whole per-device
  * serialized command queue — FF02 effect writes and game/control commands. Reads, CCCD writes and
@@ -7,6 +9,7 @@ package com.lightstick.internal.ble.queue
  *
  * Public only so the `lightstick` module and unit tests can reach it; not part of the SDK API.
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 object CommandInterval {
     /**
      * Max time one started GATT command may wait for its callback before the queue's watchdog

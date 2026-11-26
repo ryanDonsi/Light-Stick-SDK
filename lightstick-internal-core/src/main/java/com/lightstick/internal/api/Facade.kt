@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import androidx.annotation.RestrictTo
 import com.lightstick.internal.ble.*
 import com.lightstick.internal.ble.queue.CommandInterval
 import com.lightstick.internal.ble.queue.CommandQueueSnapshot
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.SharedFlow
  * internal-core module.
  */
 @SuppressLint("StaticFieldLeak")
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 object Facade {
 
     // ============================================================================================

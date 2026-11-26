@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble
 
+import androidx.annotation.RestrictTo
+
 /**
  * Internal implementation of device filtering logic.
  *
@@ -9,6 +11,7 @@ package com.lightstick.internal.ble
  * Note: Class is public for mapper access, but constructor is internal to prevent
  * direct instantiation from outside the module.
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 class DeviceFilter internal constructor(
     private val predicate: (String, String?, Int?) -> Boolean
 ) {

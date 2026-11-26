@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble.state
 
+import androidx.annotation.RestrictTo
+
 /**
  * Internal unified state container for a single BLE device.
  *
@@ -17,6 +19,7 @@ package com.lightstick.internal.ble.state
  * @property deviceInfo Device information (DIS, BAS, etc.), null if not yet read
  * @property lastSeenTimestamp Last time this device was observed (scan or connection event)
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 data class InternalDeviceState(
     val macAddress: String,
     val connectionState: InternalConnectionState,
