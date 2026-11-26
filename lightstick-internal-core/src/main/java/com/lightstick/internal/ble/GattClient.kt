@@ -270,6 +270,9 @@ internal class GattClient(
         queueManager.enqueue(
             address = address,
             operation = "read",
+            // 읽기는 응답(onCharacteristicRead)을 받아야 끝나므로 스스로 속도가 조절된다.
+            // 이펙트 프레임용 최소 간격을 적용하면 연결 직후 DIS/BAS 읽기만 느려진다.
+            bypassMinInterval = true,
             onAbort = { e -> pendingRead.remove(address, cb); cb(Result.failure(e)) }
         ) {
             pendingRead[address] = cb
@@ -435,6 +438,8 @@ internal class GattClient(
         val cb = once(onResult)
         queueManager.enqueue(
             address, "writeCCCD",
+            // CCCD 쓰기는 응답(onDescriptorWrite)을 기다리는 write-with-response라 간격이 필요 없다.
+            bypassMinInterval = true,
             onAbort = { e -> pendingDescWrite.remove(address, cb); cb(Result.failure(e)) }
         ) {
             val value = if (enable) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
