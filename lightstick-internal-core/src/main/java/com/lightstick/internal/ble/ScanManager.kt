@@ -5,9 +5,11 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import androidx.annotation.MainThread
 import androidx.annotation.RequiresPermission
+import com.lightstick.internal.util.Log
 import com.lightstick.internal.util.Perms
 
 /**
@@ -62,11 +64,22 @@ internal class ScanManager {
             }
 
             override fun onScanFailed(errorCode: Int) {
-                // No-op; caller can restart if needed.
+                // Most common: SCAN_FAILED_APPLICATION_REGISTRATION_FAILED / "scanning too
+                // frequently" (Android 7+: more than 5 starts in 30 s). Nothing will be found;
+                // make it visible instead of failing silently. The caller can start again later.
+                Log.w("[ScanManager] scan failed: ${scanErrorName(errorCode)} ($errorCode)")
+                callback = null
             }
         }
 
-        scanner.startScan(callback)
+        // Scans started by the SDK are short and user-initiated (1..300 s, default 3 s), so use
+        // the lowest latency: devices show up in the first advertising intervals instead of after
+        // the low-power mode's multi-second duty cycle. Results are delivered one by one.
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setReportDelay(0)
+            .build()
+        scanner.startScan(null, settings, callback)
     }
 
     /**
@@ -93,5 +106,13 @@ internal class ScanManager {
         } finally {
             callback = null
         }
+    }
+
+    private fun scanErrorName(code: Int): String = when (code) {
+        ScanCallback.SCAN_FAILED_ALREADY_STARTED -> "ALREADY_STARTED"
+        ScanCallback.SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "APPLICATION_REGISTRATION_FAILED (scanning too frequently?)"
+        ScanCallback.SCAN_FAILED_INTERNAL_ERROR -> "INTERNAL_ERROR"
+        ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED -> "FEATURE_UNSUPPORTED"
+        else -> "UNKNOWN"
     }
 }
