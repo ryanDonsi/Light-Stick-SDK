@@ -307,7 +307,8 @@ internal class LedControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun startMonitor() {
         monitorJob?.cancel()
-        // CmdQueueManager.enqueue는 main thread에서만 호출해야 하므로 Dispatchers.Main 사용
+        // 큐(CmdQueueManager)는 어느 스레드에서 enqueue해도 BLE 스레드로 넘기지만, 타임라인 상태는
+        // 공개 API(@MainThread)와 같은 스레드에서 다뤄야 하므로 모니터는 메인에서 돈다.
         // delay()는 main thread에서도 non-blocking으로 동작함
         monitorJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
