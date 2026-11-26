@@ -317,7 +317,7 @@ internal class GattClient(
 
         val key = coalesceKey ?: "$serviceUuid/$charUuid"
         val charShort = charUuid.toString().takeLast(8)
-        Log.d("[GattClient] writeCharacteristic enqueue: $address char=$charShort key=$key bytes=${data.joinToString(",") { "%02X".format(it) }}")
+        Log.d { "[GattClient] writeCharacteristic enqueue: $address char=$charShort key=$key bytes=${data.toHexList()}" }
 
         queueManager.enqueue(
             address = address,
@@ -326,12 +326,11 @@ internal class GattClient(
             coalesceKey = key
         ) {
             chr.value = data
-            val hexBytes = data.joinToString(",") { "%02X".format(it) }
-            Log.d("[GattClient] writeCharacteristic START: $address char=$charShort bytes=$hexBytes")
+            Log.d { "[GattClient] writeCharacteristic START: $address char=$charShort bytes=${data.toHexList()}" }
             try {
                 val success = g.writeCharacteristic(chr)
                 if (!success) {
-                    Log.w("[GattClient] writeCharacteristic FAILED (returned false): $address char=$charShort bytes=$hexBytes")
+                    Log.w("[GattClient] writeCharacteristic FAILED (returned false): $address char=$charShort bytes=${data.toHexList()}")
                     queueManager.signalComplete(address)
                 }
             } catch (e: Throwable) {
@@ -469,7 +468,7 @@ internal class GattClient(
     private fun refreshGattCache(g: BluetoothGatt) {
         try {
             val ok = g.javaClass.getMethod("refresh").invoke(g) as? Boolean
-            Log.d("[GattClient] GATT cache refresh: $ok")
+            Log.d { "[GattClient] GATT cache refresh: $ok" }
         } catch (e: Throwable) {
             Log.w("[GattClient] GATT cache refresh unavailable: ${e.message}")
         }
@@ -490,7 +489,7 @@ internal class GattClient(
                 else -> "UNKNOWN($newState)"
             }
             // status=19(0x13)=PEER_TERMINATED, status=8(0x08)=CONN_TIMEOUT, status=0=SUCCESS
-            Log.d("[GattClient] onConnectionStateChange: $address state=$stateStr status=$status(0x${status.toString(16)})")
+            Log.d { "[GattClient] onConnectionStateChange: $address state=$stateStr status=$status(0x${status.toString(16)})" }
 
             connectionStateListener?.invoke(address, newState, status)
 
@@ -499,7 +498,7 @@ internal class GattClient(
                 // FF09/FF0A 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5, v2.2 §2.6)
                 // 서비스 재탐색 전에 캐시를 비운다.
                 if (gatt.device.bondState == BluetoothDevice.BOND_BONDED) refreshGattCache(gatt)
-                Log.d("[GattClient] 서비스 디스커버리 시작: $address")
+                Log.d { "[GattClient] 서비스 디스커버리 시작: $address" }
                 try {
                     gatt.discoverServices()
                 } catch (e: SecurityException) {
@@ -533,10 +532,10 @@ internal class GattClient(
             val cb = pendingConnect.remove(address)
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 val serviceUuids = gatt.services.map { it.uuid.toString() }
-                Log.d("[GattClient] 서비스 디스커버리 완료: $address 서비스(${serviceUuids.size}개)=${serviceUuids}")
+                Log.d { "[GattClient] 서비스 디스커버리 완료: $address 서비스(${serviceUuids.size}개)=${serviceUuids}" }
                 gatt.services.forEach { service ->
                     val charUuids = service.characteristics.map { it.uuid.toString() }
-                    Log.d("[GattClient]   └ 서비스=${service.uuid} 캐릭터리스틱(${charUuids.size}개)=${charUuids}")
+                    Log.d { "[GattClient]   └ 서비스=${service.uuid} 캐릭터리스틱(${charUuids.size}개)=${charUuids}" }
                 }
                 cb?.onConnected?.invoke()
             } else {
@@ -609,7 +608,7 @@ internal class GattClient(
             val address = gatt.device.address
             val charShort = characteristic.uuid.toString().takeLast(8)
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d("[GattClient] onCharacteristicWrite OK: $address char=$charShort")
+                Log.d { "[GattClient] onCharacteristicWrite OK: $address char=$charShort" }
             } else {
                 Log.w("[GattClient] onCharacteristicWrite FAIL: $address char=$charShort status=$status(0x${status.toString(16)})")
             }
@@ -640,7 +639,7 @@ internal class GattClient(
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             val address = gatt.device.address
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d("[GattClient] MTU 협상 완료: $address mtu=$mtu")
+                Log.d { "[GattClient] MTU 협상 완료: $address mtu=$mtu" }
             } else {
                 Log.w("[GattClient] MTU 협상 실패: $address status=$status — 기본 MTU(23)로 동작 가능성")
             }
@@ -660,6 +659,9 @@ internal class GattClient(
         val done = java.util.concurrent.atomic.AtomicBoolean(false)
         return { r -> if (done.compareAndSet(false, true)) f(r) }
     }
+
+    /** "0A,FF,..." — only called inside lazy/warn log messages. */
+    private fun ByteArray.toHexList(): String = joinToString(",") { "%02X".format(it) }
 
     private fun findCharacteristic(
         g: BluetoothGatt,

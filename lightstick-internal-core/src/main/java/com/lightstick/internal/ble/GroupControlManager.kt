@@ -27,7 +27,7 @@ internal class GroupControlManager(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendPayload(bytes20: ByteArray): Boolean {
         require(bytes20.size == 20) { "Group payload must be 20 bytes" }
-        Log.d("[GroupControlManager] FF02 TX GroupSetup raw : ${bytes20.toHex()}")
+        Log.d { "[GroupControlManager] FF02 TX GroupSetup raw : ${bytes20.toHex()}" }
         return gattClient.writeCharacteristic(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_PAYLOAD,

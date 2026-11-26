@@ -248,7 +248,7 @@ internal class LedControlManager(
         // ✅ 새 타임라인 로드 시 effectIndex 자동 증가
         currentEffectIndex = nextEffectIndex(currentEffectIndex)
 
-        Log.d("[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex")
+        Log.d { "[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex" }
 
         startMonitor()
     }
@@ -361,9 +361,9 @@ internal class LedControlManager(
 
         val skipped = newestDue - firstDue
         if (skipped > 0) {
-            Log.d("[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms, skipped $skipped superseded frame(s) (effectIndex=$currentEffectIndex)")
+            Log.d { "[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms, skipped $skipped superseded frame(s) (effectIndex=$currentEffectIndex)" }
         } else {
-            Log.d("[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms (effectIndex=$currentEffectIndex)")
+            Log.d { "[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms (effectIndex=$currentEffectIndex)" }
         }
     }
 
