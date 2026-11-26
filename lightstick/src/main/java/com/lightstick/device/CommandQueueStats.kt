@@ -11,8 +11,9 @@ package com.lightstick.device
  * @property pending Commands waiting right now (the one in flight is not counted).
  * @property peakPending Largest [pending] reached. A value equal to the configured queue size
  *           means the queue was full at some point.
- * @property dropped Commands discarded because the queue overflowed — they were **never executed**
- *           and got no completion callback. Non-zero means frames/operations were lost: raise the
+ * @property dropped Commands discarded because the queue overflowed — they were **never executed**.
+ *           Their result callbacks (reads, notification setup, OTA writes) are failed
+ *           instead of never being called. Non-zero means frames/operations were lost: raise the
  *           queue size, raise the send interval's headroom, or send less.
  * @property replaced Pending commands replaced by a newer one with the same coalesce key
  *           (single effect / color sends; timeline frames are never replaced).
