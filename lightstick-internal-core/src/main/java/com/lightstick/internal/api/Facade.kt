@@ -17,6 +17,7 @@ import com.lightstick.internal.ble.state.InternalDeviceState
 import com.lightstick.internal.ble.state.InternalDisconnectReason
 import com.lightstick.internal.efx.EfxBinary
 import com.lightstick.internal.efx.MusicIdProvider
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,7 +50,11 @@ object Facade {
     // ============================================================================================
 
     private lateinit var appContext: Context
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // The handler keeps an unexpected exception in a background job from crashing the host app.
+    private val scope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() +
+            CoroutineExceptionHandler { _, t -> Log.e("Facade", "Uncaught error in SDK job: ${t.message}", t) }
+    )
 
     private lateinit var deviceStateManager: DeviceStateManager
 
@@ -196,6 +201,33 @@ object Facade {
 
     private fun requireSession(mac: String): Session =
         sessions[mac] ?: error("No active session for $mac")
+
+    /**
+     * Runs [block] on the SDK scope with [mac]'s session and hands its result to [onResult].
+     * If the device disconnected in the meantime, or [block] throws, [onResult] gets a failure
+     * instead of the exception escaping the coroutine.
+     */
+    private fun <T> launchWithSession(
+        mac: String,
+        onResult: (Result<T>) -> Unit,
+        block: suspend (Session) -> Result<T>
+    ) {
+        scope.launch {
+            val session = sessions[mac]
+            val result = if (session == null) {
+                Result.failure(IllegalStateException("No active session for $mac"))
+            } else {
+                try {
+                    block(session)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    Result.failure(e)
+                }
+            }
+            onResult(result)
+        }
+    }
 
     private fun removeSession(mac: String) {
         sessions.remove(mac)?.let { session ->
@@ -579,10 +611,7 @@ object Facade {
     fun readDeviceName(mac: String, onResult: (Result<String>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readDeviceName()
-            onResult(result)
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readDeviceName() }
         return true
     }
 
@@ -590,10 +619,7 @@ object Facade {
     fun readModelNumber(mac: String, onResult: (Result<String>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readModelNumber()
-            onResult(result)
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readModelNumber() }
         return true
     }
 
@@ -601,10 +627,7 @@ object Facade {
     fun readFirmwareRevision(mac: String, onResult: (Result<String>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readFirmwareRevision()
-            onResult(result)
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readFirmwareRevision() }
         return true
     }
 
@@ -612,10 +635,7 @@ object Facade {
     fun readManufacturer(mac: String, onResult: (Result<String>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readManufacturerName()
-            onResult(result)
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readManufacturerName() }
         return true
     }
 
@@ -623,10 +643,7 @@ object Facade {
     fun readMacAddress(mac: String, onResult: (Result<String>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readMacAddress()
-            onResult(result)
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readMacAddress() }
         return true
     }
 
@@ -644,14 +661,14 @@ object Facade {
     fun readBattery(mac: String, onResult: (Result<Int>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readBatteryLevel()
-            result.getOrNull()?.let { newLevel ->
-                deviceStateManager.getDeviceInfo(mac)?.let { existing ->
-                    deviceStateManager.updateDeviceInfo(mac, existing.copy(batteryLevel = newLevel))
+        launchWithSession(mac, onResult) { session ->
+            session.deviceInfo.readBatteryLevel().also { result ->
+                result.getOrNull()?.let { newLevel ->
+                    deviceStateManager.getDeviceInfo(mac)?.let { existing ->
+                        deviceStateManager.updateDeviceInfo(mac, existing.copy(batteryLevel = newLevel))
+                    }
                 }
             }
-            onResult(result)
         }
         return true
     }
@@ -673,10 +690,7 @@ object Facade {
     fun readDeviceMode(mac: String, onResult: (Result<Int>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            val result = requireSession(mac).deviceInfo.readDeviceMode()
-            onResult(result)
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readDeviceMode() }
         return true
     }
 
@@ -691,9 +705,7 @@ object Facade {
     fun readBroadcasting(mac: String, onResult: (Result<Boolean>) -> Unit): Boolean {
         requireInit()
         if (!isConnected(mac)) return false
-        scope.launch {
-            onResult(requireSession(mac).deviceInfo.readBroadcasting())
-        }
+        launchWithSession(mac, onResult) { it.deviceInfo.readBroadcasting() }
         return true
     }
 
