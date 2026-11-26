@@ -41,6 +41,10 @@ internal class LedControlManager(
         private const val DURATION_BYTE_POSITION = 18
         private const val EFFECT_INDEX_MAX = 0xFF
         private const val MONITOR_INTERVAL_MS = 10L      // 내부 보간 루프 간격
+
+        // 타임라인 프레임 전용 coalesce 키. 단발성 sendEffect("LCS:PAYLOAD")와 분리해
+        // 일시정지/재개 흐름에서 서로를 치환하지 않게 한다.
+        private const val TIMELINE_COALESCE_KEY = "LCS:TIMELINE"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -90,7 +94,18 @@ internal class LedControlManager(
         )
     }
 
-    // Timeline frames must NOT coalesce — each frame is a unique ordered event
+    /**
+     * Timeline frames coalesce under their own key: while a frame still waits in the device's
+     * command queue (the previous write has not finished, or the minimum command interval set with
+     * `setCommandIntervalMs` has not passed yet), a newer frame replaces it instead of queueing
+     * behind it.
+     *
+     * Every timeline frame is sent with duration=0 ("hold until the next frame"), so the LED's state
+     * is always defined by the newest frame; an older frame that has not gone out yet is stale.
+     * Queueing them would only make the LED lag behind the music (up to queue size x interval) and
+     * then lose the oldest frames on overflow anyway. With coalescing the lag stays within one
+     * interval of whatever value is configured (0 = only as long as the previous write takes).
+     */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun sendTimelineFrame(
         serviceUuid: java.util.UUID,
@@ -102,8 +117,8 @@ internal class LedControlManager(
             charUuid = charUuid,
             data = data,
             writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
-            replaceIfSameKey = false,
-            coalesceKey = null
+            replaceIfSameKey = true,
+            coalesceKey = TIMELINE_COALESCE_KEY
         )
     }
 
@@ -316,39 +331,39 @@ internal class LedControlManager(
             return
         }
 
-        // ✅ ON 상태: 이펙트 전송
-        var transmittedCount = 0
-        while (lastSentIndex + 1 < timeline.size) {
-            val (timestamp, frame) = timeline[lastSentIndex + 1]
-            if (timestamp > currentPositionMs) break
-
-            lastSentIndex++
-
-            try {
-                val frameWithIndex = insertEffectIndex(frame, currentEffectIndex)
-
-                val ok = sendTimelineFrame(
-                    serviceUuid = UuidConstants.LCS_SERVICE,
-                    charUuid = UuidConstants.LCS_PAYLOAD,
-                    data = frameWithIndex
-                )
-
-                if (ok) {
-                    transmittedCount++
-                } else {
-                    Log.w("[LedControlManager] Failed to send effect at ${timestamp}ms")
-                    break
-                }
-            } catch (e: Exception) {
-                Log.e("[LedControlManager] Error sending effect at ${timestamp}ms: ${e.message}")
-                break
-            }
+        // ✅ ON 상태: 이번 틱까지 도래한 프레임 중 가장 최신 것 하나만 전송한다.
+        // 프레임은 duration=0(다음 프레임까지 유지)이라 같은 틱에서 앞선 프레임은 곧바로 덮이고,
+        // 큐에 남은 이전 프레임도 같은 키로 치환된다(sendTimelineFrame 참고).
+        val firstDue = lastSentIndex + 1
+        var newestDue = lastSentIndex
+        while (newestDue + 1 < timeline.size && timeline[newestDue + 1].first <= currentPositionMs) {
+            newestDue++
         }
+        if (newestDue < firstDue) return
 
-        if (transmittedCount > 0) {
-            val rangeStart = lastSentIndex - transmittedCount + 1
-            val rangeEnd = lastSentIndex
-            Log.d("[LedControlManager] Transmitted $transmittedCount effects at ${currentPositionMs}ms (frames: ${rangeStart + 1}~${rangeEnd + 1}, effectIndex=$currentEffectIndex)")
+        val (timestamp, frame) = timeline[newestDue]
+        try {
+            val ok = sendTimelineFrame(
+                serviceUuid = UuidConstants.LCS_SERVICE,
+                charUuid = UuidConstants.LCS_PAYLOAD,
+                data = insertEffectIndex(frame, currentEffectIndex)
+            )
+            if (!ok) {
+                // GATT 미준비: 인덱스를 전진시키지 않아 다음 틱에 다시 시도한다.
+                Log.w("[LedControlManager] Failed to send effect at ${timestamp}ms")
+                return
+            }
+        } catch (e: Exception) {
+            Log.e("[LedControlManager] Error sending effect at ${timestamp}ms: ${e.message}")
+            return
+        }
+        lastSentIndex = newestDue
+
+        val skipped = newestDue - firstDue
+        if (skipped > 0) {
+            Log.d("[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms, skipped $skipped superseded frame(s) (effectIndex=$currentEffectIndex)")
+        } else {
+            Log.d("[LedControlManager] Sent frame ${newestDue + 1} at ${currentPositionMs}ms (effectIndex=$currentEffectIndex)")
         }
     }
 

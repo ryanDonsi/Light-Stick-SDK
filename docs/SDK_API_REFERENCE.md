@@ -40,7 +40,7 @@
 
 | `setCommandIntervalMs(intervalMs: Long)` / `getCommandIntervalMs(): Long` | 기기별 GATT 명령 큐의 **최소 전송 간격**(기본 `DEFAULT_COMMAND_INTERVAL_MS` = **50ms**, 범위 `0..MAX_COMMAND_INTERVAL_MS`=1000, 0 = 간격 없음). 한 명령이 끝난 뒤 다음 명령까지 대기하는 시간이라 FF02 이펙트/타임라인 프레임과 FF03, FF0A 쓰기에 적용됨. **DIS/BAS 읽기와 CCCD 쓰기는 기기 응답을 기다리며 스스로 속도가 조절되므로 간격을 적용하지 않는다**(연결 직후 준비 시간 단축). 값이 클수록 프레임 간격이 벌어져 유실 여유는 늘지만 지연이 커지고, 큐(기기당 64개)가 가득 차면 가장 오래된 대기 명령부터 버려짐. 이미 연결된/연결 중인 기기에도 즉시 적용, 앱 재시작 시 초기화(저장 안 됨). 범위를 벗어나면 `IllegalArgumentException`. `initialize` 전에도 호출 가능 (@since 2.200.0) **OTA 펌웨어 쓰기는 이 간격의 적용을 받지 않는다**(쓰기 ACK를 기다리며 스스로 속도가 조절되고, 간격을 적용하면 기기의 OTA 전체 시간 제한(결과 0x0D)을 넘길 수 있음). |
 
-| `setCommandQueueSize(size: Int)` / `getCommandQueueSize(): Int` | 기기별 GATT 명령 큐의 **대기 명령 최대 개수**(기본 `DEFAULT_COMMAND_QUEUE_SIZE` = **8**, 범위 `1..MAX_COMMAND_QUEUE_SIZE`=256, 실행 중인 명령은 제외). 초과하면 **가장 오래된 대기 명령부터 버려짐** — 실행되지 않으며, 결과 콜백이 있는 명령(읽기, 알림 설정, OTA 쓰기)은 `CommandAbortedException`(reason=`QUEUE_OVERFLOW`)으로 즉시 실패 처리됨. FF02 프레임은 전송 간격보다 빠르게 보내면 유실되며 대략 `큐 크기 × 간격`(기본 8×50ms=400ms)만큼의 밀림을 허용. 작을수록 LED가 실시간에 가깝고, 클수록 프레임은 보존되지만 지연됨. 연결 직후 병렬 읽기나 한꺼번에 많이 보내는 앱은 키울 것. 연결된 기기에도 즉시 적용(줄이면 다음 enqueue 때 정리), 저장 안 됨. 범위를 벗어나면 `IllegalArgumentException` (@since 2.200.0) |
+| `setCommandQueueSize(size: Int)` / `getCommandQueueSize(): Int` | 기기별 GATT 명령 큐의 **대기 명령 최대 개수**(기본 `DEFAULT_COMMAND_QUEUE_SIZE` = **8**, 범위 `1..MAX_COMMAND_QUEUE_SIZE`=256, 실행 중인 명령은 제외). 초과하면 **가장 오래된 대기 명령부터 버려짐** — 실행되지 않으며, 결과 콜백이 있는 명령(읽기, 알림 설정, OTA 쓰기)은 `CommandAbortedException`(reason=`QUEUE_OVERFLOW`)으로 즉시 실패 처리됨. 타임라인과 단발 이펙트/색상 프레임은 최신 것으로 치환되므로 큐를 거의 차지하지 않는다(§2.4). `playEffects` 같은 앱의 연속 전송이나 FF03/FF0A 명령을 간격보다 빠르게 보내면 대략 `큐 크기 × 간격`(기본 8×50ms=400ms)만큼 밀린 뒤 버려진다. 연결 직후 병렬 읽기나 한꺼번에 많이 보내는 앱은 키울 것. 연결된 기기에도 즉시 적용(줄이면 다음 enqueue 때 정리), 저장 안 됨. 범위를 벗어나면 `IllegalArgumentException` (@since 2.200.0) |
 
 ### 1.2 스캔
 
@@ -123,7 +123,9 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 | `isTimelinePlaying(): Boolean` | 로드됨 + 전송 활성 상태인지 조회 |
 | `isTimelineLoaded(): Boolean` | 전송 활성/비활성과 무관하게 타임라인 데이터 적재 여부만 조회. `isTimelinePlaying()`과 달리 일시정지 중에도 `true` — `sendEffect()` 호출 후 `resumeTimeline()`을 불러야 하는 상태인지 판별할 때 사용. |
 
-특징: 10ms tick 배치 디스패치 · 드랍 없음(coalesce 안 함, 순서·개수 보장) · 세션마다 effectIndex 찍음(기기 dedup) · pause/resume 지원.
+특징: 10ms tick 디스패치 · **최신 프레임 우선** · 세션마다 effectIndex 찍음(기기 dedup) · pause/resume 지원.
+
+**최신 프레임 우선 전송**: 타임라인 프레임은 duration=0(다음 프레임까지 유지)이라 LED 상태는 항상 가장 최신 프레임이 결정한다. 그래서 한 틱에 여러 프레임이 도래하면 가장 최신 것만 보내고, 이전 쓰기가 끝나지 않았거나 `setCommandIntervalMs` 간격이 아직 지나지 않아 큐에서 기다리는 프레임은 새 프레임으로 치환된다(`CommandQueueStats.replaced`에 집계). 음악 대비 지연은 설정한 간격 1회 이내로 유지되며(간격 0이면 직전 쓰기 시간만큼), 대신 간격보다 짧은 중간 프레임은 건너뛸 수 있다. 이전에는 모든 프레임을 큐에 쌓아 최대 `큐 크기 × 간격`(기본 400ms)만큼 밀린 뒤 오래된 프레임이 오버플로로 버려졌다.
 
 > `playEffects`/`stopEffects`와 `playTimeline`/`stopTimeline`은 서로 다른 내부 재생 잡(playJob/monitorJob)이라 서로를 취소하지 않는다 — 동시에 호출하면 두 메커니즘이 FF02에 동시에 쓸 수 있으므로 앱에서 하나만 쓰거나 명시적으로 순서를 맞춰야 한다. 단, `sendEffect()`(그룹 컨트롤 포함)는 예외적으로 둘 다 선점한다 — 진행 중인 `playEffects`는 취소하고, 진행 중인 `playTimeline`은 데이터를 보존한 채 일시정지한다(§2.2 참고).
 
@@ -244,7 +246,7 @@ data class CommandQueueStats(
     val pending: Int,       // 지금 대기 중인 명령 수 (실행 중인 1개는 제외)
     val peakPending: Int,   // 대기 수 최댓값 — 설정한 큐 크기와 같으면 한 번이라도 가득 찼다는 뜻
     val dropped: Long,      // 오버플로로 버려진 명령 수 (실행되지 않음, 결과 콜백은 실패로 호출됨)
-    val replaced: Long,     // 같은 coalesce 키의 새 명령으로 치환된 대기 명령 수 (타임라인 프레임은 치환 안 됨)
+    val replaced: Long,     // 같은 coalesce 키의 새 명령으로 치환된 대기 명령 수 (단발 이펙트/색상, 타임라인 프레임)
     val executed: Long,     // BLE 스택에 실행 요청된 명령 수
     val timedOut: Long = 0  // 3초 안에 GATT 콜백이 오지 않아 SDK가 실패 처리하고 다음 명령으로 넘어간 수 (0이 아니면 링크 불안정 의심)
 )

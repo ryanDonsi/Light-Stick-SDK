@@ -137,4 +137,34 @@ class CmdQueueManagerTest {
         s.advance(60_000)
         assertFalse(aborted)
     }
+
+    /**
+     * Timeline-style traffic: a frame every 10 ms, each write taking 7 ms, coalesced under one key.
+     * With a 50 ms interval the newest frame must go out within one interval of being queued, and
+     * nothing is dropped (older pending frames are replaced instead).
+     */
+    @Test fun coalescedFramesStayWithinOneIntervalOfRealTime() {
+        val s = FakeScheduler()
+        val q = queue(s, size = 8, intervalMs = 50)
+        val sent = mutableListOf<Pair<Int, Long>>()   // frame number -> time it started
+        for (frame in 0 until 100) {
+            s.now = frame * 10L
+            q.enqueue(addr, "f$frame", coalesceKey = "TL", replaceIfSameKey = true) {
+                sent += frame to s.now
+                s.post(Runnable { q.signalComplete(addr) }, 7)
+            }
+            s.advance(0)
+            s.advance(9)
+        }
+        s.advance(1_000)
+
+        val stats = q.stats(addr)
+        assertEquals(0L, stats.dropped)
+        assertTrue(stats.replaced > 0)
+        // Lag = start time - time the frame was produced.
+        val maxLag = sent.maxOf { (frame, at) -> at - frame * 10L }
+        assertTrue("max lag $maxLag ms", maxLag <= 50 + 7)
+        // The last frame produced is the last one sent.
+        assertEquals(99, sent.last().first)
+    }
 }

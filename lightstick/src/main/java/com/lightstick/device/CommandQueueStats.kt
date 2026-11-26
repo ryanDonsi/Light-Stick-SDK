@@ -16,7 +16,8 @@ package com.lightstick.device
  *           instead of never being called. Non-zero means frames/operations were lost: raise the
  *           queue size, raise the send interval's headroom, or send less.
  * @property replaced Pending commands replaced by a newer one with the same coalesce key
- *           (single effect / color sends; timeline frames are never replaced).
+ *           (single effect / color sends and timeline frames: a newer frame supersedes one that has not been
+ *           sent yet).
  * @property executed Commands handed to the BLE stack for execution.
  * @property timedOut Commands whose GATT callback did not arrive within 3 s: the SDK failed them and
  *           moved on to the next command. Non-zero hints at an unstable link.
