@@ -44,6 +44,13 @@ internal class GattClient(
     // the same thread that drives the command queue, so they never race each other.
     private val bleHandler = BleThread.handler
 
+    private companion object {
+        /** API 32 이하에서 write*()가 false를 돌려준 경우(BluetoothStatusCodes에 없는 값). */
+        const val LEGACY_START_FAILED = -1
+        const val BUSY_RETRY_MAX = 3
+        const val BUSY_RETRY_DELAY_MS = 10L
+    }
+
     private val bluetoothManager: BluetoothManager =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter = bluetoothManager.adapter
@@ -326,7 +333,6 @@ internal class GattClient(
         val address = g.device.address  // ✅ 내부에서 주소 가져오기
 
         val chr = findCharacteristic(g, serviceUuid, charUuid) ?: return false
-        chr.writeType = writeType
 
         val key = coalesceKey ?: "$serviceUuid/$charUuid"
         val charShort = charUuid.toString().takeLast(8)
@@ -338,16 +344,9 @@ internal class GattClient(
             replaceIfSameKey = replaceIfSameKey,
             coalesceKey = key
         ) {
-            chr.value = data
             Log.d { "[GattClient] writeCharacteristic START: $address char=$charShort bytes=${data.toHexList()}" }
-            try {
-                val success = g.writeCharacteristic(chr)
-                if (!success) {
-                    Log.w("[GattClient] writeCharacteristic FAILED (returned false): $address char=$charShort bytes=${data.toHexList()}")
-                    queueManager.signalComplete(address)
-                }
-            } catch (e: Throwable) {
-                Log.w("[GattClient] writeCharacteristic EXCEPTION: $address char=$charShort ${e.message}")
+            startGattOp(g, "writeCharacteristic", { writeChr(g, chr, data, writeType) }) { e ->
+                Log.w("[GattClient] writeCharacteristic FAILED: $address char=$charShort ${e.message} bytes=${data.toHexList()}")
                 queueManager.signalComplete(address)
             }
         }
@@ -378,7 +377,6 @@ internal class GattClient(
             onResult(Result.failure(IllegalStateException("OTA characteristic not found: $charUuid")))
             return
         }
-        chr.writeType = writeType
 
         // OTA 쓰기는 write ACK 를 받은 뒤에야 다음 패킷을 보내므로 스스로 속도가 조절된다.
         // 이펙트 프레임용 최소 전송 간격을 적용하면 패킷마다 대기해 OTA 전체 시간 제한(0x0D)을 넘길 수 있어 예외로 둔다.
@@ -388,15 +386,7 @@ internal class GattClient(
             onAbort = { e -> pendingWriteAck.remove(address, cb); cb(Result.failure(e)) }
         ) {
             pendingWriteAck[address] = cb
-            chr.value = data
-            try {
-                val success = g.writeCharacteristic(chr)
-                if (!success) {
-                    pendingWriteAck.remove(address, cb)
-                    cb(Result.failure(IllegalStateException("writeCharacteristic returned false")))
-                    queueManager.signalComplete(address)
-                }
-            } catch (e: Throwable) {
+            startGattOp(g, "writeCharacteristic", { writeChr(g, chr, data, writeType) }) { e ->
                 pendingWriteAck.remove(address, cb)
                 cb(Result.failure(e))
                 queueManager.signalComplete(address)
@@ -456,21 +446,84 @@ internal class GattClient(
         ) {
             val value = if (enable) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-            desc.value = value
             pendingDescWrite[address] = cb
 
-            try {
-                val success = g.writeDescriptor(desc)
-                if (!success) {
-                    pendingDescWrite.remove(address, cb)
-                    cb(Result.failure(IllegalStateException("writeDescriptor returned false")))
-                    queueManager.signalComplete(address)
-                }
-            } catch (e: Throwable) {
+            startGattOp(g, "writeDescriptor", { writeDesc(g, desc, value) }) { e ->
                 pendingDescWrite.remove(address, cb)
                 cb(Result.failure(e))
                 queueManager.signalComplete(address)
             }
+        }
+    }
+
+    // ============================================================================================
+    // 쓰기 시작 (API 33+ 새 API + BUSY 재시도)
+    // ============================================================================================
+
+    /**
+     * 특성 쓰기를 시작하고 [BluetoothStatusCodes] 값을 돌려준다.
+     *
+     * API 33+에서는 값과 쓰기 타입을 인자로 넘기는 새 API를 쓴다 — 공유 객체인 `chr.value`/`chr.writeType`을
+     * 고치지 않으므로 큐에서 앞뒤 명령의 값/타입이 섞일 일이 없다. 그 아래 버전은 기존 API를 쓰되
+     * 값/타입 설정을 실행 직전(큐 스레드)에 한다.
+     */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun writeChr(g: BluetoothGatt, chr: BluetoothGattCharacteristic, data: ByteArray, writeType: Int): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return g.writeCharacteristic(chr, data, writeType)
+        }
+        @Suppress("DEPRECATION")
+        run {
+            chr.writeType = writeType
+            chr.value = data
+            return if (g.writeCharacteristic(chr)) BluetoothStatusCodes.SUCCESS else LEGACY_START_FAILED
+        }
+    }
+
+    /** 디스크립터 쓰기를 시작하고 [BluetoothStatusCodes] 값을 돌려준다([writeChr]과 같은 방식). */
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun writeDesc(g: BluetoothGatt, desc: BluetoothGattDescriptor, value: ByteArray): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return g.writeDescriptor(desc, value)
+        }
+        @Suppress("DEPRECATION")
+        run {
+            desc.value = value
+            return if (g.writeDescriptor(desc)) BluetoothStatusCodes.SUCCESS else LEGACY_START_FAILED
+        }
+    }
+
+    /**
+     * [start]로 GATT 쓰기를 시작한다. 큐 러너 안(BLE 스레드)에서 호출한다.
+     *
+     * API 33+가 `ERROR_GATT_WRITE_REQUEST_BUSY`를 돌려주면(스택이 이전 요청을 아직 처리 중) 바로 실패시키지
+     * 않고 [BUSY_RETRY_DELAY_MS] 간격으로 최대 [BUSY_RETRY_MAX]번 다시 시도한다. 그 사이 세션이 바뀌었거나
+     * 끝내 시작하지 못하면 [onFailure]를 한 번 부른다 — 호출자는 거기서 결과 콜백과 signalComplete를 처리한다.
+     */
+    private fun startGattOp(
+        g: BluetoothGatt,
+        name: String,
+        start: () -> Int,
+        attempt: Int = 0,
+        onFailure: (Throwable) -> Unit
+    ) {
+        val rc = try {
+            start()
+        } catch (t: Throwable) {
+            onFailure(t)
+            return
+        }
+        when {
+            rc == BluetoothStatusCodes.SUCCESS -> Unit
+            rc == BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY && attempt < BUSY_RETRY_MAX -> {
+                Log.d { "[GattClient] $name busy — retry ${attempt + 1}/$BUSY_RETRY_MAX" }
+                bleHandler.postDelayed({
+                    if (gatt !== g) onFailure(IllegalStateException("$name aborted: session changed"))
+                    else startGattOp(g, name, start, attempt + 1, onFailure)
+                }, BUSY_RETRY_DELAY_MS)
+            }
+            rc == LEGACY_START_FAILED -> onFailure(IllegalStateException("$name returned false"))
+            else -> onFailure(IllegalStateException("$name failed: status=$rc"))
         }
     }
 
