@@ -58,7 +58,7 @@ class PendingCommandQueueTest {
 
     @Test fun keyWithoutReplaceFlagDoesNotReplace() {
         val q = q()
-        q.offer("t1", "K", false, 8, OverflowPolicy.DROP_OLDEST)   // timeline frames: ordered, never replaced
+        q.offer("t1", "K", false, 8, OverflowPolicy.DROP_OLDEST)   // key set but replace=false: ordered, never replaced
         q.offer("t2", "K", false, 8, OverflowPolicy.DROP_OLDEST)
         assertEquals(0L, q.replaced)
         assertEquals(2, q.size)

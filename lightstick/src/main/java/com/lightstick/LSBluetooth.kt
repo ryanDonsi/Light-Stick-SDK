@@ -188,10 +188,11 @@ object LSBluetooth {
      * (default [DEFAULT_COMMAND_QUEUE_SIZE] = 8, the command currently in flight not counted).
      *
      * When more commands are waiting than this, the **oldest pending commands are dropped**: they
-     * are never executed and get no completion callback (a dropped read keeps waiting until its
-     * own timeout). For FF02 effect/timeline frames this means frames are lost when the app sends
-     * faster than the [setCommandIntervalMs] interval allows — roughly `queueSize x interval` of
-     * backlog is tolerated (8 x 50 ms = 400 ms by default). A small queue keeps the LED close to
+     * are never executed, and commands with a result callback (reads, notification setup, OTA
+     * writes) are failed with `CommandAbortedException`. Timeline frames and single effect/color
+     * sends barely use the queue — a newer frame replaces one still waiting. Commands sent faster
+     * than the [setCommandIntervalMs] interval allows (e.g. `playEffects` sequences, FF03/FF0A)
+     * back up by roughly `queueSize x interval` (8 x 50 ms = 400 ms by default) before dropping. A small queue keeps the LED close to
      * real time; a larger one preserves more frames at the cost of delay. Apps that fire many GATT
      * operations at once (parallel reads right after connect, bursts of sends) should raise it.
      *
