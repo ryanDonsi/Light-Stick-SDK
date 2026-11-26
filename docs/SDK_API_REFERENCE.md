@@ -88,7 +88,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 
 | 메서드 | 설명 |
 |---|---|
-| `connect(onConnected: () -> Unit = {}, onFailed: (Throwable) -> Unit = {}, onDeviceInfo: ((DeviceInfo) -> Unit)? = null)` | 연결. `onDeviceInfo`를 넘기면 DIS/BAS/MAC 자동 읽기 완료 후 `onConnected` 직전에 1회 호출됨(항상 보장). 연결이 진행 중인 기기에 다시 `connect`하면 두 번째 GATT 연결을 열지 않고 진행 중인 연결의 결과를 함께 받는다. DIS 읽기 도중 연결이 끊기면 `onConnected` 대신 `onFailed`가 호출된다. |
+| `connect(onConnected: () -> Unit = {}, onFailed: (Throwable) -> Unit = {}, onDeviceInfo: ((DeviceInfo) -> Unit)? = null)` | 연결. `onDeviceInfo`를 넘기면 DIS/BAS/MAC 자동 읽기 완료 후 `onConnected` 직전에 1회 호출됨(항상 보장). 연결이 진행 중인 기기에 다시 `connect`하면 두 번째 GATT 연결을 열지 않고 진행 중인 연결의 결과를 함께 받는다. DIS 읽기 도중 연결이 끊기면 `onConnected` 대신 `onFailed`가 호출된다. 연결 수립 중 일시적 실패(status 133, 0x3E)는 SDK가 0.5초 뒤 한 번 자동으로 다시 시도하며, 그동안 `Disconnected`는 알리지 않는다. |
 | `disconnect(): Boolean` | 연결 해제. 연결 진행 중에 호출하면 그 연결을 취소하고, 기다리던 `connect`의 `onFailed`가 호출된다. |
 | `bond(onDone: (() -> Unit)? = null, onFailed: ((Throwable) -> Unit)? = null): Boolean` | 시스템 페어링 요청 |
 | `unbond(onDone: (() -> Unit)? = null): Boolean` | 페어링 해제 요청 |
