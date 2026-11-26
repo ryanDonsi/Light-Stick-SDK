@@ -4,8 +4,6 @@ import android.Manifest
 import android.bluetooth.*
 import android.content.Context
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import com.lightstick.internal.ble.queue.CmdQueueConfig
@@ -42,7 +40,9 @@ internal class GattClient(
     commandQueueSize: () -> Int = { CommandInterval.DEFAULT_QUEUE_SIZE }
 ) : AutoCloseable {
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    // Connect / disconnect / cleanup and connection-state handling all run on the SDK's BLE thread,
+    // the same thread that drives the command queue, so they never race each other.
+    private val bleHandler = BleThread.handler
 
     private val bluetoothManager: BluetoothManager =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -121,7 +121,7 @@ internal class GattClient(
         onFailed: (Throwable) -> Unit
     ) {
         Perms.ensureBtConnect(context)
-        mainHandler.post {
+        bleHandler.post {
             cleanup()
 
             val device = bluetoothAdapter.getRemoteDevice(address)
@@ -136,7 +136,7 @@ internal class GattClient(
                 }
             }
             connectTimeouts[address] = timeout
-            mainHandler.postDelayed(timeout, 10_000)
+            bleHandler.postDelayed(timeout, 10_000)
 
             try {
                 gatt = device.connectGatt(
@@ -147,7 +147,7 @@ internal class GattClient(
                 )
                 currentAddress = address
             } catch (e: Throwable) {
-                connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
                 pendingConnect.remove(address)
                 onFailed(e)
             }
@@ -160,14 +160,15 @@ internal class GattClient(
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect() {
         Perms.ensureBtConnect(context)
-        mainHandler.post { cleanup() }
+        bleHandler.post { cleanup() }
     }
 
     /**
      * AutoCloseable 구현: 모든 리소스를 정리하고 종료합니다.
      */
     override fun close() {
-        cleanup()
+        // May be called from a GATT binder callback (remote disconnect) or the main thread.
+        BleThread.execute { cleanup() }
     }
 
     /**
@@ -180,7 +181,7 @@ internal class GattClient(
             // Fails the in-flight and pending queued commands (reads, CCCD writes, OTA writes)
             // through their onAbort, so their callers do not wait forever.
             queueManager.clear(addr)
-            connectTimeouts.remove(addr)?.let { mainHandler.removeCallbacks(it) }
+            connectTimeouts.remove(addr)?.let { bleHandler.removeCallbacks(it) }
             pendingConnect.remove(addr)
             pendingMtu.remove(addr)?.invoke(Result.failure(IllegalStateException("Disconnected")))
             pendingRead.remove(addr)
@@ -491,7 +492,12 @@ internal class GattClient(
     // ============================================================================================
 
     private val gattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) =
+            BleThread.execute { handleConnectionStateChange(gatt, status, newState) }
+
+        private fun handleConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            // A callback that was already queued when this client was closed/replaced: ignore it.
+            if (gatt !== this@GattClient.gatt) return
             val address = gatt.device.address
             val stateStr = when (newState) {
                 BluetoothProfile.STATE_CONNECTED    -> "CONNECTED"
@@ -514,10 +520,10 @@ internal class GattClient(
                 try {
                     gatt.discoverServices()
                 } catch (e: SecurityException) {
-                    connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                    connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
                     pendingConnect.remove(address)?.onFailed(SecurityException("Permission denied for discoverServices", e))
                 } catch (e: Throwable) {
-                    connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                    connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
                     pendingConnect.remove(address)?.onFailed(e)
                 }
             } else {
@@ -532,15 +538,19 @@ internal class GattClient(
                             else -> "알 수 없는 상태 코드"
                         })
                 }
-                connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
                 val cb = pendingConnect.remove(address)
                 cb?.onFailed(IllegalStateException("Connection failed or disconnected: status=$status"))
             }
         }
 
-        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) =
+            BleThread.execute { handleServicesDiscovered(gatt, status) }
+
+        private fun handleServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (gatt !== this@GattClient.gatt) return
             val address = gatt.device.address
-            connectTimeouts.remove(address)?.let { mainHandler.removeCallbacks(it) }
+            connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
             val cb = pendingConnect.remove(address)
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 val serviceUuids = gatt.services.map { it.uuid.toString() }
