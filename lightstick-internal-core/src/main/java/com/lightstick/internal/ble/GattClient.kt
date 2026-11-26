@@ -177,10 +177,12 @@ internal class GattClient(
         val addr = currentAddress
 
         if (addr != null) {
+            // Fails the in-flight and pending queued commands (reads, CCCD writes, OTA writes)
+            // through their onAbort, so their callers do not wait forever.
             queueManager.clear(addr)
             connectTimeouts.remove(addr)?.let { mainHandler.removeCallbacks(it) }
             pendingConnect.remove(addr)
-            pendingMtu.remove(addr)
+            pendingMtu.remove(addr)?.invoke(Result.failure(IllegalStateException("Disconnected")))
             pendingRead.remove(addr)
             pendingEnableNotify.remove(addr)
             pendingDescWrite.remove(addr)
@@ -264,21 +266,23 @@ internal class GattClient(
             return
         }
 
+        val cb = once(onResult)
         queueManager.enqueue(
             address = address,
-            operation = "read"
+            operation = "read",
+            onAbort = { e -> pendingRead.remove(address, cb); cb(Result.failure(e)) }
         ) {
-            pendingRead[address] = onResult
+            pendingRead[address] = cb
             try {
                 val success = g.readCharacteristic(chr)
                 if (!success) {
-                    pendingRead.remove(address)
-                    onResult(Result.failure(IllegalStateException("readCharacteristic() returned false")))
+                    pendingRead.remove(address, cb)
+                    cb(Result.failure(IllegalStateException("readCharacteristic() returned false")))
                     queueManager.signalComplete(address)
                 }
             } catch (e: Throwable) {
-                pendingRead.remove(address)
-                onResult(Result.failure(e))
+                pendingRead.remove(address, cb)
+                cb(Result.failure(e))
                 queueManager.signalComplete(address)
             }
         }
@@ -363,19 +367,23 @@ internal class GattClient(
 
         // OTA 쓰기는 write ACK 를 받은 뒤에야 다음 패킷을 보내므로 스스로 속도가 조절된다.
         // 이펙트 프레임용 최소 전송 간격을 적용하면 패킷마다 대기해 OTA 전체 시간 제한(0x0D)을 넘길 수 있어 예외로 둔다.
-        queueManager.enqueue(address, "ota-write", bypassMinInterval = true) {
-            pendingWriteAck[address] = onResult
+        val cb = once(onResult)
+        queueManager.enqueue(
+            address, "ota-write", bypassMinInterval = true,
+            onAbort = { e -> pendingWriteAck.remove(address, cb); cb(Result.failure(e)) }
+        ) {
+            pendingWriteAck[address] = cb
             chr.value = data
             try {
                 val success = g.writeCharacteristic(chr)
                 if (!success) {
-                    pendingWriteAck.remove(address)?.invoke(
-                        Result.failure(IllegalStateException("writeCharacteristic returned false"))
-                    )
+                    pendingWriteAck.remove(address, cb)
+                    cb(Result.failure(IllegalStateException("writeCharacteristic returned false")))
                     queueManager.signalComplete(address)
                 }
             } catch (e: Throwable) {
-                pendingWriteAck.remove(address)?.invoke(Result.failure(e))
+                pendingWriteAck.remove(address, cb)
+                cb(Result.failure(e))
                 queueManager.signalComplete(address)
             }
         }
@@ -424,22 +432,26 @@ internal class GattClient(
             return
         }
 
-        queueManager.enqueue(address, "writeCCCD") {
+        val cb = once(onResult)
+        queueManager.enqueue(
+            address, "writeCCCD",
+            onAbort = { e -> pendingDescWrite.remove(address, cb); cb(Result.failure(e)) }
+        ) {
             val value = if (enable) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
             desc.value = value
-            pendingDescWrite[address] = onResult
+            pendingDescWrite[address] = cb
 
             try {
                 val success = g.writeDescriptor(desc)
                 if (!success) {
-                    pendingDescWrite.remove(address)
-                    onResult(Result.failure(IllegalStateException("writeDescriptor returned false")))
+                    pendingDescWrite.remove(address, cb)
+                    cb(Result.failure(IllegalStateException("writeDescriptor returned false")))
                     queueManager.signalComplete(address)
                 }
             } catch (e: Throwable) {
-                pendingDescWrite.remove(address)
-                onResult(Result.failure(e))
+                pendingDescWrite.remove(address, cb)
+                cb(Result.failure(e))
                 queueManager.signalComplete(address)
             }
         }
@@ -637,6 +649,12 @@ internal class GattClient(
     // ============================================================================================
     // Internals
     // ============================================================================================
+
+    /** Wraps [f] so it runs at most once (a result can race between the GATT callback and an abort). */
+    private fun <T> once(f: (Result<T>) -> Unit): (Result<T>) -> Unit {
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        return { r -> if (done.compareAndSet(false, true)) f(r) }
+    }
 
     private fun findCharacteristic(
         g: BluetoothGatt,

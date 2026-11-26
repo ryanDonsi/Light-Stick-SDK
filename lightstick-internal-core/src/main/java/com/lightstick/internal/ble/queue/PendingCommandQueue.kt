@@ -24,7 +24,7 @@ internal class PendingCommandQueue<T> {
     @Volatile var peak: Int = 0
         private set
 
-    /** Commands discarded by the overflow policy (never executed, no completion callback). */
+    /** Commands discarded by the overflow policy (never executed; the queue manager fails their callers). */
     @Volatile var dropped: Long = 0
         private set
 
@@ -92,9 +92,19 @@ internal class PendingCommandQueue<T> {
 
     /** Discards all pending items without counting them as dropped (disconnect / cleanup). */
     fun clear() {
+        drainAll()
+    }
+
+    /**
+     * Removes and returns all pending items in FIFO order without counting them as dropped or
+     * executed (disconnect / cleanup, so the caller can fail them).
+     */
+    fun drainAll(): List<T> {
+        val items = deque.map { it.item }
         deque.clear()
         size = 0
         head = null
+        return items
     }
 
     /** Zeroes the counters; [peak] restarts from the current [size]. */
