@@ -199,6 +199,17 @@ object Facade {
     private val lastSeenName = ConcurrentHashMap<String, String>()
     private val lastSeenRssi = ConcurrentHashMap<String, Int>()
 
+    /**
+     * A connection that has been started but is not ready yet (GATT connect, service discovery and
+     * the DIS read are still running). Further connect() calls for the same device join [waiters]
+     * instead of opening a second GATT client.
+     */
+    private class PendingConnection(val gatt: GattClient) {
+        val waiters = java.util.concurrent.CopyOnWriteArrayList<Pair<() -> Unit, (Throwable) -> Unit>>()
+    }
+
+    private val connecting = ConcurrentHashMap<String, PendingConnection>()
+
     private fun requireSession(mac: String): Session =
         sessions[mac] ?: error("No active session for $mac")
 
@@ -233,7 +244,7 @@ object Facade {
         sessions.remove(mac)?.let { session ->
             session.cleanup()
         }
-        disReadyMap.remove(mac)
+        disReadyMap.remove(mac)?.completeExceptionally(IllegalStateException("Disconnected: $mac"))
         deviceStateManager.removeDevice(mac)
     }
 
@@ -319,14 +330,22 @@ object Facade {
     ) {
         requireInit()
 
+        // A connection to this device is already in progress (connect / discovery / DIS read):
+        // join it instead of opening a second GATT client to the same device.
+        connecting[mac]?.let {
+            it.waiters += onConnected to onFailed
+            return
+        }
+
         sessions[mac]?.let {
             val deferred = disReadyMap[mac]
             if (deferred == null || deferred.isCompleted) {
                 onConnected()
             } else {
                 scope.launch {
-                    deferred.await()
-                    onConnected()
+                    val ready = runCatching { deferred.await() }
+                    if (ready.isSuccess) onConnected()
+                    else onFailed(ready.exceptionOrNull() ?: IllegalStateException("Disconnected: $mac"))
                 }
             }
             return
@@ -359,6 +378,8 @@ object Facade {
 
 
         val gatt = GattClient(appContext, { commandIntervalMs }, { commandQueueSize })
+        val pending = PendingConnection(gatt).also { it.waiters += onConnected to onFailed }
+        connecting[mac] = pending
 
         gatt.setConnectionStateListener { address, newState, gattStatus ->
             when (newState) {
@@ -393,6 +414,11 @@ object Facade {
         gatt.connect(
             address = mac,
             onConnected = {
+                if (connecting[mac] !== pending) {
+                    // disconnect() cancelled this attempt while discovery was finishing.
+                    runCatching { gatt.disconnect() }
+                    return@connect
+                }
                 val control = ControlManager(gatt)
                 val led = LedControlManager(gatt, control)
                 val deviceInfo = DeviceInfoManager(gatt)
@@ -419,23 +445,36 @@ object Facade {
                         InternalDeviceInfo(macAddress = mac, isConnected = true)
                     }
 
+                    // disconnect() during the DIS read already removed this pending connection and
+                    // failed its waiters; nothing left to report.
+                    if (!connecting.remove(mac, pending)) return@launch
+
+                    if (sessions[mac]?.gatt !== gatt) {
+                        // The link dropped while DIS was being read: report failure, not success.
+                        val error = IllegalStateException("Disconnected while reading device info: $mac")
+                        pending.waiters.forEach { (_, fail) -> fail(error) }
+                        return@launch
+                    }
+
                     deviceStateManager.updateDeviceInfo(mac, info)
                     Log.d("Facade", "DeviceInfo stored: $mac " +
                         "fw=${info.firmwareRevision} model=${info.modelNumber} mfr=${info.manufacturer}")
 
                     disReadyMap[mac]?.complete(Unit)
-                    onConnected()
+                    pending.waiters.forEach { (ok, _) -> ok() }
                 }
             },
             onFailed = { t ->
                 runCatching { gatt.disconnect() }
 
-                deviceStateManager.updateConnectionState(
-                    mac,
-                    InternalConnectionState.Disconnected(InternalDisconnectReason.GATT_ERROR)
-                )
-
-                onFailed(t)
+                // Already cancelled by disconnect(): its waiters were failed there.
+                if (connecting.remove(mac, pending)) {
+                    deviceStateManager.updateConnectionState(
+                        mac,
+                        InternalConnectionState.Disconnected(InternalDisconnectReason.GATT_ERROR)
+                    )
+                    pending.waiters.forEach { (_, fail) -> fail(t) }
+                }
             }
         )
     }
@@ -494,6 +533,13 @@ object Facade {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnect(mac: String) {
         requireInit()
+        // Cancel a connection that is still in progress: close its GATT client (there may be no
+        // session yet) and fail everyone waiting on it.
+        connecting.remove(mac)?.let { pending ->
+            runCatching { pending.gatt.disconnect() }
+            val error = IllegalStateException("Connection to $mac cancelled by disconnect()")
+            pending.waiters.forEach { (_, fail) -> runCatching { fail(error) } }
+        }
         removeSession(mac)
 
         deviceStateManager.updateConnectionState(
@@ -506,7 +552,7 @@ object Facade {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun disconnectAll() {
         requireInit()
-        sessions.keys.toList().forEach { disconnect(it) }
+        (sessions.keys + connecting.keys).toSet().forEach { disconnect(it) }
     }
 
     @MainThread
