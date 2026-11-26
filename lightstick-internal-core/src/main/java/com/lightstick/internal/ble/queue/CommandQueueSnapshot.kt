@@ -9,5 +9,7 @@ data class CommandQueueSnapshot(
     val peakPending: Int,
     val dropped: Long,
     val replaced: Long,
-    val executed: Long
+    val executed: Long,
+    /** Commands aborted by the watchdog because no GATT callback arrived in time. */
+    val timedOut: Long = 0
 )

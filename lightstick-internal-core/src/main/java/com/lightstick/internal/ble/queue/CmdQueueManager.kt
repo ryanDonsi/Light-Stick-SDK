@@ -14,9 +14,12 @@ import java.util.concurrent.ConcurrentHashMap
  * - Optional coalescing: pending items with the same key can be replaced by the latest one.
  * - Rate limiting: enforces a minimum interval between completed commands per address.
  * - Overflow control: DROP_OLDEST or DROP_NEWEST pending entries when capacity is exceeded.
- * - Abort notification: a command that will never complete — dropped on overflow or cleared on
- *   disconnect — gets its `onAbort` called exactly once, so callers waiting for a result (reads,
- *   CCCD writes, OTA writes) fail instead of hanging forever.
+ * - Abort notification: a command that will never complete — dropped on overflow, cleared on
+ *   disconnect, or timed out by the watchdog — gets its `onAbort` called exactly once, so callers
+ *   waiting for a result (reads, CCCD writes, OTA writes) fail instead of hanging forever.
+ * - Watchdog: if an in-flight command does not call [signalComplete] within
+ *   [commandTimeoutMs], it is aborted with [CommandAbortedException.Reason.TIMEOUT] and the queue
+ *   moves on, so one lost GATT callback cannot stall the device's queue.
  *
  * Threading:
  * - Scheduling is done on the main thread via a [Handler].
@@ -28,6 +31,8 @@ internal class CmdQueueManager(
     private val minIntervalProvider: (() -> Long)? = null,
     /** If set, read on every enqueue and overrides [CmdQueueConfig.maxQueueSizePerAddress]. */
     private val maxQueueSizeProvider: (() -> Int)? = null,
+    /** Max time a started command may take before the watchdog aborts it (`0` = no watchdog). */
+    private val commandTimeoutMs: Long = CommandInterval.COMMAND_TIMEOUT_MS,
     /** Timer/clock abstraction; the default runs on the main looper. Replaced in unit tests. */
     private val scheduler: Scheduler = MainLooperScheduler()
 ) {
@@ -76,6 +81,8 @@ internal class CmdQueueManager(
     private val lastDone = ConcurrentHashMap<String, Long>()
     private val scheduled = ConcurrentHashMap<String, Runnable>()
     private val inFlight = ConcurrentHashMap<String, Cmd>()
+    private val watchdogs = ConcurrentHashMap<String, Runnable>()
+    private val timedOut = ConcurrentHashMap<String, Long>()
 
     /**
      * Clears the pending queue and scheduled task for [address]. Call on disconnect/cleanup.
@@ -85,6 +92,7 @@ internal class CmdQueueManager(
     fun clear(address: String) {
         disconnected[address] = true
         scheduled.remove(address)?.let { scheduler.cancel(it) }
+        watchdogs.remove(address)?.let { scheduler.cancel(it) }
         running[address] = false
 
         val aborted = buildList {
@@ -109,8 +117,8 @@ internal class CmdQueueManager(
      *                    commands that pace themselves (OTA writes wait for each write ack), where the
      *                    interval — meant for effect frames — would only slow the transfer down.
      * @param onAbort Called at most once if this command will never complete normally: the queue
-     *                is already closed for [address], it is dropped on overflow, or it is cleared
-     *                on disconnect. Not called for commands replaced by coalescing.
+     *                is already closed for [address], it is dropped on overflow, it is cleared on
+     *                disconnect, or it times out. Not called for commands replaced by coalescing.
      * @param runner Async starter that MUST eventually call [signalComplete] with the same address.
      */
     fun enqueue(
@@ -147,13 +155,14 @@ internal class CmdQueueManager(
 
     /** Snapshot of the queue counters for [address] (all zero if nothing was ever enqueued). */
     fun stats(address: String): CommandQueueSnapshot {
-        val q = queues[address] ?: return CommandQueueSnapshot(0, 0, 0, 0, 0)
-        return CommandQueueSnapshot(q.size, q.peak, q.dropped, q.replaced, q.executed)
+        val q = queues[address] ?: return CommandQueueSnapshot(0, 0, 0, 0, 0, 0)
+        return CommandQueueSnapshot(q.size, q.peak, q.dropped, q.replaced, q.executed, timedOut[address] ?: 0)
     }
 
     /** Zeroes the counters of [address] (the pending commands themselves are untouched). */
     fun resetStats(address: String) {
         queues[address]?.resetStats()
+        timedOut.remove(address)
     }
 
     /**
@@ -161,6 +170,7 @@ internal class CmdQueueManager(
      */
     fun signalComplete(address: String) {
         if (disconnected[address] == true) return
+        watchdogs.remove(address)?.let { scheduler.cancel(it) }
         inFlight.remove(address)
         running[address] = false
         lastDone[address] = scheduler.nowMs()
@@ -196,6 +206,28 @@ internal class CmdQueueManager(
         }
         running[address] = true
         inFlight[address] = next
+        // Armed before the runner: a runner that fails synchronously calls signalComplete(),
+        // which disarms it again.
+        armWatchdog(address, next)
         next.runner.invoke()
+    }
+
+    private fun armWatchdog(address: String, cmd: Cmd) {
+        watchdogs.remove(address)?.let { scheduler.cancel(it) }
+        if (commandTimeoutMs <= 0) return
+        val w = Runnable { onWatchdog(address, cmd) }
+        watchdogs[address] = w
+        scheduler.post(w, commandTimeoutMs)
+    }
+
+    private fun onWatchdog(address: String, cmd: Cmd) {
+        // Only act if this exact command is still the one in flight.
+        if (!inFlight.remove(address, cmd)) return
+        watchdogs.remove(address)
+        timedOut.merge(address, 1L, Long::plus)
+        Log.w("[CmdQueue] $address '${cmd.op}' got no GATT callback within ${commandTimeoutMs}ms — " +
+            "aborting it and moving on")
+        cmd.abort(CommandAbortedException(CommandAbortedException.Reason.TIMEOUT, cmd.op, address))
+        signalComplete(address)
     }
 }

@@ -245,7 +245,8 @@ data class CommandQueueStats(
     val peakPending: Int,   // 대기 수 최댓값 — 설정한 큐 크기와 같으면 한 번이라도 가득 찼다는 뜻
     val dropped: Long,      // 오버플로로 버려진 명령 수 (실행되지 않음, 결과 콜백은 실패로 호출됨)
     val replaced: Long,     // 같은 coalesce 키의 새 명령으로 치환된 대기 명령 수 (타임라인 프레임은 치환 안 됨)
-    val executed: Long      // BLE 스택에 실행 요청된 명령 수
+    val executed: Long,     // BLE 스택에 실행 요청된 명령 수
+    val timedOut: Long = 0  // 3초 안에 GATT 콜백이 오지 않아 SDK가 실패 처리하고 다음 명령으로 넘어간 수 (0이 아니면 링크 불안정 의심)
 )
 ```
 큐는 그 기기의 **모든** GATT 작업(FF02 프레임, 읽기, CCCD, FF03/FF0A, OTA)이 공유한다. 카운터는 연결 시점(또는 마지막 `resetCommandQueueStats()`)부터 누적되며, 디버그 로그를 켜면(`setDebugLoggingEnabled(true)`) 버려질 때마다 `[CmdQueue] ... overflow: dropped pending '<작업>'` 경고가 남는다.
@@ -253,6 +254,7 @@ data class CommandQueueStats(
 **명령이 완료되지 못하는 경우** — 결과 콜백이 있는 명령(읽기, 알림 설정, OTA 쓰기)은 아래 경우 콜백이 `Result.failure(CommandAbortedException)`으로 정확히 한 번 호출된다(`IllegalStateException` 하위 클래스, `reason`으로 구분). 이전에는 콜백이 영영 호출되지 않아 호출 측이 무한 대기할 수 있었다.
 - `QUEUE_OVERFLOW`: 큐가 가득 차서 버려짐.
 - `DISCONNECTED`: 실행 중이거나 대기 중에 연결이 끊김(또는 끊긴 뒤 요청됨).
+- `TIMEOUT`: 실행을 시작했지만 3초(`COMMAND_TIMEOUT_MS`) 안에 GATT 콜백이 오지 않음. 큐는 다음 명령으로 넘어가므로 콜백 하나를 놓쳐도 기기 큐가 멈추지 않는다.
 
 ### `DeviceState` (data class)
 ```kotlin

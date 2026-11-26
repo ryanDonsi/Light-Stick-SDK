@@ -2,12 +2,13 @@ package com.lightstick.internal.ble
 
 import com.lightstick.internal.ble.queue.CmdQueueConfig
 import com.lightstick.internal.ble.queue.CmdQueueManager
+import com.lightstick.internal.ble.queue.CommandAbortedException
 import com.lightstick.internal.ble.queue.CommandAbortedException.Reason
 import com.lightstick.internal.ble.queue.OverflowPolicy
 import org.junit.Assert.*
 import org.junit.Test
 
-/** JVM tests of the queue's abort behaviour, driven by a fake clock. */
+/** JVM tests of the queue's abort and watchdog behaviour, driven by a fake clock. */
 class CmdQueueManagerTest {
 
     private class FakeScheduler : CmdQueueManager.Scheduler {
@@ -37,10 +38,12 @@ class CmdQueueManagerTest {
     private fun queue(
         sched: FakeScheduler,
         size: Int = 8,
-        intervalMs: Long = 0
+        intervalMs: Long = 0,
+        timeoutMs: Long = 3_000
     ) = CmdQueueManager(
         CmdQueueConfig(minIntervalMs = intervalMs, maxQueueSizePerAddress = size,
             overflowPolicy = OverflowPolicy.DROP_OLDEST),
+        commandTimeoutMs = timeoutMs,
         scheduler = sched
     )
 
@@ -73,7 +76,48 @@ class CmdQueueManagerTest {
         s.advance(10_000)
         assertFalse(ran)
         assertEquals("late" to Reason.DISCONNECTED, aborts.last())
+        // No watchdog fires for the cleared in-flight command.
         assertEquals(3, aborts.size)
+    }
+
+    @Test fun watchdogAbortsAStuckCommandAndRunsTheNextOne() {
+        val s = FakeScheduler()
+        val q = queue(s, timeoutMs = 3_000)
+        var abort: CommandAbortedException? = null
+        var secondRan = false
+        q.enqueue(addr, "stuck", onAbort = { abort = it }) { /* callback never comes */ }
+        q.enqueue(addr, "next") { secondRan = true }
+
+        s.advance(2_999)
+        assertNull(abort)
+        assertFalse(secondRan)
+
+        s.advance(1)
+        assertEquals(Reason.TIMEOUT, abort?.reason)
+        assertEquals("stuck", abort?.operation)
+        assertTrue(secondRan)
+        assertEquals(1L, q.stats(addr).timedOut)
+    }
+
+    @Test fun completionDisarmsTheWatchdog() {
+        val s = FakeScheduler()
+        val q = queue(s, timeoutMs = 3_000)
+        var aborted = false
+        q.enqueue(addr, "ok", onAbort = { aborted = true }) { q.signalComplete(addr) }
+        s.advance(10_000)
+        assertFalse(aborted)
+        assertEquals(0L, q.stats(addr).timedOut)
+        assertEquals(1L, q.stats(addr).executed)
+    }
+
+    @Test fun abortIsDeliveredOnlyOnce() {
+        val s = FakeScheduler()
+        val q = queue(s, timeoutMs = 100)
+        var count = 0
+        q.enqueue(addr, "x", onAbort = { count++ }) {}
+        s.advance(100)          // timeout aborts it
+        q.clear(addr)           // nothing left to abort
+        assertEquals(1, count)
     }
 
     @Test fun minIntervalStillAppliesBetweenCommands() {
@@ -85,4 +129,12 @@ class CmdQueueManagerTest {
         assertEquals(listOf(0L, 50L, 100L), startedAt)
     }
 
+    @Test fun zeroTimeoutDisablesTheWatchdog() {
+        val s = FakeScheduler()
+        val q = queue(s, timeoutMs = 0)
+        var aborted = false
+        q.enqueue(addr, "stuck", onAbort = { aborted = true }) {}
+        s.advance(60_000)
+        assertFalse(aborted)
+    }
 }

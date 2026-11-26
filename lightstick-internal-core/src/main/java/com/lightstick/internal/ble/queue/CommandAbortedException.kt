@@ -19,6 +19,9 @@ class CommandAbortedException(
         QUEUE_OVERFLOW,
 
         /** The device disconnected (or was disconnected) before the command completed. */
-        DISCONNECTED
+        DISCONNECTED,
+
+        /** No GATT callback arrived within [CommandInterval.COMMAND_TIMEOUT_MS]. */
+        TIMEOUT
     }
 }
