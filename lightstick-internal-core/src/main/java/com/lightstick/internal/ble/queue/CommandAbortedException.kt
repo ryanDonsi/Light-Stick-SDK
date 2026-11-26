@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble.queue
 
+import androidx.annotation.RestrictTo
+
 /**
  * A queued GATT command that will never complete normally. Delivered as `Result.failure` to the
  * command's result callback (reads, notification setup, OTA writes) so callers fail fast instead of
@@ -8,6 +10,7 @@ package com.lightstick.internal.ble.queue
  * Extends [IllegalStateException], so existing `catch (e: IllegalStateException)` code keeps working.
  * Public only because it reaches app callbacks inside `Result.failure`; match on [reason] if needed.
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 class CommandAbortedException(
     val reason: Reason,
     val operation: String,

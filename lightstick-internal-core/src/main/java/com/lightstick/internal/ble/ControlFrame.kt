@@ -1,6 +1,9 @@
 package com.lightstick.internal.ble
 
+import androidx.annotation.RestrictTo
+
 /** Pure layout-C Control frame helpers (BLE protocol v2.2 §2.6.1). Public for unit tests only. */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 object ControlFrame {
     const val MSG_TYPE_CONTROL = 3
     const val FRAME_SIZE = 20

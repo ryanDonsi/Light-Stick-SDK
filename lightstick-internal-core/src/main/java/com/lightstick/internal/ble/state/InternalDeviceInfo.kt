@@ -1,5 +1,7 @@
 package com.lightstick.internal.ble.state
 
+import androidx.annotation.RestrictTo
+
 /**
  * Internal representation of complete device information.
  *
@@ -23,6 +25,7 @@ package com.lightstick.internal.ble.state
  * @property rssi            Signal strength (RSSI) in dBm, null if unavailable
  * @property lastUpdated     Timestamp when this info was last updated (system time in milliseconds)
  */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 data class InternalDeviceInfo(
     val modelName: String? = null,
     val deviceName: String? = null,
