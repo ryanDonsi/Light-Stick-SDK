@@ -43,8 +43,11 @@ internal class DeviceStateManager(
     private val _deviceStates = MutableStateFlow<Map<String, InternalDeviceState>>(emptyMap())
     val deviceStates: StateFlow<Map<String, InternalDeviceState>> = _deviceStates.asStateFlow()
 
+    // Room for a burst of events (several devices connecting/disconnecting at once) while a slow
+    // collector catches up. tryEmit() never suspends; if this still overflows the event is lost,
+    // which is logged below — the StateFlows above always carry the latest state regardless.
     private val _Internal_deviceStateEvents = MutableSharedFlow<InternalDeviceStateEvent>(
-        extraBufferCapacity = 8
+        extraBufferCapacity = EVENT_BUFFER_CAPACITY
     )
     val internalDeviceStateEvents: SharedFlow<InternalDeviceStateEvent> = _Internal_deviceStateEvents.asSharedFlow()
 
@@ -65,7 +68,9 @@ internal class DeviceStateManager(
 //    }
     fun updateConnectionState(macAddress: String, state: InternalConnectionState) {
         connectionStatesMap[macAddress] = state
-        _Internal_deviceStateEvents.tryEmit(InternalDeviceStateEvent(mac = macAddress, state = state))
+        if (!_Internal_deviceStateEvents.tryEmit(InternalDeviceStateEvent(mac = macAddress, state = state))) {
+            Log.w(TAG, "DeviceStateEvent dropped (buffer of $EVENT_BUFFER_CAPACITY full): $macAddress - $state")
+        }
         Log.d(TAG, "DeviceStateEvent: $macAddress - $state")
         emitConnectionStates()
         rebuildAndEmitDeviceStates()
@@ -286,4 +291,8 @@ internal class DeviceStateManager(
 //            rebuildAndEmitDeviceStates()
 //        }
 //    }
+
+    private companion object {
+        const val EVENT_BUFFER_CAPACITY = 64
+    }
 }
