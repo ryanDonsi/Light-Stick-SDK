@@ -70,7 +70,12 @@ internal class LedControlManager(
     @Volatile private var pendingResyncAfterManualEffect: Boolean = false
 
     // =========== 재생 Job ===========
-    @Volatile private var monitorJob: Job? = null
+    // 타임라인 모니터: BLE 스레드에서 도는 Runnable. 현재 활성 인스턴스만 다음 틱을 예약한다.
+    private var monitor: Runnable? = null
+
+    // 타임라인 상태는 공개 API(앱 메인 스레드)와 모니터(BLE 스레드)가 함께 다루므로 이 락으로 보호한다.
+    // 락 안에서 하는 일은 상태 갱신과 큐 enqueue(BLE 스레드로 post)뿐이라 짧다.
+    private val stateLock = Any()
     @Volatile private var playJob: Job? = null  // 기존 play() 용
 
     // ============================================================================================
@@ -163,11 +168,13 @@ internal class LedControlManager(
         playJob?.cancel()
         playJob = null
 
-        if (timeline.isNotEmpty()) {
-            anchorPositionMs = interpolatedPositionMs()
-            anchorSystemMs = SystemClock.elapsedRealtime()
-            isEffectTransmissionEnabled = false
-            pendingResyncAfterManualEffect = true
+        synchronized(stateLock) {
+            if (timeline.isNotEmpty()) {
+                anchorPositionMs = interpolatedPositionMs()
+                anchorSystemMs = SystemClock.elapsedRealtime()
+                isEffectTransmissionEnabled = false
+                pendingResyncAfterManualEffect = true
+            }
         }
     }
 
@@ -229,14 +236,14 @@ internal class LedControlManager(
     fun playTimeline(frames: List<Pair<Long, ByteArray>>) {
         require(frames.all { it.second.size == 20 }) { "All frames must be 20 bytes" }
 
-        stopTimeline()
-
-        val sortedFrames = frames.sortedBy { it.first }
-
-        // 모든 프레임을 MSG_TYPE_EFFECT(0)으로 고정 (그룹/게임 msgType 충돌 방지)
-        timeline = sortedFrames.map { (timestamp, frame) ->
+        // 모든 프레임을 MSG_TYPE_EFFECT(0)으로 고정 (그룹/게임 msgType 충돌 방지). 락 밖에서 준비.
+        val prepared = frames.sortedBy { it.first }.map { (timestamp, frame) ->
             timestamp to setMsgType(frame, MSG_TYPE_EFFECT)
         }
+
+        synchronized(stateLock) {
+        stopTimeline()
+        timeline = prepared
 
         lastSentIndex = -1
         anchorPositionMs = 0
@@ -251,6 +258,7 @@ internal class LedControlManager(
         Log.d { "[LedControlManager] Timeline loaded: ${timeline.size} frames, msgType=MSG_TYPE_EFFECT, effectIndex=$currentEffectIndex" }
 
         startMonitor()
+        }
     }
 
     /**
@@ -262,7 +270,7 @@ internal class LedControlManager(
      * @param currentPositionMs 현재 음악 재생 위치 (밀리초)
      */
     @MainThread
-    fun updatePlaybackPosition(currentPositionMs: Long) {
+    fun updatePlaybackPosition(currentPositionMs: Long) = synchronized(stateLock) {
         if (timeline.isEmpty()) return
 
         val now = SystemClock.elapsedRealtime()
@@ -306,16 +314,25 @@ internal class LedControlManager(
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun startMonitor() {
-        monitorJob?.cancel()
-        // 큐(CmdQueueManager)는 어느 스레드에서 enqueue해도 BLE 스레드로 넘기지만, 타임라인 상태는
-        // 공개 API(@MainThread)와 같은 스레드에서 다뤄야 하므로 모니터는 메인에서 돈다.
-        // delay()는 main thread에서도 non-blocking으로 동작함
-        monitorJob = scope.launch(Dispatchers.Main) {
-            while (isActive) {
-                delay(MONITOR_INTERVAL_MS)
-                dispatchFrames(interpolatedPositionMs())
+        // 앱 메인 스레드가 UI 작업으로 바빠도 프레임 타이밍이 흔들리지 않도록 BLE 스레드에서 돈다.
+        stopMonitor()
+        val handler = BleThread.handler
+        val r = object : Runnable {
+            override fun run() {
+                synchronized(stateLock) {
+                    if (monitor !== this) return   // 중지되었거나 새 모니터로 교체됨
+                    dispatchFrames(interpolatedPositionMs())
+                }
+                handler.postDelayed(this, MONITOR_INTERVAL_MS)
             }
         }
+        monitor = r
+        handler.postDelayed(r, MONITOR_INTERVAL_MS)
+    }
+
+    private fun stopMonitor() {
+        monitor?.let { BleThread.handler.removeCallbacks(it) }
+        monitor = null
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -377,7 +394,7 @@ internal class LedControlManager(
      */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun pauseTimeline() {
+    fun pauseTimeline() = synchronized(stateLock) {
         if (!isEffectTransmissionEnabled) return
         anchorPositionMs = interpolatedPositionMs()
         anchorSystemMs = SystemClock.elapsedRealtime()
@@ -400,7 +417,7 @@ internal class LedControlManager(
      */
     @MainThread
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun resumeTimeline() {
+    fun resumeTimeline() = synchronized(stateLock) {
         if (isEffectTransmissionEnabled) return
 
         // v2.2: 재전송할 프레임이 없어도 RESUME은 항상 전달한다(응원봉이 얼어붙은 채 남지 않도록).
@@ -454,9 +471,8 @@ internal class LedControlManager(
      * play()/stop()과는 완전히 독립된 상태라 서로 영향 없음.)
      */
     @MainThread
-    fun stopTimeline() {
-        monitorJob?.cancel()
-        monitorJob = null
+    fun stopTimeline() = synchronized(stateLock) {
+        stopMonitor()
 
         timeline = emptyList()
         lastSentIndex = -1
