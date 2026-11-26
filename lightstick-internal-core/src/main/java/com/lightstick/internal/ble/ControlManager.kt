@@ -36,7 +36,7 @@ internal class ControlManager(private val gattClient: GattClient) {
     fun send(cmdIndex: Int, groupMask: Long): Boolean {
         effectIndex = ControlFrame.nextEffectIndex(effectIndex)
         val frame = ControlFrame.build(cmdIndex, groupMask, effectIndex)
-        Log.d("[ControlManager] FF0A TX cmdIndex=$cmdIndex groupMask=0x${"%08X".format(groupMask)} effectIndex=$effectIndex raw : ${frame.toHex()}")
+        Log.d { "[ControlManager] FF0A TX cmdIndex=$cmdIndex groupMask=0x${"%08X".format(groupMask)} effectIndex=$effectIndex raw : ${frame.toHex()}" }
         return gattClient.writeCharacteristic(
             serviceUuid = UuidConstants.LCS_SERVICE,
             charUuid = UuidConstants.LCS_CONTROL,

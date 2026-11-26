@@ -93,7 +93,7 @@ internal class GameManager(private val gattClient: GattClient) {
         onResult: (subIndex: Int, cmdIndex: Int, redScore: Int, blueScore: Int, totalCount: Int, wandId: Int) -> Unit
     ) {
         gattClient.addNotificationListener(UuidConstants.LCS_GAME_RESULT) { bytes ->
-            Log.d("[GameManager] FF04 RX [${bytes.size}B] raw : ${bytes.toHex()}")
+            Log.d { "[GameManager] FF04 RX [${bytes.size}B] raw : ${bytes.toHex()}" }
 
             val parsed = parseResult(bytes)
             if (parsed == null) {
@@ -136,30 +136,30 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendReady(subIndex: Int, level: Int, option: Int): Boolean {
         val payload = buildPayload(subIndex, CMD_READY, level, option)
-        Log.d("[GameManager] FF03 TX READY subIndex=$subIndex level=$level option=0x%02X".format(option))
-        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
+        Log.d { "[GameManager] FF03 TX READY subIndex=$subIndex level=$level option=0x%02X".format(option) }
+        Log.d { "[GameManager] FF03 TX raw : ${payload.toHex()}" }
         return writeGameCmd(payload)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendStop(): Boolean {
         val payload = buildPayload(0, CMD_STOP, 0, 0)
-        Log.d("[GameManager] FF03 TX STOP raw : ${payload.toHex()}")
+        Log.d { "[GameManager] FF03 TX STOP raw : ${payload.toHex()}" }
         return writeGameCmd(payload)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendClear(): Boolean {
         val payload = buildPayload(0, CMD_CLEAR, 0, 0)
-        Log.d("[GameManager] FF03 TX CLEAR raw : ${payload.toHex()}")
+        Log.d { "[GameManager] FF03 TX CLEAR raw : ${payload.toHex()}" }
         return writeGameCmd(payload)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendWinner(subIndex: Int, winnerWandId: Int): Boolean {
         val payload = buildWinnerPayload(subIndex, winnerWandId)
-        Log.d("[GameManager] FF03 TX WINNER subIndex=$subIndex winnerWandId=0x%04X".format(winnerWandId))
-        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
+        Log.d { "[GameManager] FF03 TX WINNER subIndex=$subIndex winnerWandId=0x%04X".format(winnerWandId) }
+        Log.d { "[GameManager] FF03 TX raw : ${payload.toHex()}" }
         return writeGameCmd(payload)
     }
 
@@ -170,8 +170,8 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendTeamAssign(teamId: Int): Boolean {
         val payload = buildPayload(SUB_INDEX_TEAM_SIMULTANEOUS, CMD_TEAM_ASSIGN, teamId, 0)
-        Log.d("[GameManager] FF03 TX TEAM_ASSIGN teamId=$teamId")
-        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
+        Log.d { "[GameManager] FF03 TX TEAM_ASSIGN teamId=$teamId" }
+        Log.d { "[GameManager] FF03 TX raw : ${payload.toHex()}" }
         return writeGameCmd(payload)
     }
 
@@ -183,8 +183,8 @@ internal class GameManager(private val gattClient: GattClient) {
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendTeamAssignEnd(teamId: Int): Boolean {
         val payload = buildPayload(SUB_INDEX_TEAM_SIMULTANEOUS, CMD_TEAM_ASSIGN_END, teamId, 0)
-        Log.d("[GameManager] FF03 TX TEAM_ASSIGN_END teamId=$teamId")
-        Log.d("[GameManager] FF03 TX raw : ${payload.toHex()}")
+        Log.d { "[GameManager] FF03 TX TEAM_ASSIGN_END teamId=$teamId" }
+        Log.d { "[GameManager] FF03 TX raw : ${payload.toHex()}" }
         return writeGameCmd(payload)
     }
 
