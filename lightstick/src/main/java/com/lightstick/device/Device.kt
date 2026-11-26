@@ -553,15 +553,21 @@ data class Device(
     /**
      * Requests MTU negotiation with THIS device.
      *
+     * The request goes through the device's GATT command queue, so it never collides with a read
+     * or write in flight.
+     *
      * @param preferred Preferred MTU value.
+     * @param onResult Optional: the negotiated MTU, or a failure (rejected, disconnected, or no
+     *        answer within the command timeout). Called on a background thread.
      * @return `true` if the request was submitted; `false` otherwise.
      * @throws SecurityException If [Manifest.permission.BLUETOOTH_CONNECT] is missing.
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun requestMtu(preferred: Int): Boolean {
+    @JvmOverloads
+    fun requestMtu(preferred: Int, onResult: ((Result<Int>) -> Unit)? = null): Boolean {
         return try {
             if (!isConnected()) return false
-            Facade.requestMtu(mac, preferred) { /* observed elsewhere */ }
+            Facade.requestMtu(mac, preferred) { result -> onResult?.invoke(result) }
             true
         } catch (_: Throwable) {
             false

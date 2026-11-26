@@ -133,7 +133,7 @@ data class Device(val mac: String, val name: String? = null, val rssi: Int? = nu
 
 | 메서드 | 설명 |
 |---|---|
-| `requestMtu(preferred: Int): Boolean` | MTU 협상 요청. 결과는 별도 옵저버 필요(현재 `Device` 레벨에 직접적인 MTU 결과 콜백 없음 — 내부적으로만 로깅). |
+| `requestMtu(preferred: Int, onResult: ((Result<Int>) -> Unit)? = null): Boolean` | MTU 협상 요청. 기기 GATT 명령 큐를 거치므로 진행 중인 읽기/쓰기와 겹치지 않는다. `onResult`(선택)로 협상된 MTU 또는 실패(거부, 연결 해제, 응답 시간 초과)를 받는다. 콜백은 백그라운드 스레드에서 호출될 수 있음. |
 
 ### 2.6 기기 정보 (DIS / BAS / MAC)
 

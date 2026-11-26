@@ -229,15 +229,27 @@ internal class GattClient(
         val g = gatt ?: return false
 
         val address = g.device.address
-        pendingMtu[address] = onResult
-        return try {
-            g.requestMtu(mtu)
-            true
-        } catch (e: Throwable) {
-            pendingMtu.remove(address)
-            onResult(Result.failure(e))
-            false
+        val cb = once(onResult)
+        // MTU 교환도 GATT 작업이라 진행 중인 읽기/쓰기와 겹치면 스택이 거부(false/BUSY)한다.
+        // 다른 명령과 같은 큐로 직렬화하고, 응답(onMtuChanged)을 받아야 끝나므로 간격은 적용하지 않는다.
+        queueManager.enqueue(
+            address, "mtu", bypassMinInterval = true,
+            onAbort = { e -> pendingMtu.remove(address, cb); cb(Result.failure(e)) }
+        ) {
+            pendingMtu[address] = cb
+            try {
+                if (!g.requestMtu(mtu)) {
+                    pendingMtu.remove(address, cb)
+                    cb(Result.failure(IllegalStateException("requestMtu() returned false")))
+                    queueManager.signalComplete(address)
+                }
+            } catch (e: Throwable) {
+                pendingMtu.remove(address, cb)
+                cb(Result.failure(e))
+                queueManager.signalComplete(address)
+            }
         }
+        return true
     }
 
     // ============================================================================================
@@ -647,6 +659,7 @@ internal class GattClient(
                 if (status == BluetoothGatt.GATT_SUCCESS) Result.success(mtu)
                 else Result.failure(IllegalStateException("onMtuChanged failed: $status"))
             )
+            queueManager.signalComplete(address)
         }
     }
 
