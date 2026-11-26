@@ -76,6 +76,9 @@ internal class GattClient(
 
     private val connectTimeouts = ConcurrentHashMap<String, Runnable>()
 
+    /** 이번 연결 시도에서 GATT 캐시 갱신 + 재탐색을 이미 했는지 (BLE 스레드에서만 접근). */
+    private var cacheRefreshTried = false
+
     private val queueManager = CmdQueueManager(
         CmdQueueConfig(
             minIntervalMs = CommandInterval.DEFAULT_MS,
@@ -132,6 +135,7 @@ internal class GattClient(
             cleanup()
 
             val device = bluetoothAdapter.getRemoteDevice(address)
+            cacheRefreshTried = false
             val cb = ConnectCallbacks(onConnected, onFailed)
             pendingConnect[address] = cb
 
@@ -528,6 +532,17 @@ internal class GattClient(
     }
 
     /**
+     * 본딩된 기기인데 탐색 결과에 LCS 서비스나 FF09/FF0A가 없으면 캐시가 오래됐을 수 있다고 본다.
+     * (FF09/FF0A가 원래 없는 이전 펌웨어도 여기에 걸리지만, 연결마다 재탐색은 최대 한 번이다.)
+     */
+    private fun needsCacheRefresh(g: BluetoothGatt): Boolean {
+        if (g.device.bondState != BluetoothDevice.BOND_BONDED) return false
+        val lcs = g.getService(UuidConstants.LCS_SERVICE) ?: return true
+        return lcs.getCharacteristic(UuidConstants.LCS_BROADCASTING) == null ||
+            lcs.getCharacteristic(UuidConstants.LCS_CONTROL) == null
+    }
+
+    /**
      * 시스템 GATT 서비스 캐시를 비운다 (`BluetoothGatt.refresh()` — 비공개 API, 리플렉션).
      * 실패해도 연결 흐름에는 영향 없음(캐시된 서비스 목록 그대로 사용).
      */
@@ -565,10 +580,8 @@ internal class GattClient(
             connectionStateListener?.invoke(address, newState, status)
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                // 본딩된 기기는 안드로이드가 GATT 서비스 목록을 캐시한다. 펌웨어 업데이트로
-                // FF09/FF0A 같은 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5, v2.2 §2.6)
-                // 서비스 재탐색 전에 캐시를 비운다.
-                if (gatt.device.bondState == BluetoothDevice.BOND_BONDED) refreshGattCache(gatt)
+                // GATT 캐시 갱신은 매번 하지 않고, 탐색 결과에 필요한 characteristic이 없을 때만 한다
+                // (handleServicesDiscovered → needsCacheRefresh 참고).
                 Log.d { "[GattClient] 서비스 디스커버리 시작: $address" }
                 try {
                     gatt.discoverServices()
@@ -603,6 +616,24 @@ internal class GattClient(
         private fun handleServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (gatt !== this@GattClient.gatt) return
             val address = gatt.device.address
+
+            if (status == BluetoothGatt.GATT_SUCCESS && !cacheRefreshTried && needsCacheRefresh(gatt)) {
+                // 본딩된 기기는 안드로이드가 GATT 서비스 목록을 캐시한다. 펌웨어 업데이트로 FF09/FF0A 같은
+                // 새 characteristic이 추가되면 캐시 때문에 보이지 않으므로(BLE v2.1 §2.5, v2.2 §2.6),
+                // 그런 경우에만 캐시를 비우고 한 번 다시 탐색한다. 재탐색 결과가 이 콜백으로 다시 온다.
+                cacheRefreshTried = true
+                Log.d { "[GattClient] FF09/FF0A 없음(본딩 기기) — GATT 캐시 갱신 후 재탐색: $address" }
+                refreshGattCache(gatt)
+                val restarted = try {
+                    gatt.discoverServices()
+                } catch (e: Throwable) {
+                    Log.w("[GattClient] 재탐색 시작 실패: $address ${e.message}")
+                    false
+                }
+                if (restarted) return
+                // 재탐색을 시작하지 못했으면 지금 결과로 계속 진행한다.
+            }
+
             connectTimeouts.remove(address)?.let { bleHandler.removeCallbacks(it) }
             val cb = pendingConnect.remove(address)
             if (status == BluetoothGatt.GATT_SUCCESS) {
