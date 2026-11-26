@@ -330,9 +330,10 @@ object LSBluetooth {
         val state: ConnectionState
     )
 
-    @JvmStatic
-    fun observeDeviceStateEvents(): SharedFlow<DeviceStateEvent> {
-        return Facade.getDeviceStateEvents()
+    // Created once: building a new shareIn() per call left one more collector running forever in
+    // [scope] for every observeDeviceStateEvents() call.
+    private val cachedDeviceStateEvents: SharedFlow<DeviceStateEvent> by lazy {
+        Facade.getDeviceStateEvents()
             .map { event ->
                 DeviceStateEvent(
                     mac   = event.mac,
@@ -345,6 +346,9 @@ object LSBluetooth {
                 replay  = 0
             )
     }
+
+    @JvmStatic
+    fun observeDeviceStateEvents(): SharedFlow<DeviceStateEvent> = cachedDeviceStateEvents
 
     /**
      * Observes unified device states (connection + device info).
