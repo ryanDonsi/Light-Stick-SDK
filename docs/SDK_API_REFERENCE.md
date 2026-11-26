@@ -205,6 +205,31 @@ companion 상수: `Device.GAME_OPTION_RANDOM_TEAM = 0xFF` (Mode3 랜덤 팀 배�
 |---|---|
 | `sendGroupSetting(groupId: Int): Boolean` | GroupSetup 비콘 방송(groupId: 1~20). 그룹 *컨트롤*은 `sendEffect`로 하며 별도 메서드 없음. |
 
+### 2.10 코루틴(suspend) API — `com.lightstick.device` 확장 함수 (@since 2.200.0)
+
+콜백 메서드를 감싼 `suspend` 확장 함수. 콜백이 올 때까지 일시 중단했다가 성공 값을 반환하고, 실패하면 그 예외를 던진다. 요청 제출 자체가 안 되면(콜백 메서드가 `false`, 예: 미연결) `IllegalStateException`. 코루틴을 취소하면 대기만 끝나며, `connectAwait`는 연결을 끊고 `startOtaAwait`는 OTA를 중단한다.
+
+| 함수 | 반환 | 감싸는 메서드 |
+|---|---|---|
+| `connectAwait()` | `DeviceInfo?` (연결 중 읽은 정보) | `connect` |
+| `requestMtuAwait(preferred: Int)` | `Int` (협상된 MTU) | `requestMtu` |
+| `readDeviceNameAwait()` / `readModelNumberAwait()` / `readFirmwareRevisionAwait()` / `readManufacturerAwait()` / `readMacAddressAwait()` | `String` | `read*` |
+| `readBatteryAwait()` | `Int` (0~100) | `readBattery` |
+| `readDeviceModeAwait()` | `DeviceMode` | `readDeviceMode` |
+| `readBroadcastingAwait()` | `Boolean` | `readBroadcasting` |
+| `fetchDeviceInfoAwait()` | `DeviceInfo` | `fetchDeviceInfo` |
+| `bondAwait()` | `Unit` | `bond` |
+| `startOtaAwait(firmware: ByteArray, onProgress: ((Int) -> Unit)? = null)` | `Unit` | `startOta` |
+
+```kotlin
+lifecycleScope.launch {
+    try {
+        val info = device.connectAwait()
+        val battery = device.readBatteryAwait()
+    } catch (e: Throwable) { /* 연결/읽기 실패 */ }
+}
+```
+
 ---
 
 ## 3. 상태/정보 타입 (`com.lightstick.device`)
