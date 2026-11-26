@@ -18,6 +18,8 @@ package com.lightstick.device
  * @property replaced Pending commands replaced by a newer one with the same coalesce key
  *           (single effect / color sends; timeline frames are never replaced).
  * @property executed Commands handed to the BLE stack for execution.
+ * @property timedOut Commands whose GATT callback did not arrive within 3 s: the SDK failed them and
+ *           moved on to the next command. Non-zero hints at an unstable link.
  *
  * @since 2.200.0
  */
@@ -26,5 +28,6 @@ data class CommandQueueStats(
     val peakPending: Int,
     val dropped: Long,
     val replaced: Long,
-    val executed: Long
+    val executed: Long,
+    val timedOut: Long = 0
 )

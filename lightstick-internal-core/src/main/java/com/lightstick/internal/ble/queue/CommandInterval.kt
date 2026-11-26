@@ -8,6 +8,13 @@ package com.lightstick.internal.ble.queue
  * Public only so the `lightstick` module and unit tests can reach it; not part of the SDK API.
  */
 object CommandInterval {
+    /**
+     * Max time one started GATT command may wait for its callback before the queue's watchdog
+     * aborts it and moves on (a lost callback would otherwise stall the device's queue for good).
+     * Generous on purpose: a healthy read/write completes within a few connection intervals.
+     */
+    const val COMMAND_TIMEOUT_MS: Long = 3_000L
+
     /** Default minimum interval in milliseconds. */
     const val DEFAULT_MS: Long = 50L
 

@@ -782,7 +782,7 @@ data class Device(
         try {
             if (!isConnected()) null
             else Facade.commandQueueStats(mac)?.let {
-                CommandQueueStats(it.pending, it.peakPending, it.dropped, it.replaced, it.executed)
+                CommandQueueStats(it.pending, it.peakPending, it.dropped, it.replaced, it.executed, it.timedOut)
             }
         } catch (_: Throwable) {
             null
