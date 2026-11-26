@@ -133,13 +133,13 @@ internal class DeviceInfoManager(
     /**
      * Read all DIS items (partial success allowed).
      *
-     * Waits briefly for the device to stabilize after connection, then retries
-     * each characteristic up to [READ_RETRY_ATTEMPTS] times before accepting null.
+     * Starts right away — this runs only after service discovery has finished, and the reads go
+     * through the GATT command queue, so no fixed settle delay is needed. A device that is not
+     * ready yet is covered by retrying each characteristic up to [READ_RETRY_ATTEMPTS] times
+     * before accepting null (the wait is paid only on failure).
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private suspend fun readDeviceInfoAll(): DisInfo {
-        delay(POST_CONNECT_DELAY_MS)
-
         val name  = readWithRetry("modelName")  { readDeviceName() }
         val model = readWithRetry("modelNumber")  { readModelNumber() }
         val fw    = readWithRetry("fwRevision")   { readFirmwareRevision() }
@@ -263,8 +263,6 @@ internal class DeviceInfoManager(
 
     companion object {
         private const val TAG = "DeviceInfoManager"
-        /** Delay after connection before starting DIS reads (device stabilization). */
-        private const val POST_CONNECT_DELAY_MS = 300L
         /** Maximum read attempts per characteristic. */
         private const val READ_RETRY_ATTEMPTS = 3
         /** Delay between retry attempts. */
