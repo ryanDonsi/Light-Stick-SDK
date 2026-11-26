@@ -16,6 +16,8 @@ class CmdQueueManagerTest {
         private val tasks = mutableListOf<Task>()
         var now = 0L
 
+        // The test thread *is* the queue thread.
+        override fun execute(r: Runnable) = r.run()
         override fun post(r: Runnable, delayMs: Long) { tasks += Task(now + delayMs.coerceAtLeast(0), r) }
         override fun cancel(r: Runnable) { tasks.removeAll { it.r === r } }
         override fun nowMs(): Long = now

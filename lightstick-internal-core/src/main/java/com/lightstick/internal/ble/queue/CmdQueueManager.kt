@@ -1,7 +1,5 @@
 package com.lightstick.internal.ble.queue
 
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import com.lightstick.internal.util.Log
 import java.util.concurrent.ConcurrentHashMap
@@ -22,8 +20,10 @@ import java.util.concurrent.ConcurrentHashMap
  *   moves on, so one lost GATT callback cannot stall the device's queue.
  *
  * Threading:
- * - Scheduling is done on the main thread via a [Handler].
- * - Call [enqueue], [signalComplete], and [clear] on the main thread for simplicity.
+ * - All queue state lives on one thread: the SDK's BLE thread ([com.lightstick.internal.ble.BleThread]).
+ * - [enqueue], [signalComplete] and [clear] may be called from any thread (main, IO coroutines,
+ *   GATT binder callbacks); they hand their work to that thread in call order. Runners and
+ *   `onAbort` callbacks run on it too. [stats] can be read from any thread.
  */
 internal class CmdQueueManager(
     private var config: CmdQueueConfig = CmdQueueConfig(),
@@ -33,18 +33,21 @@ internal class CmdQueueManager(
     private val maxQueueSizeProvider: (() -> Int)? = null,
     /** Max time a started command may take before the watchdog aborts it (`0` = no watchdog). */
     private val commandTimeoutMs: Long = CommandInterval.COMMAND_TIMEOUT_MS,
-    /** Timer/clock abstraction; the default runs on the main looper. Replaced in unit tests. */
-    private val scheduler: Scheduler = MainLooperScheduler()
+    /** Thread/timer/clock abstraction; the default is the BLE thread. Replaced in unit tests. */
+    private val scheduler: Scheduler = BleThreadScheduler()
 ) {
-    /** Minimal timer used by the queue, so the scheduling logic can be tested on the JVM. */
+    /** Minimal thread + timer used by the queue, so the scheduling logic can be tested on the JVM. */
     interface Scheduler {
+        /** Runs [r] on the queue thread: now if already there, otherwise posted in call order. */
+        fun execute(r: Runnable)
         fun post(r: Runnable, delayMs: Long)
         fun cancel(r: Runnable)
         fun nowMs(): Long
     }
 
-    private class MainLooperScheduler : Scheduler {
-        private val handler = Handler(Looper.getMainLooper())
+    private class BleThreadScheduler : Scheduler {
+        private val handler = com.lightstick.internal.ble.BleThread.handler
+        override fun execute(r: Runnable) = com.lightstick.internal.ble.BleThread.execute(r)
         override fun post(r: Runnable, delayMs: Long) {
             if (delayMs > 0) handler.postDelayed(r, delayMs) else handler.post(r)
         }
@@ -89,7 +92,9 @@ internal class CmdQueueManager(
      * The in-flight command and every pending command are aborted with
      * [CommandAbortedException.Reason.DISCONNECTED].
      */
-    fun clear(address: String) {
+    fun clear(address: String) = scheduler.execute { clearOnQueueThread(address) }
+
+    private fun clearOnQueueThread(address: String) {
         disconnected[address] = true
         scheduled.remove(address)?.let { scheduler.cancel(it) }
         watchdogs.remove(address)?.let { scheduler.cancel(it) }
@@ -129,6 +134,18 @@ internal class CmdQueueManager(
         bypassMinInterval: Boolean = false,
         onAbort: ((CommandAbortedException) -> Unit)? = null,
         runner: () -> Unit
+    ) = scheduler.execute {
+        enqueueOnQueueThread(address, operation, coalesceKey, replaceIfSameKey, bypassMinInterval, onAbort, runner)
+    }
+
+    private fun enqueueOnQueueThread(
+        address: String,
+        operation: String,
+        coalesceKey: String?,
+        replaceIfSameKey: Boolean,
+        bypassMinInterval: Boolean,
+        onAbort: ((CommandAbortedException) -> Unit)?,
+        runner: () -> Unit
     ) {
         val cmd = Cmd(operation, coalesceKey, replaceIfSameKey, bypassMinInterval, runner, onAbort)
 
@@ -160,7 +177,7 @@ internal class CmdQueueManager(
     }
 
     /** Zeroes the counters of [address] (the pending commands themselves are untouched). */
-    fun resetStats(address: String) {
+    fun resetStats(address: String) = scheduler.execute {
         queues[address]?.resetStats()
         timedOut.remove(address)
     }
@@ -168,7 +185,9 @@ internal class CmdQueueManager(
     /**
      * Signals that the current command for [address] has completed.
      */
-    fun signalComplete(address: String) {
+    fun signalComplete(address: String) = scheduler.execute { completeOnQueueThread(address) }
+
+    private fun completeOnQueueThread(address: String) {
         if (disconnected[address] == true) return
         watchdogs.remove(address)?.let { scheduler.cancel(it) }
         inFlight.remove(address)
@@ -228,6 +247,6 @@ internal class CmdQueueManager(
         Log.w("[CmdQueue] $address '${cmd.op}' got no GATT callback within ${commandTimeoutMs}ms — " +
             "aborting it and moving on")
         cmd.abort(CommandAbortedException(CommandAbortedException.Reason.TIMEOUT, cmd.op, address))
-        signalComplete(address)
+        completeOnQueueThread(address)
     }
 }
